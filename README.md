@@ -5,7 +5,8 @@ transcript, show notes, and a reference file for reusing the episode's content
 later. It runs in the background from the system tray on Windows and macOS.
 
 Transcriptor 2 is a clean rebuild, separate from Transcriptor 1. Both can be
-installed at the same time.
+installed at the same time. Current release: **2.0.0-beta.1**. To install it,
+see [INSTALL.md](INSTALL.md).
 
 ## How it works
 
@@ -15,11 +16,14 @@ installed at the same time.
    can also be removed (Settings, or per episode). The raw transcript is kept;
    cleanup only hides words, and every removal can be undone in review.
 3. **Review** (optional): confirm the suggested speaker names, fix misheard
-   words (low-confidence ones are highlighted), and put back or remove words.
+   words (low- and medium-confidence ones are colored, with adjustable
+   bands), and put back or remove words, with the audio playing alongside:
+   the word being spoken is highlighted and clicking a word jumps there.
 4. **Write**: an AI provider (Claude, GPT, Kimi or Qwen) writes the show notes
    and a per-episode reference file from the reviewed transcript, in the
    template chosen in Settings (Full, Standard, Minimal, or a custom one that
-   can be exported and shared). Code then checks the result:
+   can be exported and shared) and in a voice (General, Industry, SEO, or
+   your own instruction). Code then checks the result:
    - quotes must appear word for word in one speaker's turn; the saved text,
      speaker and time come from the transcript, not the AI
    - timestamps must fall inside the episode and are snapped to turn starts
@@ -29,9 +33,13 @@ installed at the same time.
    Anything dropped is listed on the episode's Show notes tab.
 5. **Export**: the transcript, show notes and reference file as Word (.docx)
    and/or plain text, in a folder per episode under the output folder
-   (Documents/Transcriptor 2 unless you pick another). Runs automatically when
-   the notes are written, or from the episode's Export card. The Word files
-   use real heading and list styles, so they convert cleanly to Google Docs.
+   (Documents/Transcriptor 2 unless you pick another), with a choice of five
+   speaker formats. Runs automatically when the notes are written, or from the
+   episode's Export card. The Word files use real heading and list styles, so
+   they convert cleanly to Google Docs.
+
+Also: light and dark themes, episode search, color-coded episode stages, and
+Settings in tabs with a Save button.
 
 Each person uses their own API keys, stored encrypted with the computer's
 keychain. **Audio and transcripts are sent to the providers you choose**;
@@ -49,6 +57,9 @@ Built in milestones:
 | M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
 | M5 | Drive folder watching (written but switched off) | Done (off) |
+
+Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
+currently unsigned) and real-episode testing across the team.
 
 ## Google Drive folder watching (built, switched off)
 
@@ -75,15 +86,15 @@ npm run smoke      # build, then run the real app end to end against a fake API
 npm run dist       # installer for this platform in dist/
 ```
 
-Layout: `src/main` (Electron main process: settings, keys, tray, and later the
-pipeline), `src/preload` (the `window.api` bridge), `src/renderer` (React UI),
-`src/shared` (types used by both sides).
+Layout: `src/main` (Electron main process: settings, keys, tray, job queue,
+transcription, writing, export), `src/preload` (the `window.api` bridge),
+`src/renderer` (React UI), `src/shared` (types used by both sides).
 
 ## Releasing
 
 `npm run cut:beta` (while in beta) or `npm run cut:patch` bumps the
 version and pushes a tag. `.github/workflows/release.yml` creates one draft
 release, builds Windows and macOS installers into it, then publishes it.
-Builds are unsigned: on macOS, right-click → Open the first time (or run
-`xattr -cr "/Applications/Transcriptor 2.app"`); on Windows, choose
-"More info → Run anyway".
+Builds are unsigned: on macOS, use System Settings → Privacy & Security →
+Open Anyway the first time (or run `xattr -cr "/Applications/Transcriptor 2.app"`);
+on Windows, choose "More info → Run anyway".
