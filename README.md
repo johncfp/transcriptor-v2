@@ -61,19 +61,91 @@ Built in milestones:
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.
 
-## Google Drive folder watching (built, switched off)
+## Google Drive setup (folder watching: built, switched off)
 
-`src/main/watch/` can watch a Google Drive folder and queue new audio files
-as they arrive (they then wait for approval if Settings asks). It is not
-wired in yet. To turn it on:
+Transcriptor 2 can watch a Google Drive folder and pick up new episode audio
+on its own: each new audio file is downloaded and queued, then waits for
+approval if "Ask me before processing" is on. The code is in
+`src/main/watch/` and is tested, but it isn't switched on yet: the steps
+below are needed first.
 
-1. In the team's Google Cloud project, create an OAuth client of type
-   "Desktop app" and set the consent screen to **Internal**. The watcher
-   needs the restricted `drive.readonly` scope; Internal apps skip Google's
-   verification and the 7-day token expiry of unverified external apps.
-2. Fill in `GOOGLE_OAUTH` in `src/main/watch/googleAuth.ts`.
-3. Uncomment the Drive block (and its imports) in `src/main/index.ts`.
-4. Render `<DriveWatchSection>` in `SettingsScreen.tsx`.
+### Before setting it up: points to agree on
+
+- **Who watches the folder.** Each person who turns watching on downloads
+  and processes every new file, so if three people watch the same folder, the
+  episode is transcribed (and billed) three times. Decide whether one person
+  or one computer watches each folder.
+- **Access it needs.** Watching a folder that other people upload into needs
+  Google's `drive.readonly` permission, which lets the app *read* everything
+  the signed-in person can see in Drive (it only ever lists the chosen
+  folder, and never changes or deletes anything). The narrower "only files
+  this app created" permission can't see uploads from other people or tools.
+- **Workspace only.** Because that permission is "restricted", the Google
+  sign-in must be set up as **Internal** to your Google Workspace: only
+  accounts in that Workspace can use it, and Google doesn't require its
+  security review.
+- **Simpler alternative.** With Google Drive for Desktop installed, the folder
+  already appears on the computer, and the app could watch that local folder
+  instead: no Google Cloud setup and no Drive permission at all. That would
+  be a small change if it suits the workflow better.
+- **Limits of the current design.** It checks every 5 minutes while the app
+  is running; files already in the folder when watching starts are skipped;
+  subfolders aren't watched; only audio files (MP3, WAV, M4A, AAC, FLAC, OGG,
+  OPUS, WEBM) are picked up. Shared drives work.
+
+### 1. Google Cloud (once, by someone in the Workspace)
+
+Signed in to <https://console.cloud.google.com> with a Workspace account that
+can create projects:
+
+1. **Create a project**, e.g. "Transcriptor 2", under your organization.
+2. **Enable the Drive API**: APIs & Services → Library → *Google Drive API* →
+   Enable.
+3. **Set up the consent screen**: Google Auth Platform (formerly "OAuth
+   consent screen") → Get started.
+   - App name: *Transcriptor 2*; user support email: a team address.
+   - Audience: **Internal**.
+   - Contact email, then Create.
+4. **Add the permission**: Google Auth Platform → Data Access → Add or remove
+   scopes → add `https://www.googleapis.com/auth/drive.readonly` → Update →
+   Save.
+5. **Create the app's client**: Google Auth Platform → Clients → Create
+   client → Application type **Desktop app** → name it *Transcriptor 2
+   desktop* → Create. Copy the **Client ID** and **Client secret** (or
+   download the JSON). For desktop apps Google doesn't treat the secret as
+   confidential, but keep it out of public places anyway; it goes into the
+   private source repo.
+
+### 2. Workspace admin (only if app access is restricted)
+
+If your Workspace limits which apps can use Google data, a Workspace admin
+allows this one: Google Admin console → Security → Access and data control →
+API controls → Manage third-party app access → add the app by its Client ID →
+**Trusted**. If sign-in works without this, skip it.
+
+### 3. Switch it on in the code (a developer)
+
+1. Put the Client ID and secret in `GOOGLE_OAUTH` in
+   `src/main/watch/googleAuth.ts`.
+2. Uncomment the Drive block in `start()` in `src/main/index.ts`, and the
+   Drive imports near the top of that file.
+3. Show the settings: add
+   `<DriveWatchSection settings={settings} update={update} />` to a tab in
+   `src/renderer/src/components/SettingsScreen.tsx` (the Output tab fits).
+4. `npm run typecheck`, `npm test`, `npm run smoke`, then sign in with a real
+   account and drop a test file into a test folder.
+5. Release it (`npm run cut:beta`); installed copies update themselves on
+   Windows, and Mac users download the new version.
+
+### 4. Each person who watches a folder
+
+1. Settings → **Watch a Google Drive folder** → **Sign in with Google**. The
+   browser opens Google's page; allow the read-only access.
+2. Paste the folder's link from Google Drive.
+3. Turn on **Watch this folder**, then **Save**.
+4. From then on, new audio added to the folder shows up in Episodes (with a
+   notification to approve it, if that setting is on). To stop, turn watching
+   off or **Sign out**.
 
 ## Development
 
