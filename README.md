@@ -27,7 +27,11 @@ installed at the same time.
      the page cited (Claude and GPT report their sources; Kimi and Qwen don't,
      so their guest findings are never used)
    Anything dropped is listed on the episode's Show notes tab.
-5. **Export**: Word (.docx) and/or plain text, saved to a folder you choose.
+5. **Export**: the transcript, show notes and reference file as Word (.docx)
+   and/or plain text, in a folder per episode under the output folder
+   (Documents/Transcriptor 2 unless you pick another). Runs automatically when
+   the notes are written, or from the episode's Export card. The Word files
+   use real heading and list styles, so they convert cleanly to Google Docs.
 
 Each person uses their own API keys, stored encrypted with the computer's
 keychain. **Audio and transcripts are sent to the providers you choose**;
@@ -43,8 +47,8 @@ Built in milestones:
 | M1 | Transcription pipeline and job queue (ElevenLabs) | Done |
 | M2 | Cleanup and review | Done |
 | M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
-| M4 | Export (DOCX, TXT; Google Doc is set up later) | Next |
-| M5 | Drive folder watching (written but switched off) | |
+| M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
+| M5 | Drive folder watching (written but switched off) | Next |
 
 ## Development
 

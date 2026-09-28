@@ -13,6 +13,7 @@ import {
   type WritingResult,
 } from "../../../shared/showNotes";
 import { DocView } from "./DocView";
+import { ExportCard } from "./ExportCard";
 import { Section } from "./Section";
 
 type View = "notes" | "reference";
@@ -104,6 +105,7 @@ export function ShowNotesPanel({ job, settings }: { job: Job; settings: Settings
           </p>
         </Section>
 
+        {job.status !== "needs-review" && <ExportCard job={job} settings={settings} hasNotes={result !== null} />}
         {result && <ChecksCard result={result} />}
         {result?.research && <ResearchCard result={result} />}
       </aside>

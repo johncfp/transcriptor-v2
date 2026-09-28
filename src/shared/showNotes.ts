@@ -354,7 +354,7 @@ export function toPlainText(blocks: Block[]): string {
         case "table":
           return b.rows.map((r) => r.join("  ")).join("\n");
         case "quote":
-          return `"${b.text}"\n  — ${b.attribution}`;
+          return `“${b.text}”\n  — ${b.attribution}`;
         case "rule":
           return "";
       }

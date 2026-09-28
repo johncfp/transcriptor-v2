@@ -6,6 +6,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { EpisodeEdits } from "../shared/cleanup";
 import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
 import { readTemplateFile, templateFile } from "./templateFile";
+import { cleanTranscript } from "../shared/cleanup";
+import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
+import { templateSections } from "../shared/showNotes";
+import { writeExport } from "./exporter";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
 import { providerById } from "../shared/providers";
@@ -91,6 +95,21 @@ function start(): void {
       });
     },
     canWrite: () => writerSetup().apiKey !== null,
+    exportEpisode: (data, formats) => {
+      const s = settings.get();
+      const { label, documents } = episodeDocuments({
+        turns: cleanTranscript(data.transcript, data.edits),
+        details: data.details,
+        writing: data.writing,
+        fileName: data.job.fileName,
+        show: s.show,
+        sections: templateSections(s.template, s.customSections),
+        transcriptTimestamps: s.output.transcriptTimestamps,
+      });
+      const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
+      return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen);
+    },
+    autoExport: () => settings.get().output.autoExport,
     reviewOptions: () => {
       const s = settings.get();
       return {
@@ -269,6 +288,13 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.getDetails, (_e, id: string) => jobs.details(id));
   ipcMain.handle(IPC.writeNotes, (_e, id: string, details: EpisodeDetails) => jobs.write(id, sanitizeDetails(details)));
   ipcMain.handle(IPC.getWriting, (_e, id: string) => jobs.writing(id));
+  ipcMain.handle(IPC.exportEpisode, (_e, id: string, formats: unknown) =>
+    jobs.exportNow(id, Array.isArray(formats) ? EXPORT_FORMATS.filter((f) => formats.includes(f)) : undefined),
+  );
+  ipcMain.handle(IPC.openFolder, async (_e, path: string) => {
+    // Only folders this app exported to; never an arbitrary path from the renderer.
+    if (jobs.list().some((j) => j.exported?.folder === path)) await shell.openPath(path);
+  });
   ipcMain.handle(IPC.exportTemplate, async (_e, sections: unknown) => {
     const result = await (mainWindow
       ? dialog.showSaveDialog(mainWindow, { defaultPath: "show-notes-template.json", filters: [{ name: "Template", extensions: ["json"] }] })
@@ -307,6 +333,8 @@ function sanitizeDetails(value: unknown): EpisodeDetails {
 function showOpenDialog(opts: Electron.OpenDialogOptions) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, opts) : dialog.showOpenDialog(opts);
 }
+
+const EXPORT_FORMATS: ExportFormat[] = ["docx", "txt"];
 
 export function defaultOutputFolder(): string {
   return join(app.getPath("documents"), "Transcriptor 2");

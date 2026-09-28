@@ -5,6 +5,7 @@
 import type { AddFilesResult, Job } from "./jobs";
 import type { Settings, SettingsPatch } from "./settings";
 import type { EpisodeDetails, SectionId, WritingResult } from "./showNotes";
+import type { ExportFormat } from "./exportDocs";
 import type { EpisodeEdits } from "./cleanup";
 import type { Transcript } from "./transcript";
 
@@ -61,6 +62,10 @@ export interface Api {
   exportTemplate(sections: SectionId[]): Promise<boolean>;
   /** Pick a template file; resolves to its sections, or null if cancelled. */
   importTemplate(): Promise<SectionId[] | null>;
+  /** Export the episode's documents; rejects with a readable message on failure. */
+  exportEpisode(id: string, formats: ExportFormat[]): Promise<{ folder: string; files: string[] }>;
+  /** Open an export folder in Explorer/Finder (only folders this app exported to). */
+  openFolder(path: string): Promise<void>;
   /** Subscribe to queue changes; returns an unsubscribe function. */
   onJobsChanged(fn: (jobs: Job[]) => void): () => void;
   /** A notification was clicked; the UI should show this job. */
@@ -98,6 +103,8 @@ export const IPC = {
   getWriting: "jobs:writing",
   exportTemplate: "template:export",
   importTemplate: "template:import",
+  exportEpisode: "jobs:export",
+  openFolder: "shell:open-folder",
   jobsChanged: "jobs:changed",
   showJob: "jobs:show",
   getUpdateStatus: "update:status",

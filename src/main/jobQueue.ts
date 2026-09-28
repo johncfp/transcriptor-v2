@@ -7,6 +7,8 @@ import { providerById } from "../shared/providers";
 import { EMPTY_DETAILS, episodeNumberFromFileName, type EpisodeDetails, type WritingResult } from "../shared/showNotes";
 import { suggestSpeakers } from "../shared/speakerNames";
 import type { Transcript } from "../shared/transcript";
+import type { ExportFormat } from "../shared/exportDocs";
+import type { ExportResult } from "./exporter";
 import { readJson, writeJsonAtomic } from "./jsonFile";
 import { AbortedError } from "./transcribe/multipart";
 import type { Transcriber } from "./transcribe/types";
@@ -17,6 +19,15 @@ export interface WriteRequest {
   details: EpisodeDetails;
   signal: AbortSignal;
   onStage: (stage: string) => void;
+}
+
+/** Everything an export needs about one episode. */
+export interface EpisodeExportData {
+  job: Job;
+  transcript: Transcript;
+  edits: EpisodeEdits;
+  details: EpisodeDetails;
+  writing: WritingResult | null;
 }
 
 export interface JobQueueDeps {
@@ -32,6 +43,10 @@ export interface JobQueueDeps {
   write: (req: WriteRequest) => Promise<WritingResult>;
   /** True when a writing provider has a key, so notes can be written without asking. */
   canWrite: () => boolean;
+  /** Write the episode's documents to disk; `formats` overrides the Settings default. */
+  exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[]) => ExportResult;
+  /** Export as soon as show notes are written. */
+  autoExport: () => boolean;
   /** Every change, including progress ticks. */
   onChange?: (jobs: Job[]) => void;
   /** A job reached a state the user should hear about. */
@@ -205,6 +220,28 @@ export class JobQueue {
     this.pump();
   }
 
+  /**
+   * Export the episode's documents now. The outcome is recorded on the job
+   * (last export, or the error) as well as returned.
+   */
+  exportNow(id: string, formats?: ExportFormat[]): ExportResult {
+    const job = this.find(id);
+    const transcript = this.transcript(id);
+    const edits = this.edits(id);
+    const details = this.details(id);
+    if (!job || !transcript || !edits || !details) throw new Error("This episode hasn't been transcribed yet.");
+    try {
+      const result = this.deps.exportEpisode({ job, transcript, edits, details, writing: this.writing(id) }, formats);
+      Object.assign(job, { exported: { at: new Date().toISOString(), ...result }, exportError: undefined });
+      return result;
+    } catch (err) {
+      job.exportError = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      this.changed();
+    }
+  }
+
   /** The audio file behind a job, for playback in review. */
   audioPath(id: string): string | null {
     return this.find(id)?.filePath ?? null;
@@ -343,6 +380,13 @@ export class JobQueue {
     });
     writeJsonAtomic(join(this.episodeDir(job.id), "writing.json"), result);
     Object.assign(job, { status: "written", stage: undefined });
+    if (this.deps.autoExport()) {
+      try {
+        this.exportNow(job.id);
+      } catch {
+        // Recorded on the job as exportError; the notes themselves are done.
+      }
+    }
     this.deps.onEvent?.({ type: "written", job });
   }
 

@@ -39,6 +39,10 @@ export interface Job {
   wordCount?: number;
   speakerCount?: number;
   finishedAt?: string;
+  /** The last export of this episode's documents. */
+  exported?: { at: string; folder: string; files: string[] };
+  /** Why the last export failed (the notes themselves are fine). */
+  exportError?: string;
 }
 
 /** Statuses where the job is done moving and can be removed or retried. */

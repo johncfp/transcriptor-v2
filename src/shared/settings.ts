@@ -22,6 +22,10 @@ export interface Settings {
     /** Empty means the default: Documents/Transcriptor 2. */
     folder: string;
     formats: { docx: boolean; txt: boolean; googleDoc: boolean };
+    /** Export as soon as show notes are written. */
+    autoExport: boolean;
+    /** "[00:12]" after each speaker's name in the exported transcript. */
+    transcriptTimestamps: boolean;
   };
   show: ShowProfile;
   writing: {
@@ -60,6 +64,8 @@ export const DEFAULT_SETTINGS: Settings = {
   output: {
     folder: "",
     formats: { docx: true, txt: false, googleDoc: false },
+    autoExport: true,
+    transcriptTimestamps: true,
   },
   show: {
     name: "",

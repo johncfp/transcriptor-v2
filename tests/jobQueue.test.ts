@@ -50,6 +50,8 @@ function setup(overrides: Partial<JobQueueDeps> = {}) {
     reviewOptions: () => ({ reviewStep: true, cleanup: { repetitions: false }, hosts: [] }),
     write: () => Promise.reject(new Error("no writer in this test")),
     canWrite: () => false,
+    exportEpisode: () => ({ folder: "out", files: [] }),
+    autoExport: () => false,
     onEvent: (e) => events.push(e.type),
     ...overrides,
   };
@@ -316,4 +318,51 @@ test("writing: an episode still needing review can't be written yet", async () =
   const { queue, id } = await transcribed({ write: async () => WRITTEN });
   queue.write(id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
   assert.equal(queue.list()[0]!.status, "needs-review");
+});
+
+test("export: automatic after writing, recorded on the job; a failed export doesn't undo the notes", async () => {
+  let exports = 0;
+  let broken = false;
+  const { queue, id } = await transcribed({
+    write: async () => WRITTEN,
+    autoExport: () => true,
+    exportEpisode: (data) => {
+      exports++;
+      if (broken) throw new Error("Couldn't save the file. If it's open in Word, close it and export again.");
+      assert.equal(data.writing?.notes.summary, "S");
+      return { folder: "C:/out/Episode 386", files: ["a.docx"] };
+    },
+  });
+  queue.markReviewed(id);
+  queue.write(id, { episodeNumber: "386", title: "", sponsors: "", nextWeek: "" });
+  await tick();
+  await tick();
+  let job = queue.list()[0]!;
+  assert.equal(job.status, "written");
+  assert.equal(exports, 1);
+  assert.equal(job.exported?.folder, "C:/out/Episode 386");
+
+  broken = true;
+  queue.write(id, { episodeNumber: "386", title: "", sponsors: "", nextWeek: "" });
+  await tick();
+  await tick();
+  job = queue.list()[0]!;
+  assert.equal(job.status, "written", "notes still count as written");
+  assert.match(job.exportError!, /close it and export again/);
+
+  broken = false;
+  queue.exportNow(id, ["txt"]);
+  assert.equal(queue.list()[0]!.exportError, undefined);
+});
+
+test("export: the transcript can be exported before any show notes exist", async () => {
+  let writing: unknown = "unset";
+  const { queue, id } = await transcribed({
+    exportEpisode: (data) => {
+      writing = data.writing;
+      return { folder: "out", files: [] };
+    },
+  });
+  queue.exportNow(id, ["docx"]);
+  assert.equal(writing, null);
 });

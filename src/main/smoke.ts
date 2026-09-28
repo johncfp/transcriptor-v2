@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -129,7 +129,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       })()`);
       const keyRoundTrip = keys.hint === "1234" && keys.removed;
 
-      await js(`window.api.updateSettings({ show: { name: "This Is A Test Show", hosts: ["Nigel T."] } })`);
+      // Exports go to the scratch folder, never the real Documents folder.
+      const exportRoot = join(dir, "exports");
+      await js(`window.api.updateSettings({
+        show: { name: "This Is A Test Show", hosts: ["Nigel T."] },
+        output: { folder: ${JSON.stringify(exportRoot)} },
+      })`);
 
       // Pipeline: queue a file (plus one that must be rejected) and wait for the transcript.
       const wav = join(dir, "episode-386.wav");
@@ -215,6 +220,18 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
       const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
       await shot("notes.png");
+      // Auto-export ran when the notes finished (DOCX is the default format).
+      const exported = await js<{ folder: string; files: string[] } | null>(
+        `window.api.listJobs().then((j) => j[0]?.exported ?? null)`,
+      );
+      const exportOk =
+        exported !== null &&
+        exported.folder.startsWith(exportRoot) &&
+        exported.files.length === 3 &&
+        exported.files.every((f) => f.endsWith(".docx") && existsSync(f));
+      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Export").scrollIntoView()`);
+      await pause(300);
+      await shot("export.png");
       await click("button", "Reference file");
       await pause(300);
       const referenceText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
@@ -226,6 +243,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         notesText.includes("“Welcome to the show, Pete.”") &&
         !notesText.includes("We are so glad you came") &&
         notesText.includes("https://pete.example/") &&
+        exportOk &&
         checksText.includes("1 quote left out") &&
         referenceText.includes("Thanks, glad to be here.") &&
         referenceText.includes("Pete hosts a podcast.");
@@ -270,6 +288,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         played,
         finalStatus,
         notesStatus,
+        exported,
         notesText,
         sections,
         newerVersion,

@@ -100,6 +100,18 @@ export function SettingsScreen() {
             <Check label="Google Doc (not set up yet)" checked={false} disabled onChange={() => {}} />
           </div>
         </Row>
+        <Toggle
+          label="Export automatically when show notes are ready"
+          hint="Saves the transcript, show notes and reference file in a folder for the episode. You can also export from the episode at any time."
+          checked={output.autoExport}
+          onChange={(v) => update({ output: { autoExport: v } })}
+        />
+        <Toggle
+          label="Timestamps in the exported transcript"
+          hint='Adds the time after each speaker, e.g. "Nigel T. [01:15]:".'
+          checked={output.transcriptTimestamps}
+          onChange={(v) => update({ output: { transcriptTimestamps: v } })}
+        />
       </Section>
 
       <Section
