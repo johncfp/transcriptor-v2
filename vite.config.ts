@@ -10,7 +10,7 @@ const csp: Plugin = {
   transformIndexHtml: (html) =>
     html.replace(
       "<head>",
-      `<head>\n    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'" />`,
+      `<head>\n    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src t2-media:; connect-src 'none'; object-src 'none'; base-uri 'none'" />`,
     ),
 };
 

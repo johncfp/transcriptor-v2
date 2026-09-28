@@ -589,23 +589,116 @@ a {
   outline-offset: 1px;
 }
 
-.review {
-  padding-bottom: 80px;
-}
-.word-editor {
-  position: sticky;
-  bottom: 0;
-  margin-top: 12px;
-  background: var(--surface);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
-}
 .word-editor-info {
   font-size: 12.5px;
   color: var(--muted);
+}
+
+/* Review: controls on the left, transcript on the right, each scrolling on its own. */
+.content.full {
+  padding: 20px 24px 0;
+  overflow: hidden;
+}
+.content.full > * {
+  max-width: none;
+}
+.review {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.review .page-head {
+  margin-bottom: 14px;
+}
+.review-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  gap: 20px;
+}
+.review-side,
+.review-main {
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+.review-side .section {
+  margin-bottom: 14px;
+}
+.review-main .transcript {
+  max-width: 860px;
+}
+@media (max-width: 1080px) {
+  .content.full {
+    overflow-y: auto;
+  }
+  .review {
+    height: auto;
+  }
+  .review-body {
+    grid-template-columns: 1fr;
+  }
+  .review-side,
+  .review-main {
+    overflow: visible;
+  }
+}
+
+.speaker-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.speaker-control .input {
+  width: 200px;
+}
+
+.player .scrub {
+  width: 100%;
+  margin: 10px 0 8px;
+  accent-color: var(--accent);
+}
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.player-controls .play {
+  min-width: 70px;
+}
+.player-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin-left: 4px;
+  flex: 1;
+}
+.input.speed {
+  width: auto;
+  padding: 5px 6px;
+}
+.follow {
+  margin: 10px 0 4px;
+}
+
+.word.current {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.word-editor {
+  border-color: var(--accent);
+}
+.word-form {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+.word-form .input {
+  flex: 1;
+  width: auto;
+}
+.word-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }

@@ -160,6 +160,11 @@ export class JobQueue {
     return edits;
   }
 
+  /** The audio file behind a job, for playback in review. */
+  audioPath(id: string): string | null {
+    return this.find(id)?.filePath ?? null;
+  }
+
   isBusy(): boolean {
     return this.running !== null;
   }

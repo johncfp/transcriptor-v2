@@ -60,3 +60,7 @@ export function formatBytes(n: number): string {
   if (n >= 1024 ** 2) return `${+(n / 1024 ** 2).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(n / 1024))} KB`;
 }
+
+/** Private URL scheme the main process serves episode audio on (see src/main/media.ts). */
+export const MEDIA_SCHEME = "t2-media";
+export const audioUrl = (jobId: string) => `${MEDIA_SCHEME}://audio/${encodeURIComponent(jobId)}`;

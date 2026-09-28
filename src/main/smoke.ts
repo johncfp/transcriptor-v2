@@ -58,9 +58,9 @@ function startFakeApi(): Promise<void> {
   );
 }
 
-/** A tiny valid WAV file (0.5 s of silence). */
+/** A valid WAV file: 9 s of silence, long enough to cover the fake words. */
 function writeWav(path: string): void {
-  const samples = 8000;
+  const samples = 16000 * 9;
   const buf = Buffer.alloc(44 + samples * 2);
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + samples * 2, 4);
@@ -142,9 +142,33 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           `[...document.querySelectorAll(".turn")].map((t) => t.querySelector(".speaker").textContent + ": " + t.querySelector("p").textContent)`,
         );
       const turns = await readTurns();
-      await click(".word", "really");
+      // Playback: audio loads over t2-media://, clicking a word seeks there, playing moves the playhead.
+      await pause(500);
+      await click(".word", "glad");
+      await pause(400);
+      const seeked = await js<{ duration: number; time: number; current: string | null }>(`({
+        duration: document.querySelector("audio").duration,
+        time: document.querySelector("audio").currentTime,
+        current: document.querySelector(".word.current")?.textContent ?? null,
+      })`);
+      await js(`document.querySelector("audio").play()`);
+      await pause(1300);
+      const played = await js<{ time: number; current: string | null }>(`({
+        time: document.querySelector("audio").currentTime,
+        current: document.querySelector(".word.current")?.textContent ?? null,
+      })`);
+      await js(`document.querySelector("audio").pause()`);
       await pause(200);
       await shot("review.png");
+      const playback =
+        Math.abs(seeked.duration - 9) < 0.1 &&
+        Math.abs(seeked.time - 6) < 0.05 &&
+        seeked.current === "glad" &&
+        played.time > 6.8 &&
+        played.current !== "glad";
+
+      await click(".word", "really");
+      await pause(200);
       await click("button", "Remove word");
       await pause(300);
       const afterRemove = await readTurns();
@@ -175,6 +199,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           keyRoundTrip &&
           pipeline &&
           review &&
+          playback &&
           sections.length >= 5,
         heading: probe.heading,
         intake: probe.intake,
@@ -183,6 +208,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         status,
         turns,
         afterRemove,
+        seeked,
+        played,
         finalStatus,
         sections,
         newerVersion,

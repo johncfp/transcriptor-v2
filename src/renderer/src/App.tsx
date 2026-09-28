@@ -48,7 +48,7 @@ export function App() {
         </button>
         <UpdateNotice status={update} />
       </nav>
-      <main className="content">
+      <main className={screen.name === "transcript" ? "content full" : "content"}>
         {screen.name === "episodes" && (
           <EpisodesScreen
             onOpen={(jobId) => setScreen({ name: "transcript", jobId })}

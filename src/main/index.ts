@@ -6,6 +6,7 @@ import type { EpisodeEdits } from "../shared/cleanup";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
 import { KeyStore } from "./keyStore";
+import { handleMedia, registerMediaScheme } from "./media";
 import { notifyJobEvent } from "./notify";
 import { runSmokeTest, SMOKE, smokeTranscriber } from "./smoke";
 import { SettingsStore } from "./settingsStore";
@@ -20,6 +21,8 @@ if (SMOKE) app.setPath("userData", SMOKE.userData);
 // Windows only shows notifications for apps with an AppUserModelID, and it
 // has to match the installer's appId.
 if (process.platform === "win32") app.setAppUserModelId("io.transcriptor.app2");
+
+registerMediaScheme();
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 
@@ -79,6 +82,8 @@ function start(): void {
 
   const updater = new Updater((s) => mainWindow?.webContents.send(IPC.updateStatusChanged, s));
   registerIpc(settings, keys, queue, updater);
+  const jobs = queue;
+  handleMedia((id) => jobs.audioPath(id));
   updater.start();
 
   createTray({
