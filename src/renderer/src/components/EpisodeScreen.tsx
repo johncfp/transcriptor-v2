@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { clampThresholds, DEFAULT_CONFIDENCE_THRESHOLDS } from "../../../shared/confidence";
 import type { Settings } from "../../../shared/settings";
 import { formatTimestamp } from "../../../shared/transcript";
 import { useJobs } from "../useJobs";
@@ -21,6 +22,9 @@ export function EpisodeScreen({ jobId, onBack }: { jobId: string; onBack: () => 
   useEffect(() => {
     if (job && tab === null) setTab(job.status === "needs-review" ? "transcript" : "notes");
   }, [job, tab]);
+
+  // Stable between renders so the transcript's per-turn memo holds during playback.
+  const bands = useMemo(() => (settings ? clampThresholds(settings.confidence) : DEFAULT_CONFIDENCE_THRESHOLDS), [settings]);
 
   if (!job || !settings || !tab) return null;
 
@@ -62,7 +66,7 @@ export function EpisodeScreen({ jobId, onBack }: { jobId: string; onBack: () => 
         </button>
       </div>
 
-      {tab === "transcript" ? <TranscriptTab jobId={job.id} /> : <ShowNotesPanel job={job} settings={settings} />}
+      {tab === "transcript" ? <TranscriptTab jobId={job.id} bands={bands} /> : <ShowNotesPanel job={job} settings={settings} />}
     </div>
   );
 }

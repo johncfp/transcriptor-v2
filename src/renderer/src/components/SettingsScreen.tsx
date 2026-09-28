@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { Settings, SettingsPatch } from "../../../shared/settings";
+import { SPEAKER_FORMATS, type Settings, type SettingsPatch, type SpeakerFormat } from "../../../shared/settings";
 import { ApiKeysSection } from "./ApiKeysSection";
 import { Section } from "./Section";
 import { ShowNotesSettings } from "./ShowNotesSettings";
+import { ConfidenceBandsSection } from "./ConfidenceBandsSection";
 
 export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -23,6 +24,7 @@ export function SettingsScreen() {
   return (
     <>
       <h1>Settings</h1>
+      <div className="settings-grid">
 
       <Section title="General">
         <Toggle
@@ -106,13 +108,35 @@ export function SettingsScreen() {
           checked={output.autoExport}
           onChange={(v) => update({ output: { autoExport: v } })}
         />
+        <Row label="Speaker format" hint="How each speaker's turn is laid out in the exported transcript.">
+          <select
+            className="input select"
+            value={output.speakerFormat}
+            onChange={(e) => update({ output: { speakerFormat: e.target.value as SpeakerFormat } })}
+            aria-label="Speaker format"
+          >
+            {SPEAKER_FORMATS.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </Row>
         <Toggle
           label="Timestamps in the exported transcript"
-          hint='Adds the time after each speaker, e.g. "Nigel T. [01:15]:".'
+          hint="Adds each turn's start time, placed to suit the speaker format."
           checked={output.transcriptTimestamps}
           onChange={(v) => update({ output: { transcriptTimestamps: v } })}
         />
+        <Toggle
+          label="Color low-confidence words in the exported transcript"
+          hint="Red for low and orange for medium confidence, in the Word file, so words worth checking stand out. Plain text has no color."
+          checked={output.colorConfidence}
+          onChange={(v) => update({ output: { colorConfidence: v } })}
+        />
       </Section>
+
+      <ConfidenceBandsSection settings={settings} update={update} />
 
       <Section
         title="Show profile"
@@ -147,6 +171,7 @@ export function SettingsScreen() {
       <ShowNotesSettings settings={settings} update={update} />
 
       <ApiKeysSection />
+      </div>
     </>
   );
 }

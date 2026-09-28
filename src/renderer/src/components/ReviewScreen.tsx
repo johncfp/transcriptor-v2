@@ -10,6 +10,7 @@ import {
   type ReviewTurn,
 } from "../../../shared/cleanup";
 import { audioUrl } from "../../../shared/jobs";
+import { confidenceLevel, type ConfidenceThresholds } from "../../../shared/confidence";
 import { formatTimestamp, type Transcript } from "../../../shared/transcript";
 import { Player } from "./Player";
 import { Section } from "./Section";
@@ -23,9 +24,11 @@ const REASON_LABEL: Record<RemovalReason, string> = {
   manual: "removed by hand",
 };
 
-/** Confidence bands for highlighting (same defaults as Transcriptor 1). */
-const confidenceClass = (c: number | undefined) =>
-  c === undefined ? "" : c < 0.5 ? " conf-low" : c < 0.96 ? " conf-medium" : "";
+/** Confidence coloring for a word, using the bands from Settings. */
+const confidenceClass = (c: number | undefined, bands: ConfidenceThresholds) => {
+  const level = confidenceLevel(c, bands);
+  return level ? ` conf-${level}` : "";
+};
 
 /** Last entry in `sorted` whose start is at or before `time`, by binary search. */
 function lastStartedBefore(sorted: { index: number; start: number }[], time: number): number | null {
@@ -43,7 +46,7 @@ function lastStartedBefore(sorted: { index: number; start: number }[], time: num
 }
 
 /** The Transcript tab of an episode: speakers, cleanup, playback and the editable transcript. */
-export function TranscriptTab({ jobId }: { jobId: string }) {
+export function TranscriptTab({ jobId, bands }: { jobId: string; bands: ConfidenceThresholds }) {
   const [episode, setEpisode] = useState<Episode | null | undefined>(undefined);
   const [showRemoved, setShowRemoved] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -223,6 +226,7 @@ export function TranscriptTab({ jobId }: { jobId: string }) {
                   turn={turn}
                   selected={inTurn(selected)}
                   current={inTurn(current)}
+                  bands={bands}
                   onSelect={selectWord}
                 />
               );
@@ -285,6 +289,7 @@ const Turn = memo(function Turn(props: {
   /** Only set when the selected/current word is in this turn, so other turns skip re-rendering. */
   selected: number | null;
   current: number | null;
+  bands: ConfidenceThresholds;
   onSelect: (index: number) => void;
 }) {
   const { turn } = props;
@@ -302,7 +307,7 @@ const Turn = memo(function Turn(props: {
               data-index={w.index}
               className={
                 "word" +
-                (w.removed ? " removed" : confidenceClass(w.confidence)) +
+                (w.removed ? " removed" : confidenceClass(w.confidence, props.bands)) +
                 (w.edited ? " edited" : "") +
                 (props.current === w.index ? " current" : "") +
                 (props.selected === w.index ? " selected" : "")

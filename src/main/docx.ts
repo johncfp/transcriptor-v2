@@ -70,7 +70,8 @@ class DocWriter {
   }
 
   private run(run: Run): string {
-    const props = [run.bold ? "<w:b/>" : "", run.italic ? "<w:i/>" : ""].join("");
+    // Order matters in OOXML: b, i, then color.
+    const props = [run.bold ? "<w:b/>" : "", run.italic ? "<w:i/>" : "", run.color ? `<w:color w:val="${run.color}"/>` : ""].join("");
     const rPr = props ? `<w:rPr>${props}</w:rPr>` : "";
     const text = xmlSafe(run.text);
     // xml:space="preserve" keeps leading/trailing spaces (e.g. "Label: ").

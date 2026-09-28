@@ -1,13 +1,16 @@
 // What gets exported for an episode, and what the files are called. Pure, so
 // the same names and documents are used by the exporter and shown in the UI.
 
-import type { CleanTurn } from "./cleanup";
+import type { CleanTurn, CleanWord } from "./cleanup";
+import { CONFIDENCE_COLORS, confidenceLevel, type ConfidenceLevel, type ConfidenceThresholds } from "./confidence";
+import type { SpeakerFormat } from "./settings";
 import {
   buildReference,
   buildShowNotes,
   type Block,
   type EpisodeDetails,
   type SectionId,
+  type Run,
   type ShowProfileLike,
   type WritingResult,
 } from "./showNotes";
@@ -21,19 +24,64 @@ export interface ExportDocument {
   blocks: Block[];
 }
 
-/** The transcript as a document: one paragraph per turn, "Name [00:00]: text". */
-export function buildTranscriptDoc(turns: CleanTurn[], opts: { title: string; subtitle?: string; timestamps: boolean }): Block[] {
+export interface TranscriptDocOptions {
+  title: string;
+  subtitle?: string;
+  timestamps: boolean;
+  format: SpeakerFormat;
+  /** Color low/medium-confidence words with these bands; null = no color. */
+  confidence: ConfidenceThresholds | null;
+}
+
+/** A turn's words as runs, with neighbouring words of the same confidence band sharing one run. */
+function wordRuns(words: CleanWord[], confidence: ConfidenceThresholds | null): Run[] {
+  const runs: Run[] = [];
+  let level: ConfidenceLevel | null = null;
+  for (const w of words) {
+    const next = confidence ? confidenceLevel(w.confidence, confidence) : null;
+    const last = runs.at(-1);
+    if (last && next === level) last.text += ` ${w.text}`;
+    else {
+      if (last) last.text += " "; // the space between runs goes with the earlier run
+      runs.push(next ? { text: w.text, color: CONFIDENCE_COLORS[next] } : { text: w.text });
+    }
+    level = next;
+  }
+  return runs;
+}
+
+/** The transcript as a document, laid out in one of Transcriptor 1's speaker formats. */
+export function buildTranscriptDoc(turns: CleanTurn[], opts: TranscriptDocOptions): Block[] {
   const blocks: Block[] = [{ type: "heading", level: 1, text: opts.title }];
   if (opts.subtitle) blocks.push({ type: "paragraph", runs: [{ text: opts.subtitle, italic: true }] });
   for (const turn of turns) {
-    blocks.push({
-      type: "paragraph",
-      runs: [
-        { text: turn.speaker, bold: true },
-        { text: opts.timestamps ? ` [${formatTimestamp(turn.start)}]: ` : ": " },
-        { text: turn.words.map((w) => w.text).join(" ") },
-      ],
-    });
+    const time = formatTimestamp(turn.start);
+    const text = wordRuns(turn.words, opts.confidence);
+    const prefix: Run[] = opts.timestamps ? [{ text: `[${time}] ` }] : [];
+    switch (opts.format) {
+      case "stacked":
+        blocks.push({
+          type: "paragraph",
+          runs: [{ text: turn.speaker, bold: true }, ...(opts.timestamps ? [{ text: `  ${time}`, italic: true }] : [])],
+        });
+        blocks.push({ type: "paragraph", runs: text });
+        break;
+      case "inline":
+        blocks.push({ type: "paragraph", runs: [...prefix, { text: turn.speaker, bold: true }, { text: ": " }, ...text] });
+        break;
+      case "dash":
+        blocks.push({ type: "paragraph", runs: [...prefix, { text: turn.speaker, bold: true }, { text: " — " }, ...text] });
+        break;
+      case "caps":
+        blocks.push({ type: "paragraph", runs: [...prefix, { text: turn.speaker.toUpperCase(), bold: true }, { text: ": " }, ...text] });
+        break;
+      case "timeAfter":
+        blocks.push({
+          type: "paragraph",
+          runs: [{ text: turn.speaker, bold: true }, { text: opts.timestamps ? ` [${time}]: ` : ": " }, ...text],
+        });
+        break;
+    }
   }
   return blocks;
 }
@@ -75,7 +123,7 @@ export interface EpisodeDocsInput {
   fileName: string;
   show: ShowProfileLike;
   sections: SectionId[];
-  transcriptTimestamps: boolean;
+  transcript: Omit<TranscriptDocOptions, "title" | "subtitle">;
 }
 
 /** The transcript always; show notes and reference file once they're written. */
@@ -85,9 +133,9 @@ export function episodeDocuments(input: EpisodeDocsInput): { label: string; docu
     {
       kind: "Transcript",
       blocks: buildTranscriptDoc(input.turns, {
+        ...input.transcript,
         title: label,
         subtitle: [input.show.name, "Transcript"].filter(Boolean).join(" · "),
-        timestamps: input.transcriptTimestamps,
       }),
     },
   ];

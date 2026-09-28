@@ -143,6 +143,8 @@ export interface Run {
   text: string;
   bold?: boolean;
   italic?: boolean;
+  /** Hex "RRGGBB"; used by DOCX only (confidence colors in transcripts). */
+  color?: string;
 }
 
 export type Block =

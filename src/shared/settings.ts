@@ -1,3 +1,5 @@
+import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
+
 // Settings schema shared by the main process (which owns the file on disk)
 // and the renderer (which edits it over IPC). Keep this file free of Node and
 // DOM imports so both sides can use it.
@@ -24,9 +26,15 @@ export interface Settings {
     formats: { docx: boolean; txt: boolean; googleDoc: boolean };
     /** Export as soon as show notes are written. */
     autoExport: boolean;
-    /** "[00:12]" after each speaker's name in the exported transcript. */
+    /** Each turn's start time in the exported transcript. */
     transcriptTimestamps: boolean;
+    /** How the exported transcript lays out each speaker turn (see SPEAKER_FORMATS). */
+    speakerFormat: SpeakerFormat;
+    /** Color low- and medium-confidence words in the exported Word transcript. */
+    colorConfidence: boolean;
   };
+  /** Where words get a low- or medium-confidence color. */
+  confidence: { lowMax: number; mediumMax: number };
   show: ShowProfile;
   writing: {
     /** Provider id from src/shared/providers.ts (role "writing"). */
@@ -41,6 +49,23 @@ export interface Settings {
   /** Section ids, in order, for the "custom" template. */
   customSections: string[];
 }
+
+/** Transcript turn layouts, as in Transcriptor 1's Speaker Format menu. */
+export const SPEAKER_FORMATS = [
+  { id: "stacked", label: "Name Above Text" },
+  { id: "inline", label: "Name: Text" },
+  { id: "dash", label: "Name — Text" },
+  { id: "caps", label: "NAME: Text" },
+  { id: "timeAfter", label: "Name [Time]: Text" },
+] as const;
+
+export type SpeakerFormat = (typeof SPEAKER_FORMATS)[number]["id"];
+
+/** String settings that only accept certain values; anything else keeps the default. */
+const ALLOWED: Record<string, readonly string[]> = {
+  intake: ["approve", "auto"],
+  speakerFormat: SPEAKER_FORMATS.map((f) => f.id),
+};
 
 export interface ShowProfile {
   name: string;
@@ -66,7 +91,10 @@ export const DEFAULT_SETTINGS: Settings = {
     formats: { docx: true, txt: false, googleDoc: false },
     autoExport: true,
     transcriptTimestamps: true,
+    speakerFormat: "stacked",
+    colorConfidence: true,
   },
+  confidence: { ...DEFAULT_CONFIDENCE_THRESHOLDS },
   show: {
     name: "",
     hosts: [],
@@ -110,7 +138,7 @@ export function mergeSettings<T>(base: T, patch: unknown): T {
     else if (Array.isArray(b)) {
       if (Array.isArray(p) && p.every((x) => typeof x === "string")) out[key] = [...p];
     } else if (typeof p === typeof b) {
-      if (key === "intake" && p !== "approve" && p !== "auto") continue;
+      if (ALLOWED[key] && !ALLOWED[key].includes(p as string)) continue;
       out[key] = p;
     }
   }

@@ -21,6 +21,7 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
   const [keys, setKeys] = useState<KeyStatus[] | null>(null);
   const [dragging, setDragging] = useState(false);
   const [rejected, setRejected] = useState<AddFilesResult["rejected"]>([]);
+  const [query, setQuery] = useState("");
 
   // Re-check on every queue change too: a key may have been added since this screen opened.
   useEffect(() => {
@@ -52,9 +53,19 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
     >
       <div className="page-head">
         <h1>Episodes</h1>
-        <button className="button primary" onClick={() => void window.api.pickAudio().then(handleResult)}>
-          Add audio…
-        </button>
+        <div className="head-actions">
+          <input
+            className="input search"
+            type="search"
+            placeholder="Search episodes"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search episodes"
+          />
+          <button className="button primary" onClick={() => void window.api.pickAudio().then(handleResult)}>
+            Add audio…
+          </button>
+        </div>
       </div>
 
       {missingTranscriptionKey && (
@@ -85,19 +96,37 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
 
       {jobs && jobs.length > 0 && (
         <ul className="job-list">
-          {[...jobs].reverse().map((job) => (
-            <JobRow key={job.id} job={job} onOpen={() => props.onOpen(job.id)} />
-          ))}
+          {[...jobs]
+            .reverse()
+            .filter((job) => matches(job, query))
+            .map((job) => (
+              <JobRow key={job.id} job={job} onOpen={() => props.onOpen(job.id)} />
+            ))}
         </ul>
+      )}
+      {jobs && query.trim() && !jobs.some((job) => matches(job, query)) && (
+        <p className="muted">No episodes match “{query.trim()}”.</p>
       )}
     </div>
   );
+}
+
+/** Every word of the query appears in the file name, episode number, title, guest or status. */
+function matches(job: Job, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const haystack = [job.fileName, job.episodeNumber && `episode ${job.episodeNumber}`, job.title, job.guest, STATUS_LABEL[job.status]]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return words.every((w) => haystack.includes(w));
 }
 
 function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   const { id } = job;
   const meta = hasTranscript(job)
       ? [
+          job.title && job.fileName,
           job.durationSec !== undefined && formatTimestamp(job.durationSec),
           job.speakerCount !== undefined && `${job.speakerCount} speaker${job.speakerCount === 1 ? "" : "s"}`,
           job.wordCount !== undefined && `${job.wordCount.toLocaleString()} words`,
@@ -111,7 +140,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
       <div className="job-main">
         <div className="job-title">
           <span className="job-name" title={job.filePath}>
-            {job.fileName}
+            {job.title ? `${job.episodeNumber ? `Episode ${job.episodeNumber}: ` : ""}${job.title}` : job.fileName}
           </span>
           <span className={`pill ${job.status}`}>{STATUS_LABEL[job.status]}</span>
         </div>

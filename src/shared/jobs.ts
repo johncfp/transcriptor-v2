@@ -39,6 +39,10 @@ export interface Job {
   wordCount?: number;
   speakerCount?: number;
   finishedAt?: string;
+  /** From the show notes, for the episode list and search. */
+  episodeNumber?: string;
+  title?: string;
+  guest?: string | null;
   /** The last export of this episode's documents. */
   exported?: { at: string; folder: string; files: string[] };
   /** Why the last export failed (the notes themselves are fine). */

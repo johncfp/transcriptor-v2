@@ -10,6 +10,7 @@ import { cleanTranscript } from "../shared/cleanup";
 import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
+import { clampThresholds } from "../shared/confidence";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
 import { providerById } from "../shared/providers";
@@ -104,7 +105,11 @@ function start(): void {
         fileName: data.job.fileName,
         show: s.show,
         sections: templateSections(s.template, s.customSections),
-        transcriptTimestamps: s.output.transcriptTimestamps,
+        transcript: {
+          timestamps: s.output.transcriptTimestamps,
+          format: s.output.speakerFormat,
+          confidence: s.output.colorConfidence ? clampThresholds(s.confidence) : null,
+        },
       });
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen);

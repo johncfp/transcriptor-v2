@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { strFromU8, unzipSync } from "fflate";
 import { buildTranscriptDoc, episodeLabel, safeFileName } from "../src/shared/exportDocs";
-import { EMPTY_DETAILS, type Block } from "../src/shared/showNotes";
+import { DEFAULT_CONFIDENCE_THRESHOLDS } from "../src/shared/confidence";
+import type { SpeakerFormat } from "../src/shared/settings";
+import { EMPTY_DETAILS, toPlainText, type Block } from "../src/shared/showNotes";
 import { buildDocx } from "../src/main/docx";
 import { writeExport } from "../src/main/exporter";
 
@@ -23,18 +25,50 @@ test("episode label: number and title, else the audio file's name", () => {
   assert.equal(episodeLabel(EMPTY_DETAILS, null, "BrianxDelaney_Export.edited.m4a"), "BrianxDelaney_Export.edited");
 });
 
-test("transcript document: one paragraph per turn, timestamps optional", () => {
+test("transcript document: Transcriptor 1's speaker formats, timestamps optional", () => {
   const turns = [
-    { speaker: "Nigel T.", start: 0, words: [{ index: 0, text: "Welcome.", start: 0, end: 1 }] },
     { speaker: "Pete M.", start: 75, words: [{ index: 1, text: "Thanks.", start: 75, end: 76 }] },
   ];
-  const withTimes = buildTranscriptDoc(turns, { title: "Episode 386", timestamps: true });
-  assert.deepEqual(withTimes[2], {
-    type: "paragraph",
-    runs: [{ text: "Pete M.", bold: true }, { text: " [01:15]: " }, { text: "Thanks." }],
+  const text = (format: SpeakerFormat, timestamps = true) =>
+    toPlainText(buildTranscriptDoc(turns, { title: "T", timestamps, format, confidence: null }).slice(1));
+  assert.equal(text("stacked"), "Pete M.  01:15\n\nThanks.");
+  assert.equal(text("inline"), "[01:15] Pete M.: Thanks.");
+  assert.equal(text("dash"), "[01:15] Pete M. — Thanks.");
+  assert.equal(text("caps"), "[01:15] PETE M.: Thanks.");
+  assert.equal(text("timeAfter"), "Pete M. [01:15]: Thanks.");
+  assert.equal(text("inline", false), "Pete M.: Thanks.");
+  assert.equal(text("stacked", false), "Pete M.\n\nThanks.");
+});
+
+test("transcript document: low and medium confidence words get Transcriptor 1's colors", () => {
+  const words = [
+    { index: 0, text: "I", start: 0, end: 0, confidence: 0.99 },
+    { index: 1, text: "met", start: 0, end: 0, confidence: 0.99 },
+    { index: 2, text: "Delaney", start: 0, end: 0, confidence: 0.3 },
+    { index: 3, text: "Howell", start: 0, end: 0, confidence: 0.8 },
+    { index: 4, text: "today.", start: 0, end: 0, confidence: 0.99 },
+  ];
+  const doc = buildTranscriptDoc([{ speaker: "Brian", start: 0, words }], {
+    title: "T",
+    timestamps: false,
+    format: "inline",
+    confidence: DEFAULT_CONFIDENCE_THRESHOLDS,
   });
-  const without = buildTranscriptDoc(turns, { title: "Episode 386", timestamps: false });
-  assert.equal((without[1] as { runs: { text: string }[] }).runs[1]!.text, ": ");
+  const runs = (doc[1] as { runs: { text: string; color?: string }[] }).runs.slice(2);
+  assert.deepEqual(runs, [
+    { text: "I met " },
+    { text: "Delaney ", color: "DC2626" },
+    { text: "Howell ", color: "EA580C" },
+    { text: "today." },
+  ]);
+  const plain = buildTranscriptDoc([{ speaker: "Brian", start: 0, words }], {
+    title: "T",
+    timestamps: false,
+    format: "inline",
+    confidence: null,
+  });
+  assert.equal((plain[1] as { runs: unknown[] }).runs.length, 3, "no coloring: one run of text");
+  assert.match(strFromU8(unzipSync(buildDocx(doc))["word/document.xml"]!), /<w:color w:val="DC2626"\/><\/w:rPr><w:t xml:space="preserve">Delaney /);
 });
 
 const SAMPLE: Block[] = [

@@ -256,6 +256,30 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(300);
       await shot("settings-notes.png");
 
+      // Full-screen size: Settings flows into columns; Episodes fills the width; search filters.
+      win.setSize(1900, 1000);
+      await pause(400);
+      await js(`window.scrollTo(0, 0); document.querySelector(".content").scrollTop = 0`);
+      await shot("settings-wide.png");
+      const settingsColumns = await js<number>(
+        `new Set([...document.querySelectorAll(".settings-grid > .section")].map((s) => Math.round(s.getBoundingClientRect().left))).size`,
+      );
+      await click(".nav-item", "Episodes");
+      await pause(400);
+      const typeSearch = async (text: string) => {
+        await js(`(() => { const i = document.querySelector("input.search"); i.focus(); i.select(); })()`);
+        win.webContents.insertText(text);
+        await pause(300);
+        return js<{ rows: number; empty: boolean }>(`({
+          rows: document.querySelectorAll(".job").length,
+          empty: document.body.innerText.includes("No episodes match"),
+        })`);
+      };
+      const searchHit = await typeSearch("showing pete");
+      await shot("episodes-wide.png");
+      const searchMiss = await typeSearch("zzz");
+      const search = searchHit.rows === 1 && !searchHit.empty && searchMiss.rows === 0 && searchMiss.empty;
+
       // Packaged builds only: can the public releases feed be read without a token?
       const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
 
@@ -276,6 +300,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           review &&
           playback &&
           notes &&
+          search &&
+          settingsColumns === 2 &&
           sections.length >= 5,
         heading: probe.heading,
         intake: probe.intake,
@@ -291,6 +317,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         exported,
         notesText,
         sections,
+        settingsColumns,
+        searchHit,
+        searchMiss,
         newerVersion,
       });
     } catch (err) {

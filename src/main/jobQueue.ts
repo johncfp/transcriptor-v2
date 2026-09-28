@@ -379,7 +379,13 @@ export class JobQueue {
       },
     });
     writeJsonAtomic(join(this.episodeDir(job.id), "writing.json"), result);
-    Object.assign(job, { status: "written", stage: undefined });
+    Object.assign(job, {
+      status: "written",
+      stage: undefined,
+      episodeNumber: details.episodeNumber.trim() || undefined,
+      title: details.title.trim() || result.notes.titleSuggestion || undefined,
+      guest: result.guest,
+    });
     if (this.deps.autoExport()) {
       try {
         this.exportNow(job.id);
