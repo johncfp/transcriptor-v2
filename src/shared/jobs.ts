@@ -1,5 +1,5 @@
-// An episode moving through the pipeline. M1 covers intake and transcription;
-// later milestones add cleanup, review, writing and export statuses.
+// An episode moving through the pipeline: intake, transcription, review,
+// then show notes. Export (M4) adds its own steps.
 
 export type JobStatus =
   /** Found by the folder watcher and waiting for the user to say go (M5). */
@@ -8,8 +8,12 @@ export type JobStatus =
   | "transcribing"
   /** Transcribed; waiting for someone to check speakers and words. */
   | "needs-review"
-  /** Reviewed (or review is off); ready for show notes (M3). */
+  /** Reviewed (or review is off); ready for show notes. */
   | "ready"
+  /** Show notes queued or being written. */
+  | "writing"
+  /** Show notes and reference file done. */
+  | "written"
   | "failed"
   | "cancelled";
 
@@ -28,6 +32,8 @@ export interface Job {
   /** 0–1 while uploading; null while waiting on the provider. */
   progress?: number | null;
   error?: string;
+  /** Which step a failed job failed at; retry picks up from there. */
+  failedStep?: "transcription" | "writing";
   /** Filled in once transcribed. */
   durationSec?: number;
   wordCount?: number;
@@ -36,10 +42,15 @@ export interface Job {
 }
 
 /** Statuses where the job is done moving and can be removed or retried. */
-export const SETTLED: ReadonlySet<JobStatus> = new Set(["needs-review", "ready", "failed", "cancelled"]);
+export const SETTLED: ReadonlySet<JobStatus> = new Set(["needs-review", "ready", "written", "failed", "cancelled"]);
 
 /** Has a transcript on disk. */
-export const hasTranscript = (status: JobStatus) => status === "needs-review" || status === "ready";
+export const hasTranscript = (job: Pick<Job, "status" | "failedStep">) =>
+  job.status === "needs-review" ||
+  job.status === "ready" ||
+  job.status === "writing" ||
+  job.status === "written" ||
+  (job.status === "failed" && job.failedStep === "writing");
 
 /** Audio formats accepted for v2 (audio only, by user decision). */
 export const AUDIO_EXTENSIONS = ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "webm"] as const;

@@ -24,8 +24,12 @@ export function notifyJobEvent(
       title: event.type === "transcribed" && event.needsReview ? "Transcript ready to review" : "Transcript ready",
       body: `${job.fileName} has been transcribed.`,
     },
+    written: {
+      title: "Show notes ready",
+      body: `Show notes for ${job.fileName} are ready to check.`,
+    },
     failed: {
-      title: "Transcription failed",
+      title: job.failedStep === "writing" ? "Show notes failed" : "Transcription failed",
       body: `${job.fileName}: ${job.error ?? "Something went wrong."}`,
     },
   }[event.type];

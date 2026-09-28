@@ -3,6 +3,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { app, type BrowserWindow } from "electron";
+import { startFakeAnthropic } from "./testing/fakeAnthropic";
 import type { Transcriber } from "./transcribe/types";
 
 /**
@@ -10,7 +11,8 @@ import type { Transcriber } from "./transcribe/types";
  * The app then uses that folder as its profile and runs a scripted pass:
  * key storage, adding an audio file, transcribing it against a local fake
  * ElevenLabs, reviewing it (suggested names, filler removal, removing a word
- * by hand, marking it reviewed), and the Settings screen. It saves
+ * by hand, marking it reviewed), writing show notes against a local fake
+ * Claude API, and the Settings screen. It saves
  * screenshots plus a report, then quits.
  */
 const dir = process.env.TRANSCRIPTOR_SMOKE_DIR;
@@ -84,7 +86,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
     writeFileSync(join(dir, "report.json"), JSON.stringify(report, null, 2));
     app.exit(report.ok ? 0 : 1);
   };
-  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 30_000);
+  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 45_000);
   // Renderer errors go in the report, so a failed run says why.
   const consoleErrors: string[] = [];
   win.webContents.on("console-message", (e) => {
@@ -127,7 +129,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       })()`);
       const keyRoundTrip = keys.hint === "1234" && keys.removed;
 
-      await js(`window.api.updateSettings({ show: { hosts: ["Nigel T."] } })`);
+      await js(`window.api.updateSettings({ show: { name: "This Is A Test Show", hosts: ["Nigel T."] } })`);
 
       // Pipeline: queue a file (plus one that must be rejected) and wait for the transcript.
       const wav = join(dir, "episode-386.wav");
@@ -187,10 +189,54 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(300);
       const finalStatus = await js<string>(`window.api.listJobs().then((j) => j[0]?.status ?? "")`);
 
+      // Show notes, written with the real Claude SDK against a local fake API.
+      const claude = await startFakeAnthropic({
+        draft: SMOKE_DRAFT,
+        research: {
+          searched: ["https://pete.example/"],
+          input: {
+            identified: true,
+            facts: [{ fact: "Pete hosts a podcast.", source_urls: ["https://pete.example/"] }],
+            links: [{ label: "Website", url: "https://pete.example/" }],
+          },
+        },
+      });
+      await js(`(async () => {
+        await window.api.setKey("anthropic", "sk-ant-smoke");
+        await window.api.updateSettings({ writing: { provider: "anthropic", model: "", baseUrl: ${JSON.stringify(claude.url)} } });
+      })()`);
+      await click("button", "Write show notes");
+      let notesStatus = "";
+      for (let i = 0; i < 60 && notesStatus !== "written" && notesStatus !== "failed"; i++) {
+        await pause(150);
+        notesStatus = await js<string>(`window.api.listJobs().then((j) => j[0]?.status ?? "")`);
+      }
+      await pause(500);
+      const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
+      const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
+      await shot("notes.png");
+      await click("button", "Reference file");
+      await pause(300);
+      const referenceText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
+      await shot("reference.png");
+      claude.close();
+      const notes =
+        notesStatus === "written" &&
+        notesText.includes("Episode 386: Showing Up with Pete") &&
+        notesText.includes("“Welcome to the show, Pete.”") &&
+        !notesText.includes("We are so glad you came") &&
+        notesText.includes("https://pete.example/") &&
+        checksText.includes("1 quote left out") &&
+        referenceText.includes("Thanks, glad to be here.") &&
+        referenceText.includes("Pete hosts a podcast.");
+
       await click(".nav-item", "Settings");
       await pause(500);
       const sections = await js<string[]>(`[...document.querySelectorAll("h2")].map((h) => h.textContent)`);
       await shot("settings.png");
+      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Show notes").scrollIntoView()`);
+      await pause(300);
+      await shot("settings-notes.png");
 
       // Packaged builds only: can the public releases feed be read without a token?
       const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
@@ -211,6 +257,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           pipeline &&
           review &&
           playback &&
+          notes &&
           sections.length >= 5,
         heading: probe.heading,
         intake: probe.intake,
@@ -222,6 +269,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         seeked,
         played,
         finalStatus,
+        notesStatus,
+        notesText,
         sections,
         newerVersion,
       });
@@ -233,3 +282,26 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
 }
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The fake Claude API's show-notes draft: one real quote, one invented one (must be dropped). */
+const SMOKE_DRAFT = {
+  title_suggestion: "Showing Up with Pete",
+  summary: "Nigel welcomes Pete to This Is A Test Show.",
+  about_guest: "Pete is glad to be here.",
+  timestamps: [
+    { time: "00:00", label: "Welcome" },
+    { time: "00:04", label: "Pete says thanks" },
+  ],
+  topics: [{ title: "Welcomes", points: ["Being glad to be here"] }],
+  quotes: [{ text: "Welcome to the show, Pete." }, { text: "We are so glad you came." }],
+  rapid_fire: [],
+  takeaways: ["Say thanks."],
+  resources: [],
+  reference: {
+    topics: ["Welcomes"],
+    keywords: ["welcome", "show"],
+    high_notes: ["Gratitude opens a conversation."],
+    quotes: [{ text: "Thanks, glad to be here." }],
+    frameworks: [],
+  },
+};

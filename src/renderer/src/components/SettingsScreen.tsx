@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Settings, SettingsPatch } from "../../../shared/settings";
 import { ApiKeysSection } from "./ApiKeysSection";
 import { Section } from "./Section";
+import { ShowNotesSettings } from "./ShowNotesSettings";
 
 export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -130,6 +131,8 @@ export function SettingsScreen() {
           onCommit={(v) => update({ show: { signOff: v } })}
         />
       </Section>
+
+      <ShowNotesSettings settings={settings} update={update} />
 
       <ApiKeysSection />
     </>

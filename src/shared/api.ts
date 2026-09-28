@@ -4,6 +4,7 @@
 
 import type { AddFilesResult, Job } from "./jobs";
 import type { Settings, SettingsPatch } from "./settings";
+import type { EpisodeDetails, SectionId, WritingResult } from "./showNotes";
 import type { EpisodeEdits } from "./cleanup";
 import type { Transcript } from "./transcript";
 
@@ -52,6 +53,14 @@ export interface Api {
   getEpisode(id: string): Promise<{ transcript: Transcript; edits: EpisodeEdits } | null>;
   saveEdits(id: string, edits: EpisodeEdits): Promise<void>;
   markReviewed(id: string): Promise<void>;
+  getDetails(id: string): Promise<EpisodeDetails | null>;
+  /** Save details and queue the show notes. */
+  writeNotes(id: string, details: EpisodeDetails): Promise<void>;
+  getWriting(id: string): Promise<WritingResult | null>;
+  /** Save a custom template's sections to a file others can import. */
+  exportTemplate(sections: SectionId[]): Promise<boolean>;
+  /** Pick a template file; resolves to its sections, or null if cancelled. */
+  importTemplate(): Promise<SectionId[] | null>;
   /** Subscribe to queue changes; returns an unsubscribe function. */
   onJobsChanged(fn: (jobs: Job[]) => void): () => void;
   /** A notification was clicked; the UI should show this job. */
@@ -84,6 +93,11 @@ export const IPC = {
   getEpisode: "jobs:episode",
   saveEdits: "jobs:save-edits",
   markReviewed: "jobs:mark-reviewed",
+  getDetails: "jobs:details",
+  writeNotes: "jobs:write-notes",
+  getWriting: "jobs:writing",
+  exportTemplate: "template:export",
+  importTemplate: "template:import",
   jobsChanged: "jobs:changed",
   showJob: "jobs:show",
   getUpdateStatus: "update:status",

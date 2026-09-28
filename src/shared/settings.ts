@@ -24,8 +24,18 @@ export interface Settings {
     formats: { docx: boolean; txt: boolean; googleDoc: boolean };
   };
   show: ShowProfile;
-  /** Show-notes template id; see src/shared/templates.ts (added in M3). */
+  writing: {
+    /** Provider id from src/shared/providers.ts (role "writing"). */
+    provider: string;
+    /** Blank = the provider's default model. */
+    model: string;
+    /** Blank = the provider's usual endpoint. Needed for Qwen outside the default region. */
+    baseUrl: string;
+  };
+  /** "full", "standard", "minimal" or "custom" (see src/shared/showNotes.ts). */
   template: string;
+  /** Section ids, in order, for the "custom" template. */
+  customSections: string[];
 }
 
 export interface ShowProfile {
@@ -58,7 +68,9 @@ export const DEFAULT_SETTINGS: Settings = {
     email: "",
     signOff: "",
   },
+  writing: { provider: "anthropic", model: "", baseUrl: "" },
   template: "full",
+  customSections: [],
 };
 
 /** Deep partial, used for patches sent from the renderer. */

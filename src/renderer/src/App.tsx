@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { UpdateStatus } from "../../shared/api";
 import { EpisodesScreen } from "./components/EpisodesScreen";
 import { SettingsScreen } from "./components/SettingsScreen";
-import { ReviewScreen } from "./components/ReviewScreen";
+import { EpisodeScreen } from "./components/EpisodeScreen";
 
 type Screen = { name: "episodes" } | { name: "transcript"; jobId: string } | { name: "settings" };
 
@@ -56,7 +56,7 @@ export function App() {
           />
         )}
         {screen.name === "transcript" && (
-          <ReviewScreen key={screen.jobId} jobId={screen.jobId} onBack={() => setScreen({ name: "episodes" })} />
+          <EpisodeScreen key={screen.jobId} jobId={screen.jobId} onBack={() => setScreen({ name: "episodes" })} />
         )}
         {screen.name === "settings" && <SettingsScreen />}
       </main>

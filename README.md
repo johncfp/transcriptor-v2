@@ -17,8 +17,16 @@ installed at the same time.
 3. **Review** (optional): confirm the suggested speaker names, fix misheard
    words (low-confidence ones are highlighted), and put back or remove words.
 4. **Write**: an AI provider (Claude, GPT, Kimi or Qwen) writes the show notes
-   and the reference file from the transcript. Guest details are checked with
-   web lookups, and quotes are checked word for word against the transcript.
+   and a per-episode reference file from the reviewed transcript, in the
+   template chosen in Settings (Full, Standard, Minimal, or a custom one that
+   can be exported and shared). Code then checks the result:
+   - quotes must appear word for word in one speaker's turn; the saved text,
+     speaker and time come from the transcript, not the AI
+   - timestamps must fall inside the episode and are snapped to turn starts
+   - guest facts and links are used only if the web search actually returned
+     the page cited (Claude and GPT report their sources; Kimi and Qwen don't,
+     so their guest findings are never used)
+   Anything dropped is listed on the episode's Show notes tab.
 5. **Export**: Word (.docx) and/or plain text, saved to a folder you choose.
 
 Each person uses their own API keys, stored encrypted with the computer's
@@ -34,8 +42,8 @@ Built in milestones:
 | M0 | Foundation: tray, start at login, settings, key storage, CI | Done |
 | M1 | Transcription pipeline and job queue (ElevenLabs) | Done |
 | M2 | Cleanup and review | Done |
-| M3 | AI writing: show-notes templates, reference file, AI false-start removal | Next |
-| M4 | Export (DOCX, TXT; Google Doc is set up later) | |
+| M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
+| M4 | Export (DOCX, TXT; Google Doc is set up later) | Next |
 | M5 | Drive folder watching (written but switched off) | |
 
 ## Development

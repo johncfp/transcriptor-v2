@@ -16,6 +16,8 @@ export interface ProviderInfo {
   sends: string;
   /** Set when the provider is listed but not usable yet, with the reason. */
   unavailable?: string;
+  /** Writing providers: the model used when Settings leaves it blank. */
+  defaultModel?: string;
 }
 
 export const PROVIDERS: ProviderInfo[] = [
@@ -44,6 +46,7 @@ export const PROVIDERS: ProviderInfo[] = [
     role: "writing",
     label: "Claude",
     company: "Anthropic",
+    defaultModel: "claude-opus-5",
     keyUrl: "https://console.anthropic.com/settings/keys",
     sends: "the full transcript and your show details",
   },
@@ -52,6 +55,7 @@ export const PROVIDERS: ProviderInfo[] = [
     role: "writing",
     label: "GPT",
     company: "OpenAI",
+    defaultModel: "gpt-5.5",
     keyUrl: "https://platform.openai.com/api-keys",
     sends: "the full transcript and your show details",
   },
@@ -60,6 +64,7 @@ export const PROVIDERS: ProviderInfo[] = [
     role: "writing",
     label: "Kimi",
     company: "Moonshot AI",
+    defaultModel: "kimi-k3",
     keyUrl: "https://platform.moonshot.ai/console/api-keys",
     sends: "the full transcript and your show details",
   },
@@ -68,6 +73,7 @@ export const PROVIDERS: ProviderInfo[] = [
     role: "writing",
     label: "Qwen",
     company: "Alibaba Cloud (Model Studio)",
+    defaultModel: "qwen-plus",
     keyUrl: "https://modelstudio.console.alibabacloud.com/",
     sends: "the full transcript and your show details",
   },

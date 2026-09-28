@@ -48,6 +48,8 @@ function setup(overrides: Partial<JobQueueDeps> = {}) {
     getKey: () => "key",
     needsApproval: () => true,
     reviewOptions: () => ({ reviewStep: true, cleanup: { repetitions: false }, hosts: [] }),
+    write: () => Promise.reject(new Error("no writer in this test")),
+    canWrite: () => false,
     onEvent: (e) => events.push(e.type),
     ...overrides,
   };
@@ -212,5 +214,106 @@ test("jobs saved by alpha.1 as 'transcribed' load as needing review", () => {
     JSON.stringify([{ id, filePath: "x.mp3", fileName: "x.mp3", status: "transcribed" }]),
   );
   const { queue } = setup({ dataDir });
+  assert.equal(queue.list()[0]!.status, "needs-review");
+});
+
+// --- Show notes -------------------------------------------------------------
+
+const WRITTEN = {
+  version: 1 as const,
+  provider: "fake",
+  model: "fake",
+  generatedAt: "",
+  details: { episodeNumber: "", title: "", sponsors: "", nextWeek: "" },
+  host: [],
+  guest: null,
+  runtimeSec: 60,
+  notes: { titleSuggestion: "T", summary: "S", aboutGuest: "", timestamps: [], topics: [], quotes: [], rapidFire: [], takeaways: [], resources: [] },
+  reference: { topics: [], keywords: [], highNotes: [], quotes: [], frameworks: [] },
+  research: null,
+  checks: { quotesDropped: [], timestampsDropped: 0, linksDropped: 0 },
+};
+
+async function transcribed(overrides: Partial<JobQueueDeps> = {}) {
+  const s = setup(overrides);
+  s.queue.add([s.file("Episode 386.mp3")]);
+  await tick();
+  s.calls[0]!.resolve(TRANSCRIPT);
+  await tick();
+  return { ...s, id: s.queue.list()[0]!.id };
+}
+
+test("writing: details are saved, notes written, and the episode number is guessed", async () => {
+  const seen: string[] = [];
+  const { queue, id, events } = await transcribed({
+    write: async (req) => {
+      seen.push(req.details.sponsors);
+      req.onStage("Writing show notes");
+      return WRITTEN;
+    },
+  });
+  assert.equal(queue.details(id)!.episodeNumber, "386");
+  queue.markReviewed(id);
+  queue.write(id, { episodeNumber: "386", title: "", sponsors: "CalmDesk", nextWeek: "" });
+  await tick();
+  await tick();
+  assert.equal(queue.list()[0]!.status, "written");
+  assert.deepEqual(seen, ["CalmDesk"]);
+  assert.equal(queue.details(id)!.sponsors, "CalmDesk");
+  assert.equal(queue.writing(id)!.notes.summary, "S");
+  assert.deepEqual(events, ["transcribed", "written"]);
+});
+
+test("writing: a failure keeps the transcript, and retry writes again rather than re-transcribing", async () => {
+  let fail = true;
+  const { queue, id, calls } = await transcribed({
+    write: async () => {
+      if (fail) throw new Error("Claude rejected the API key.");
+      return WRITTEN;
+    },
+  });
+  queue.markReviewed(id);
+  queue.write(id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
+  await tick();
+  const job = queue.list()[0]!;
+  assert.deepEqual([job.status, job.failedStep, job.error], ["failed", "writing", "Claude rejected the API key."]);
+  assert.ok(queue.transcript(id), "transcript still there");
+
+  fail = false;
+  queue.retry(id);
+  await tick();
+  await tick();
+  assert.equal(queue.list()[0]!.status, "written");
+  assert.equal(calls.length, 1, "no second transcription");
+});
+
+test("writing: cancelling returns the episode to where it was", async () => {
+  const { queue, id } = await transcribed({
+    write: (req) =>
+      new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new AbortedError("aborted")))),
+  });
+  queue.markReviewed(id);
+  queue.write(id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
+  await tick();
+  assert.equal(queue.list()[0]!.status, "writing");
+  queue.cancel(id);
+  await tick();
+  assert.equal(queue.list()[0]!.status, "ready");
+});
+
+test("writing: with review off and a writing key, notes are written automatically", async () => {
+  const { queue } = await transcribed({
+    reviewOptions: () => ({ reviewStep: false, cleanup: { repetitions: false }, hosts: [] }),
+    canWrite: () => true,
+    write: async () => WRITTEN,
+  });
+  await tick();
+  await tick();
+  assert.equal(queue.list()[0]!.status, "written");
+});
+
+test("writing: an episode still needing review can't be written yet", async () => {
+  const { queue, id } = await transcribed({ write: async () => WRITTEN });
+  queue.write(id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
   assert.equal(queue.list()[0]!.status, "needs-review");
 });

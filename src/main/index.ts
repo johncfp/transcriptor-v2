@@ -2,9 +2,15 @@ import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from "electron";
 import { IPC } from "../shared/api";
 import { AUDIO_EXTENSIONS, type AddFilesResult } from "../shared/jobs";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { EpisodeEdits } from "../shared/cleanup";
+import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
+import { readTemplateFile, templateFile } from "./templateFile";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
+import { providerById } from "../shared/providers";
+import { anthropicWriter } from "./writing/anthropic";
+import { writeEpisode, writerById } from "./writing";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
 import { notifyJobEvent } from "./notify";
@@ -50,12 +56,41 @@ function start(): void {
     }
   });
 
+  // The writing provider chosen in Settings, with its key and model.
+  const writerSetup = () => {
+    const w = settings.get().writing;
+    const writer = writerById(w.provider) ?? anthropicWriter;
+    return {
+      writer,
+      apiKey: keys.get(writer.id),
+      model: w.model.trim() || writer.defaultModel,
+      baseUrl: w.baseUrl.trim() || undefined,
+    };
+  };
+
   let sleepBlocker: number | null = null;
   queue = new JobQueue({
     dataDir: userData,
     transcriber: smokeTranscriber(transcriber),
     getKey: (id) => keys.get(id),
     needsApproval: () => settings.get().processing.intake === "approve",
+    write: (req) => {
+      const { writer, apiKey, model, baseUrl } = writerSetup();
+      if (!apiKey) {
+        throw new Error(`Add your ${providerById(writer.id)?.label ?? writer.label} API key in Settings, then retry.`);
+      }
+      const { show } = settings.get();
+      return writeEpisode({
+        transcript: req.transcript,
+        edits: req.edits,
+        details: req.details,
+        show: { name: show.name, hosts: show.hosts },
+        writer,
+        call: { apiKey, model, baseUrl, signal: req.signal },
+        onStage: req.onStage,
+      });
+    },
+    canWrite: () => writerSetup().apiKey !== null,
     reviewOptions: () => {
       const s = settings.get();
       return {
@@ -231,6 +266,23 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   });
   ipcMain.handle(IPC.saveEdits, (_e, id: string, edits: EpisodeEdits) => jobs.saveEdits(id, edits));
   ipcMain.handle(IPC.markReviewed, (_e, id: string) => jobs.markReviewed(id));
+  ipcMain.handle(IPC.getDetails, (_e, id: string) => jobs.details(id));
+  ipcMain.handle(IPC.writeNotes, (_e, id: string, details: EpisodeDetails) => jobs.write(id, sanitizeDetails(details)));
+  ipcMain.handle(IPC.getWriting, (_e, id: string) => jobs.writing(id));
+  ipcMain.handle(IPC.exportTemplate, async (_e, sections: unknown) => {
+    const result = await (mainWindow
+      ? dialog.showSaveDialog(mainWindow, { defaultPath: "show-notes-template.json", filters: [{ name: "Template", extensions: ["json"] }] })
+      : dialog.showSaveDialog({ defaultPath: "show-notes-template.json" }));
+    if (result.canceled || !result.filePath) return false;
+    writeFileSync(result.filePath, JSON.stringify(templateFile(sections), null, 2));
+    return true;
+  });
+  ipcMain.handle(IPC.importTemplate, async () => {
+    const result = await showOpenDialog({ properties: ["openFile"], filters: [{ name: "Template", extensions: ["json"] }] });
+    const path = result.filePaths[0];
+    if (result.canceled || !path) return null;
+    return readTemplateFile(readFileSync(path, "utf8"));
+  });
 
   ipcMain.handle(IPC.getUpdateStatus, () => updater.get());
   ipcMain.handle(IPC.installUpdate, () => updater.installNow());
@@ -240,6 +292,16 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
     if (/^https:\/\//i.test(url)) await shell.openExternal(url);
   });
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+}
+
+/** Details come over IPC; keep only known string fields. */
+function sanitizeDetails(value: unknown): EpisodeDetails {
+  const v = (value ?? {}) as Record<string, unknown>;
+  const out = { ...EMPTY_DETAILS };
+  for (const key of Object.keys(out) as (keyof EpisodeDetails)[]) {
+    if (typeof v[key] === "string") out[key] = (v[key] as string).slice(0, 5000);
+  }
+  return out;
 }
 
 function showOpenDialog(opts: Electron.OpenDialogOptions) {

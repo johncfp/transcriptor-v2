@@ -11,7 +11,6 @@ import {
 } from "../../../shared/cleanup";
 import { audioUrl } from "../../../shared/jobs";
 import { formatTimestamp, type Transcript } from "../../../shared/transcript";
-import { useJobs } from "../useJobs";
 import { Player } from "./Player";
 import { Section } from "./Section";
 
@@ -43,8 +42,8 @@ function lastStartedBefore(sorted: { index: number; start: number }[], time: num
   return found;
 }
 
-export function ReviewScreen({ jobId, onBack }: { jobId: string; onBack: () => void }) {
-  const job = useJobs()?.find((j) => j.id === jobId);
+/** The Transcript tab of an episode: speakers, cleanup, playback and the editable transcript. */
+export function TranscriptTab({ jobId }: { jobId: string }) {
   const [episode, setEpisode] = useState<Episode | null | undefined>(undefined);
   const [showRemoved, setShowRemoved] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -122,39 +121,11 @@ export function ReviewScreen({ jobId, onBack }: { jobId: string; onBack: () => v
   }, [current, follow, playing]);
 
   if (episode === undefined) return null;
-  if (episode === null) {
-    return (
-      <>
-        <BackButton onBack={onBack} />
-        <p className="muted">This transcript isn't available.</p>
-      </>
-    );
-  }
+  if (episode === null) return <p className="muted">This transcript isn't available.</p>;
 
   const { transcript, edits } = episode;
-  const needsReview = job?.status === "needs-review";
-
   return (
-    <div className="review">
-      <div className="page-head">
-        <div>
-          <BackButton onBack={onBack} />
-          <h1>{job?.fileName ?? "Transcript"}</h1>
-          <p className="muted head-meta">
-            {transcript.durationSec !== undefined && `${formatTimestamp(transcript.durationSec)} · `}
-            {transcript.words.length.toLocaleString()} words
-          </p>
-        </div>
-        {needsReview ? (
-          <button className="button primary" onClick={() => void window.api.markReviewed(jobId)}>
-            Mark as reviewed
-          </button>
-        ) : (
-          <span className="pill ready">Reviewed</span>
-        )}
-      </div>
-
-      <div className="review-body">
+    <div className="review-body">
         <aside className="review-side">
           <Section title="Speakers" intro="Used in the transcript and show notes. Give two speakers the same name to merge them.">
             {edits.speakerNames.map((_, i) => (
@@ -258,16 +229,7 @@ export function ReviewScreen({ jobId, onBack }: { jobId: string; onBack: () => v
             })}
           </div>
         </div>
-      </div>
     </div>
-  );
-}
-
-function BackButton({ onBack }: { onBack: () => void }) {
-  return (
-    <button className="button ghost back" onClick={onBack}>
-      ← Episodes
-    </button>
   );
 }
 

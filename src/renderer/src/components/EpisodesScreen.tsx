@@ -9,7 +9,9 @@ const STATUS_LABEL: Record<Job["status"], string> = {
   queued: "Queued",
   transcribing: "Transcribing",
   "needs-review": "Needs review",
-  ready: "Ready",
+  ready: "Ready for show notes",
+  writing: "Writing show notes",
+  written: "Show notes ready",
   failed: "Failed",
   cancelled: "Cancelled",
 };
@@ -94,7 +96,7 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
 
 function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   const { id } = job;
-  const meta = hasTranscript(job.status)
+  const meta = hasTranscript(job)
       ? [
           job.durationSec !== undefined && formatTimestamp(job.durationSec),
           job.speakerCount !== undefined && `${job.speakerCount} speaker${job.speakerCount === 1 ? "" : "s"}`,
@@ -113,8 +115,9 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
           </span>
           <span className={`pill ${job.status}`}>{STATUS_LABEL[job.status]}</span>
         </div>
-        <div className="hint">{job.status === "transcribing" && job.stage ? job.stage : meta}</div>
+        <div className="hint">{(job.status === "transcribing" || job.status === "writing") && job.stage ? job.stage : meta}</div>
         {job.status === "transcribing" && <Progress value={job.progress ?? null} />}
+        {job.status === "writing" && job.stage !== "Waiting" && <Progress value={null} />}
         {job.status === "failed" && job.error && <div className="hint error">{job.error}</div>}
       </div>
       <div className="job-actions">
@@ -128,7 +131,12 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
             Review
           </button>
         )}
-        {job.status === "ready" && (
+        {(job.status === "ready" || job.status === "written") && (
+          <button className={job.status === "written" ? "button primary" : "button"} onClick={onOpen}>
+            Open
+          </button>
+        )}
+        {job.status === "failed" && job.failedStep === "writing" && (
           <button className="button" onClick={onOpen}>
             Open
           </button>
@@ -138,16 +146,16 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
             Retry
           </button>
         )}
-        {(job.status === "transcribing" || job.status === "queued" || job.status === "awaiting-approval") && (
+        {(job.status === "transcribing" || job.status === "writing" || job.status === "queued" || job.status === "awaiting-approval") && (
           <button className="button ghost" onClick={() => void window.api.cancelJob(id)}>
             Cancel
           </button>
         )}
-        {(hasTranscript(job.status) || job.status === "failed" || job.status === "cancelled") && (
+        {job.status !== "writing" && (hasTranscript(job) || job.status === "failed" || job.status === "cancelled") && (
           <button
             className="button ghost"
             onClick={() => {
-              const extra = hasTranscript(job.status) ? " and its transcript" : "";
+              const extra = hasTranscript(job) ? " and its transcript and show notes" : "";
               if (confirm(`Remove ${job.fileName}${extra} from Transcriptor 2? The audio file itself is kept.`)) {
                 void window.api.removeJob(id);
               }
