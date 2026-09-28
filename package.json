@@ -1,0 +1,107 @@
+{
+  "name": "transcriptor-2",
+  "version": "2.0.0-alpha.0",
+  "description": "Transcriptor 2: podcast audio in, transcript and show notes out.",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": {
+    "name": "johncfp",
+    "email": "john@cashflowpodcasting.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johncfp/transcriptor-v2.git"
+  },
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:renderer": "vite build",
+    "build:main": "node scripts/build-main.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "icon": "node scripts/generate-icon.mjs",
+    "dist": "npm run build && electron-builder",
+    "release": "npm run build && electron-builder --publish always",
+    "cut:patch": "npm version patch -m \"Release v%s\" && git push --follow-tags",
+    "cut:minor": "npm version minor -m \"Release v%s\" && git push --follow-tags",
+    "cut:prerelease": "npm version prerelease --preid alpha -m \"Release v%s\" && git push --follow-tags"
+  },
+  "build": {
+    "appId": "io.transcriptor.app2",
+    "productName": "Transcriptor 2",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "johncfp",
+        "repo": "transcriptor-v2",
+        "releaseType": "draft"
+      }
+    ],
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!out/**/*.map"
+    ],
+    "asar": true,
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "Transcriptor2-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Transcriptor2-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "png2icons": "^2.0.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
