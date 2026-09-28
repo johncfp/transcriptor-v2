@@ -12,7 +12,8 @@ const common = {
   platform: "node",
   format: "cjs",
   target: "node22",
-  external: ["electron"],
+  // electron-updater ships as a normal dependency in the app's node_modules.
+  external: ["electron", "electron-updater"],
   sourcemap: true,
   logLevel: "info",
 };

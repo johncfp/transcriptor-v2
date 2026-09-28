@@ -10,6 +10,7 @@ import { runSmokeTest, SMOKE, smokeTranscriber } from "./smoke";
 import { SettingsStore } from "./settingsStore";
 import { transcriber } from "./transcribe";
 import { createTray } from "./tray";
+import { Updater } from "./updater";
 
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
@@ -67,7 +68,9 @@ function start(): void {
     },
   });
 
-  registerIpc(settings, keys, queue);
+  const updater = new Updater((s) => mainWindow?.webContents.send(IPC.updateStatusChanged, s));
+  registerIpc(settings, keys, queue, updater);
+  updater.start();
 
   createTray({
     iconPath: join(__dirname, "..", "icon.png"),
@@ -77,7 +80,7 @@ function start(): void {
 
   mainWindow = createWindow(settings);
   if (!launchedHidden()) mainWindow.once("ready-to-show", () => mainWindow?.show());
-  if (SMOKE) runSmokeTest(mainWindow);
+  if (SMOKE) runSmokeTest(mainWindow, { checkForUpdate: () => updater.check() });
 
   app.on("activate", showWindow); // macOS dock click
 }
@@ -172,7 +175,7 @@ function applyLoginItem(enabled: boolean): void {
   app.setLoginItemSettings({ openAtLogin: enabled, args: ["--hidden"] });
 }
 
-function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue): void {
+function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, updater: Updater): void {
   ipcMain.handle(IPC.getSettings, () => settings.get());
   ipcMain.handle(IPC.updateSettings, (_e, patch: SettingsPatch) => settings.update(patch));
   ipcMain.handle(IPC.defaultOutputFolder, () => defaultOutputFolder());
@@ -208,6 +211,9 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue): v
   ipcMain.handle(IPC.retryJob, (_e, id: string) => jobs.retry(id));
   ipcMain.handle(IPC.removeJob, (_e, id: string) => jobs.remove(id));
   ipcMain.handle(IPC.getTranscript, (_e, id: string) => jobs.transcript(id));
+
+  ipcMain.handle(IPC.getUpdateStatus, () => updater.get());
+  ipcMain.handle(IPC.installUpdate, () => updater.installNow());
 
   ipcMain.handle(IPC.openExternal, async (_e, url: string) => {
     // Only ever hand web links to the OS, never file: or custom schemes.

@@ -28,6 +28,9 @@ const api: Api = {
   getTranscript: (id) => ipcRenderer.invoke(IPC.getTranscript, id),
   onJobsChanged: (fn) => listen(IPC.jobsChanged, fn),
   onShowJob: (fn) => listen(IPC.showJob, fn),
+  getUpdateStatus: () => ipcRenderer.invoke(IPC.getUpdateStatus),
+  installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
+  onUpdateStatus: (fn) => listen(IPC.updateStatusChanged, fn),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   appVersion: () => ipcRenderer.invoke(IPC.appVersion),
 };

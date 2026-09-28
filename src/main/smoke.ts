@@ -75,7 +75,7 @@ function writeWav(path: string): void {
   writeFileSync(path, buf);
 }
 
-export function runSmokeTest(win: BrowserWindow): void {
+export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => Promise<string | null> }): void {
   if (!SMOKE) return;
   const { dir } = SMOKE;
   const finish = (report: Record<string, unknown>) => {
@@ -140,6 +140,9 @@ export function runSmokeTest(win: BrowserWindow): void {
       const sections = await js<string[]>(`[...document.querySelectorAll("h2")].map((h) => h.textContent)`);
       await shot("settings.png");
 
+      // Packaged builds only: can the public releases feed be read without a token?
+      const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
+
       clearTimeout(timeout);
       const pipeline =
         added.added === 1 && added.rejected[0] === "notes.txt" && status === "transcribed" && turns.length === 2;
@@ -158,6 +161,7 @@ export function runSmokeTest(win: BrowserWindow): void {
         status,
         turns,
         sections,
+        newerVersion,
       });
     } catch (err) {
       clearTimeout(timeout);

@@ -14,6 +14,15 @@ export interface KeyStatus {
   hint: string;
 }
 
+export type UpdateStatus =
+  | { state: "idle" }
+  /** Windows: downloading in the background. */
+  | { state: "downloading"; version: string }
+  /** Windows: downloaded; installs on quit, or now via installUpdate(). */
+  | { state: "ready"; version: string }
+  /** macOS: can't self-install while unsigned, so link to the download. */
+  | { state: "available"; version: string; url: string };
+
 export interface Api {
   getSettings(): Promise<Settings>;
   updateSettings(patch: SettingsPatch): Promise<Settings>;
@@ -44,6 +53,10 @@ export interface Api {
   /** A notification was clicked; the UI should show this job. */
   onShowJob(fn: (id: string) => void): () => void;
 
+  getUpdateStatus(): Promise<UpdateStatus>;
+  installUpdate(): Promise<void>;
+  onUpdateStatus(fn: (s: UpdateStatus) => void): () => void;
+
   openExternal(url: string): Promise<void>;
   appVersion(): Promise<string>;
 }
@@ -67,6 +80,9 @@ export const IPC = {
   getTranscript: "jobs:transcript",
   jobsChanged: "jobs:changed",
   showJob: "jobs:show",
+  getUpdateStatus: "update:status",
+  installUpdate: "update:install",
+  updateStatusChanged: "update:changed",
   openExternal: "shell:open-external",
   appVersion: "app:version",
 } as const;

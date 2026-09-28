@@ -522,3 +522,15 @@ a {
 .speaker {
   font-weight: 650;
 }
+
+.update {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 12.5px;
+}

@@ -39,7 +39,7 @@
       {
         "provider": "github",
         "owner": "johncfp",
-        "repo": "transcriptor-v2",
+        "repo": "transcriptor2-releases",
         "releaseType": "draft"
       }
     ],
@@ -103,5 +103,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
