@@ -85,11 +85,22 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
     app.exit(report.ok ? 0 : 1);
   };
   const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 30_000);
+  // Renderer errors go in the report, so a failed run says why.
+  const consoleErrors: string[] = [];
+  win.webContents.on("console-message", (e) => {
+    if (e.level === "error") consoleErrors.push(e.message);
+  });
   const js = <T>(code: string): Promise<T> => win.webContents.executeJavaScript(code);
   const shot = async (name: string) =>
     writeFileSync(join(dir, name), (await win.webContents.capturePage()).toPNG());
-  const click = (selector: string, text: string) =>
-    js(`[...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.textContent.includes(${JSON.stringify(text)})).click()`);
+  const click = async (selector: string, text: string) => {
+    const found = await js<boolean>(`(() => {
+      const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.textContent.includes(${JSON.stringify(text)}));
+      el?.click();
+      return Boolean(el);
+    })()`);
+    if (!found) throw new Error(`No ${selector} containing "${text}" to click`);
+  };
 
   win.webContents.once("did-finish-load", async () => {
     try {
@@ -216,7 +227,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       });
     } catch (err) {
       clearTimeout(timeout);
-      finish({ ok: false, error: String(err) });
+      finish({ ok: false, error: String(err), consoleErrors });
     }
   });
 }

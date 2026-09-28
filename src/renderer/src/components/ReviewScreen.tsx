@@ -373,7 +373,10 @@ function WordEditor(props: {
   const ref = useRef<HTMLElement>(null);
 
   // The card sits below the player, so bring it into view when a word is picked.
-  useEffect(() => ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }), []);
+  // Braces matter: scrollIntoView now returns a Promise, which React would treat as a cleanup.
+  useEffect(() => {
+    void ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
 
   const saveText = () => {
     const text = { ...edits.text };
