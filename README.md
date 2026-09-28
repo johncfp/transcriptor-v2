@@ -48,7 +48,21 @@ Built in milestones:
 | M2 | Cleanup and review | Done |
 | M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
-| M5 | Drive folder watching (written but switched off) | Next |
+| M5 | Drive folder watching (written but switched off) | Done (off) |
+
+## Google Drive folder watching (built, switched off)
+
+`src/main/watch/` can watch a Google Drive folder and queue new audio files
+as they arrive (they then wait for approval if Settings asks). It is not
+wired in yet. To turn it on:
+
+1. In the team's Google Cloud project, create an OAuth client of type
+   "Desktop app" and set the consent screen to **Internal**. The watcher
+   needs the restricted `drive.readonly` scope; Internal apps skip Google's
+   verification and the 7-day token expiry of unverified external apps.
+2. Fill in `GOOGLE_OAUTH` in `src/main/watch/googleAuth.ts`.
+3. Uncomment the Drive block (and its imports) in `src/main/index.ts`.
+4. Render `<DriveWatchSection>` in `SettingsScreen.tsx`.
 
 ## Development
 

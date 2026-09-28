@@ -71,6 +71,14 @@ export interface Api {
   /** A notification was clicked; the UI should show this job. */
   onShowJob(fn: (id: string) => void): () => void;
 
+  // Google Drive folder watching (M5): declared and exposed, but the main
+  // process handlers are switched off (see src/main/index.ts).
+  driveStatus(): Promise<{ configured: boolean; signedIn: boolean }>;
+  driveSignIn(): Promise<void>;
+  driveSignOut(): Promise<void>;
+  /** Save the folder to watch from a pasted Drive link or id; rejects if it isn't one. */
+  driveSetFolder(input: string): Promise<string>;
+
   getUpdateStatus(): Promise<UpdateStatus>;
   installUpdate(): Promise<void>;
   onUpdateStatus(fn: (s: UpdateStatus) => void): () => void;
@@ -107,6 +115,10 @@ export const IPC = {
   openFolder: "shell:open-folder",
   jobsChanged: "jobs:changed",
   showJob: "jobs:show",
+  driveStatus: "drive:status",
+  driveSignIn: "drive:sign-in",
+  driveSignOut: "drive:sign-out",
+  driveSetFolder: "drive:set-folder",
   getUpdateStatus: "update:status",
   installUpdate: "update:install",
   updateStatusChanged: "update:changed",

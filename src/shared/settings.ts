@@ -33,6 +33,11 @@ export interface Settings {
     /** Color low- and medium-confidence words in the exported Word transcript. */
     colorConfidence: boolean;
   };
+  /**
+   * Google Drive folder watching (M5). Built but switched off: nothing reads
+   * these until the wiring in src/main/index.ts is turned on.
+   */
+  watch: { enabled: boolean; folderId: string };
   /** Where words get a low- or medium-confidence color. */
   confidence: { lowMax: number; mediumMax: number };
   show: ShowProfile;
@@ -95,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
     colorConfidence: true,
   },
   confidence: { ...DEFAULT_CONFIDENCE_THRESHOLDS },
+  watch: { enabled: false, folderId: "" },
   show: {
     name: "",
     hosts: [],

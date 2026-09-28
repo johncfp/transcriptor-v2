@@ -23,6 +23,11 @@ import { runSmokeTest, SMOKE, smokeTranscriber } from "./smoke";
 import { SettingsStore } from "./settingsStore";
 import { transcriber } from "./transcribe";
 import { createTray } from "./tray";
+// Google Drive folder watching (M5), switched off; see the block in start().
+// import { DriveClient, parseFolderId } from "./watch/driveClient";
+// import { DriveWatcher } from "./watch/driveWatcher";
+// import { GOOGLE_OAUTH, refreshTokens, signIn } from "./watch/googleAuth";
+// import { GoogleTokenStore } from "./watch/tokenStore";
 import { Updater } from "./updater";
 
 // The smoke test must not touch the real profile, so it swaps userData
@@ -142,6 +147,60 @@ function start(): void {
   const updater = new Updater((s) => mainWindow?.webContents.send(IPC.updateStatusChanged, s));
   registerIpc(settings, keys, queue, updater);
   const jobs = queue;
+
+  // --- Google Drive folder watching (M5) ------------------------------------
+  // Built and tested, but switched off until the intake workflow is settled.
+  // To turn it on:
+  //   1. Create a "Desktop app" OAuth client in the team's Google Cloud
+  //      project with an Internal consent screen, and fill in GOOGLE_OAUTH in
+  //      src/main/watch/googleAuth.ts.
+  //   2. Uncomment this block and its imports at the top of the file.
+  //   3. Render <DriveWatchSection> in src/renderer/src/components/SettingsScreen.tsx.
+  // New files go through queue.add(..., "watch"), so "Ask me before
+  // processing" and the approval notification already apply to them.
+  //
+  // const googleTokens = new GoogleTokenStore(userData);
+  // const drive = new DriveClient({
+  //   getTokens: () => googleTokens.get(),
+  //   saveTokens: (t) => googleTokens.set(t),
+  //   refresh: (t) => refreshTokens(t),
+  // });
+  // let watcher: DriveWatcher | null = null;
+  // const applyWatch = () => {
+  //   watcher?.stop();
+  //   watcher = null;
+  //   const { enabled, folderId } = settings.get().watch;
+  //   if (!enabled || !folderId || !googleTokens.get()) return;
+  //   watcher = new DriveWatcher({
+  //     drive,
+  //     folderId,
+  //     inboxDir: join(userData, "inbox"),
+  //     statePath: join(userData, "watch-state.json"),
+  //     onFile: (path) => jobs.add([path], "watch"),
+  //     onError: (message) => console.error("[drive]", message),
+  //   });
+  //   watcher.start();
+  // };
+  // applyWatch();
+  // settings.onChange((next, prev) => {
+  //   if (JSON.stringify(next.watch) !== JSON.stringify(prev.watch)) applyWatch();
+  // });
+  // ipcMain.handle(IPC.driveStatus, () => ({ configured: GOOGLE_OAUTH.clientId !== "", signedIn: googleTokens.get() !== null }));
+  // ipcMain.handle(IPC.driveSignIn, async () => {
+  //   googleTokens.set(await signIn((url) => shell.openExternal(url)));
+  //   applyWatch();
+  // });
+  // ipcMain.handle(IPC.driveSignOut, () => {
+  //   googleTokens.clear();
+  //   settings.update({ watch: { enabled: false } });
+  // });
+  // ipcMain.handle(IPC.driveSetFolder, (_e, input: string) => {
+  //   const folderId = parseFolderId(input);
+  //   if (!folderId) throw new Error("That doesn't look like a Google Drive folder link.");
+  //   settings.update({ watch: { folderId } });
+  //   return folderId;
+  // });
+  // ---------------------------------------------------------------------------
   handleMedia((id) => jobs.audioPath(id));
   updater.start();
 
