@@ -102,6 +102,7 @@ function KeyRow(props: {
             Get a key
           </a>
         </span>
+        {provider.unavailable && <span className="hint warn">{provider.unavailable}</span>}
         {error && <span className="hint error">{error}</span>}
       </div>
       <div className="row-control">

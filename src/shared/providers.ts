@@ -14,6 +14,8 @@ export interface ProviderInfo {
   keyUrl: string;
   /** What leaves the computer when this provider is used. */
   sends: string;
+  /** Set when the provider is listed but not usable yet, with the reason. */
+  unavailable?: string;
 }
 
 export const PROVIDERS: ProviderInfo[] = [
@@ -32,6 +34,8 @@ export const PROVIDERS: ProviderInfo[] = [
     company: "OpenAI",
     keyUrl: "https://platform.openai.com/api-keys",
     sends: "the episode audio file",
+    unavailable:
+      "Not used yet: OpenAI limits uploads to 25 MB (about 25 minutes of MP3) and can't return speakers with word timings.",
   },
   {
     id: "anthropic",

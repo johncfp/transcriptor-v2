@@ -1,19 +1,28 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from "electron";
 import { IPC } from "../shared/api";
+import { AUDIO_EXTENSIONS, type AddFilesResult } from "../shared/jobs";
 import type { SettingsPatch } from "../shared/settings";
+import { JobQueue } from "./jobQueue";
 import { KeyStore } from "./keyStore";
-import { runSmokeTest, SMOKE } from "./smoke";
+import { notifyJobEvent } from "./notify";
+import { runSmokeTest, SMOKE, smokeTranscriber } from "./smoke";
 import { SettingsStore } from "./settingsStore";
+import { transcriber } from "./transcribe";
 import { createTray } from "./tray";
 
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
 if (SMOKE) app.setPath("userData", SMOKE.userData);
 
+// Windows only shows notifications for apps with an AppUserModelID, and it
+// has to match the installer's appId.
+if (process.platform === "win32") app.setAppUserModelId("io.transcriptor.app2");
+
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 
 let mainWindow: BrowserWindow | null = null;
+let queue: JobQueue | null = null;
 /** Set once the user really means to quit (tray Quit, Cmd+Q, installer). */
 let quitting = false;
 
@@ -36,15 +45,34 @@ function start(): void {
     }
   });
 
-  registerIpc(settings, keys);
+  let sleepBlocker: number | null = null;
+  queue = new JobQueue({
+    dataDir: userData,
+    transcriber: smokeTranscriber(transcriber),
+    getKey: (id) => keys.get(id),
+    needsApproval: () => settings.get().processing.intake === "approve",
+    onChange: (jobs) => mainWindow?.webContents.send(IPC.jobsChanged, jobs),
+    onEvent: (event) =>
+      notifyJobEvent(event, {
+        windowFocused: mainWindow?.isFocused() ?? false,
+        onClick: showJob,
+      }),
+    // Keep the computer from sleeping mid-upload. The screen can still turn off.
+    onBusyChange: (busy) => {
+      if (busy && sleepBlocker === null) sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
+      if (!busy && sleepBlocker !== null) {
+        powerSaveBlocker.stop(sleepBlocker);
+        sleepBlocker = null;
+      }
+    },
+  });
+
+  registerIpc(settings, keys, queue);
 
   createTray({
     iconPath: join(__dirname, "..", "icon.png"),
     onOpen: showWindow,
-    onQuit: () => {
-      quitting = true;
-      app.quit();
-    },
+    onQuit: () => app.quit(),
   });
 
   mainWindow = createWindow(settings);
@@ -73,6 +101,7 @@ function createWindow(settings: SettingsStore): BrowserWindow {
   });
 
   // The renderer is a local app; nothing inside it should open other pages.
+  // This also stops a dropped file that misses the drop zone from replacing the UI.
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {
     if (!devServerUrl || !url.startsWith(devServerUrl)) event.preventDefault();
@@ -100,7 +129,27 @@ function showWindow(): void {
   mainWindow.focus();
 }
 
-app.on("before-quit", () => {
+function showJob(id: string): void {
+  showWindow();
+  mainWindow?.webContents.send(IPC.showJob, id);
+}
+
+app.on("before-quit", (event) => {
+  if (quitting) return;
+  if (queue?.isBusy() && !SMOKE) {
+    const choice = dialog.showMessageBoxSync({
+      type: "warning",
+      buttons: ["Keep running", "Quit anyway"],
+      defaultId: 0,
+      cancelId: 0,
+      message: "An episode is being transcribed.",
+      detail: "If you quit now, it will start over from the beginning next time Transcriptor 2 opens.",
+    });
+    if (choice === 0) {
+      event.preventDefault();
+      return;
+    }
+  }
   quitting = true;
 });
 
@@ -123,17 +172,12 @@ function applyLoginItem(enabled: boolean): void {
   app.setLoginItemSettings({ openAtLogin: enabled, args: ["--hidden"] });
 }
 
-function registerIpc(settings: SettingsStore, keys: KeyStore): void {
+function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue): void {
   ipcMain.handle(IPC.getSettings, () => settings.get());
   ipcMain.handle(IPC.updateSettings, (_e, patch: SettingsPatch) => settings.update(patch));
   ipcMain.handle(IPC.defaultOutputFolder, () => defaultOutputFolder());
   ipcMain.handle(IPC.pickFolder, async () => {
-    const opts: Electron.OpenDialogOptions = {
-      properties: ["openDirectory", "createDirectory"],
-    };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, opts)
-      : await dialog.showOpenDialog(opts);
+    const result = await showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
 
@@ -148,11 +192,32 @@ function registerIpc(settings: SettingsStore, keys: KeyStore): void {
   });
   ipcMain.handle(IPC.keychainAvailable, () => keys.available());
 
+  ipcMain.handle(IPC.listJobs, () => jobs.list());
+  ipcMain.handle(IPC.pickAudio, async (): Promise<AddFilesResult> => {
+    const result = await showOpenDialog({
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Audio", extensions: [...AUDIO_EXTENSIONS] }],
+    });
+    return result.canceled ? { added: [], rejected: [] } : jobs.add(result.filePaths);
+  });
+  ipcMain.handle(IPC.addFiles, (_e, paths: unknown) =>
+    jobs.add(Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : []),
+  );
+  ipcMain.handle(IPC.approveJob, (_e, id: string) => jobs.approve(id));
+  ipcMain.handle(IPC.cancelJob, (_e, id: string) => jobs.cancel(id));
+  ipcMain.handle(IPC.retryJob, (_e, id: string) => jobs.retry(id));
+  ipcMain.handle(IPC.removeJob, (_e, id: string) => jobs.remove(id));
+  ipcMain.handle(IPC.getTranscript, (_e, id: string) => jobs.transcript(id));
+
   ipcMain.handle(IPC.openExternal, async (_e, url: string) => {
     // Only ever hand web links to the OS, never file: or custom schemes.
     if (/^https:\/\//i.test(url)) await shell.openExternal(url);
   });
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+}
+
+function showOpenDialog(opts: Electron.OpenDialogOptions) {
+  return mainWindow ? dialog.showOpenDialog(mainWindow, opts) : dialog.showOpenDialog(opts);
 }
 
 export function defaultOutputFolder(): string {

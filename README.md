@@ -9,8 +9,8 @@ installed at the same time.
 
 ## How it works
 
-1. **Transcribe**: the audio is sent to a cloud transcription service
-   (ElevenLabs Scribe or OpenAI).
+1. **Transcribe**: the audio is sent to ElevenLabs Scribe. (OpenAI's
+   transcription API caps uploads at 25 MB, so it isn't used for full episodes.)
 2. **Clean up**: filler words are always removed. False starts and repetitions
    can also be removed (Settings). Cleanup only ever removes words; it never
    changes them.
@@ -31,8 +31,8 @@ Built in milestones:
 | | Milestone | State |
 |---|---|---|
 | M0 | Foundation: tray, start at login, settings, key storage, CI | Done |
-| M1 | Transcription pipeline and job queue | Next |
-| M2 | Cleanup and review | |
+| M1 | Transcription pipeline and job queue (ElevenLabs) | Done |
+| M2 | Cleanup and review | Next |
 | M3 | AI writing: show-notes templates, reference file | |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | |
 | M5 | Drive folder watching (written but switched off) | |
@@ -44,7 +44,7 @@ npm install
 npm run dev        # Vite + Electron with hot reload for the UI
 npm run typecheck
 npm test
-npm run smoke      # build, launch against a throwaway profile, screenshot
+npm run smoke      # build, then run the real app end to end against a fake API
 npm run dist       # installer for this platform in dist/
 ```
 
