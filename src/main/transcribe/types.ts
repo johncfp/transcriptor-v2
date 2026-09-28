@@ -3,6 +3,12 @@ import type { Transcript } from "../../shared/transcript";
 export interface TranscribeRequest {
   filePath: string;
   apiKey: string;
+  /**
+   * Ask the provider to leave out false starts (and filler words) itself.
+   * For ElevenLabs this is `no_verbatim`. It can't be reviewed or undone,
+   * because the words never reach us.
+   */
+  removeFalseStarts?: boolean;
   /** Overrides the provider's API origin. Used by tests. */
   baseUrl?: string;
   /** A step label and 0–1 progress, or null when there's no way to measure it. */

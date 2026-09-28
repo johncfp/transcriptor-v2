@@ -213,6 +213,7 @@ export class JobQueue {
         filePath: job.filePath,
         apiKey: key,
         signal: abort.signal,
+        removeFalseStarts: this.deps.reviewOptions().cleanup.repetitions,
         onProgress: (stage, progress) => {
           job.stage = stage;
           job.progress = progress;

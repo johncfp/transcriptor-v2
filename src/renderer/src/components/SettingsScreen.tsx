@@ -56,7 +56,7 @@ export function SettingsScreen() {
         />
         <Toggle
           label="Remove repetitions and false starts"
-          hint={`Filler words ("um", "uh") are always removed. This also cuts repeated words ("the the") and cut-off words ("th-"). Restarts like "I was, we went" will be handled by the AI step once show notes are added. Words are only ever removed, never changed.`}
+          hint={`Filler words ("um", "uh") are always removed. This also has ElevenLabs drop false starts ("I was, we went") while transcribing, which can't be reviewed or undone, and hides repeated words ("the the") and cut-off words ("th-"), which you can check in review. Applies to episodes transcribed after you turn it on.`}
           checked={processing.removeFalseStarts}
           onChange={(v) => update({ processing: { removeFalseStarts: v } })}
         />

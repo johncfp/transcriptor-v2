@@ -29,6 +29,7 @@ export async function transcribeElevenLabs(req: TranscribeRequest): Promise<Tran
         ["diarize", "true"],
         ["timestamps_granularity", "word"],
         ["tag_audio_events", "false"],
+        ...(req.removeFalseStarts ? ([["no_verbatim", "true"]] as [string, string][]) : []),
       ],
       file: { field: "file", path: req.filePath },
       // Hold below 100% until the response arrives so the bar never claims done early.
@@ -53,6 +54,7 @@ export async function transcribeElevenLabs(req: TranscribeRequest): Promise<Tran
   }
 
   const transcript = parseElevenLabs(data);
+  if (req.removeFalseStarts) transcript.falseStartsRemoved = true;
   if (transcript.words.length === 0) {
     throw new Error(`${label} didn't find any speech in this file.`);
   }

@@ -107,6 +107,11 @@ export function ReviewScreen({ jobId, onBack }: { jobId: string; onBack: () => v
             {counts.manual > 0 && `, ${counts.manual} by hand`}.
           </p>
         )}
+        {transcript.falseStartsRemoved && (
+          <p className="hint">
+            False starts were removed by ElevenLabs during transcription, so they can't be shown or put back here.
+          </p>
+        )}
         <label className="row toggle-row">
           <div className="row-label">
             <span>Remove repetitions and cut-off words</span>

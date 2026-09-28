@@ -22,6 +22,8 @@ export interface Transcript {
   /** Length of the audio as reported by the provider. */
   durationSec?: number;
   speakerCount: number;
+  /** The provider left out false starts before we got the words (ElevenLabs `no_verbatim`). */
+  falseStartsRemoved?: boolean;
   words: Word[];
   createdAt: string;
 }

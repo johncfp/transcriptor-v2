@@ -172,3 +172,26 @@ test("cancelling aborts the upload", async () => {
     server.close();
   }
 });
+
+test("false starts: no_verbatim is sent only when asked for, and recorded", async () => {
+  const bodies: string[] = [];
+  const server = await fakeServer((body) => {
+    bodies.push(body.toString("latin1"));
+    return [200, { words: [{ text: "Hi", type: "word", start: 0, end: 1, speaker_id: "speaker_0" }] }];
+  });
+  try {
+    const plain = await transcribeElevenLabs({ filePath: audioFile(100), apiKey: "k", baseUrl: server.url });
+    const clean = await transcribeElevenLabs({
+      filePath: audioFile(100),
+      apiKey: "k",
+      baseUrl: server.url,
+      removeFalseStarts: true,
+    });
+    assert.doesNotMatch(bodies[0]!, /no_verbatim/);
+    assert.match(bodies[1]!, /name="no_verbatim"\r\n\r\ntrue\r\n/);
+    assert.equal(plain.falseStartsRemoved, undefined);
+    assert.equal(clean.falseStartsRemoved, true);
+  } finally {
+    server.close();
+  }
+});
