@@ -27,16 +27,18 @@ export const PROVIDERS: ProviderInfo[] = [
     keyUrl: "https://elevenlabs.io/app/settings/api-keys",
     sends: "the episode audio file",
   },
-  {
-    id: "openai-transcribe",
-    role: "transcription",
-    label: "OpenAI transcription",
-    company: "OpenAI",
-    keyUrl: "https://platform.openai.com/api-keys",
-    sends: "the episode audio file",
-    unavailable:
-      "Not used yet: OpenAI limits uploads to 25 MB (about 25 minutes of MP3) and can't return speakers with word timings.",
-  },
+  // OpenAI transcription is switched off for now: its API caps uploads at
+  // 25 MB (about 25 minutes of MP3) and can't return speakers together with
+  // word timings. Bringing it back would mean splitting or compressing the
+  // audio first (bundling ffmpeg).
+  // {
+  //   id: "openai-transcribe",
+  //   role: "transcription",
+  //   label: "OpenAI transcription",
+  //   company: "OpenAI",
+  //   keyUrl: "https://platform.openai.com/api-keys",
+  //   sends: "the episode audio file",
+  // },
   {
     id: "anthropic",
     role: "writing",
