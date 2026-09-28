@@ -1,6 +1,6 @@
 import { useEffect, useState, type DragEvent } from "react";
 import type { KeyStatus } from "../../../shared/api";
-import { AUDIO_EXTENSIONS, formatBytes, type AddFilesResult, type Job } from "../../../shared/jobs";
+import { AUDIO_EXTENSIONS, formatBytes, hasTranscript, type AddFilesResult, type Job } from "../../../shared/jobs";
 import { formatTimestamp } from "../../../shared/transcript";
 import { useJobs } from "../useJobs";
 
@@ -8,7 +8,8 @@ const STATUS_LABEL: Record<Job["status"], string> = {
   "awaiting-approval": "Waiting for approval",
   queued: "Queued",
   transcribing: "Transcribing",
-  transcribed: "Transcribed",
+  "needs-review": "Needs review",
+  ready: "Ready",
   failed: "Failed",
   cancelled: "Cancelled",
 };
@@ -93,8 +94,7 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
 
 function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   const { id } = job;
-  const meta =
-    job.status === "transcribed"
+  const meta = hasTranscript(job.status)
       ? [
           job.durationSec !== undefined && formatTimestamp(job.durationSec),
           job.speakerCount !== undefined && `${job.speakerCount} speaker${job.speakerCount === 1 ? "" : "s"}`,
@@ -123,9 +123,14 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
             Start
           </button>
         )}
-        {job.status === "transcribed" && (
+        {job.status === "needs-review" && (
           <button className="button primary" onClick={onOpen}>
-            View transcript
+            Review
+          </button>
+        )}
+        {job.status === "ready" && (
+          <button className="button" onClick={onOpen}>
+            Open
           </button>
         )}
         {(job.status === "failed" || job.status === "cancelled") && (
@@ -138,11 +143,11 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
             Cancel
           </button>
         )}
-        {(job.status === "transcribed" || job.status === "failed" || job.status === "cancelled") && (
+        {(hasTranscript(job.status) || job.status === "failed" || job.status === "cancelled") && (
           <button
             className="button ghost"
             onClick={() => {
-              const extra = job.status === "transcribed" ? " and its transcript" : "";
+              const extra = hasTranscript(job.status) ? " and its transcript" : "";
               if (confirm(`Remove ${job.fileName}${extra} from Transcriptor 2? The audio file itself is kept.`)) {
                 void window.api.removeJob(id);
               }

@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { formatBytes, isAudioFile, SETTLED, type AddFilesResult, type Job, type JobSource } from "../shared/jobs";
+import { defaultEdits, type CleanupOptions, type EpisodeEdits } from "../shared/cleanup";
 import { providerById } from "../shared/providers";
+import { suggestSpeakers } from "../shared/speakerNames";
 import type { Transcript } from "../shared/transcript";
 import { readJson, writeJsonAtomic } from "./jsonFile";
 import { AbortedError } from "./transcribe/multipart";
@@ -15,6 +17,8 @@ export interface JobQueueDeps {
   getKey: (providerId: string) => string | null;
   /** Whether files from the folder watcher need approval (read on each add). */
   needsApproval: () => boolean;
+  /** Settings that shape a new transcript's review, read when it finishes. */
+  reviewOptions: () => { reviewStep: boolean; cleanup: CleanupOptions; hosts: string[] };
   /** Every change, including progress ticks. */
   onChange?: (jobs: Job[]) => void;
   /** A job reached a state the user should hear about. */
@@ -25,7 +29,7 @@ export interface JobQueueDeps {
 
 export type JobEvent =
   | { type: "awaiting-approval"; job: Job }
-  | { type: "transcribed"; job: Job }
+  | { type: "transcribed"; job: Job; needsReview: boolean }
   | { type: "failed"; job: Job };
 
 /**
@@ -44,11 +48,13 @@ export class JobQueue {
     this.path = join(deps.dataDir, "jobs.json");
     const saved = readJson(this.path);
     this.jobs = Array.isArray(saved) ? saved.filter(isSavedJob) : [];
-    // A job that was mid-transcription when the app stopped starts over.
     for (const job of this.jobs) {
+      // A job that was mid-transcription when the app stopped starts over.
       if (job.status === "transcribing") {
         Object.assign(job, { status: "queued", stage: undefined, progress: undefined });
       }
+      // alpha.1 had a single "transcribed" status.
+      if ((job.status as string) === "transcribed") job.status = "needs-review";
     }
     this.save();
   }
@@ -127,6 +133,33 @@ export class JobQueue {
     return (readJson(join(this.episodeDir(id), "transcript.json")) as Transcript | undefined) ?? null;
   }
 
+  /** Review edits, created with defaults for transcripts from before they existed. */
+  edits(id: string): EpisodeEdits | null {
+    const transcript = this.transcript(id);
+    if (!transcript) return null;
+    const saved = readJson(join(this.episodeDir(id), "edits.json")) as EpisodeEdits | undefined;
+    return saved?.version === 1 ? saved : this.initialEdits(transcript);
+  }
+
+  saveEdits(id: string, edits: EpisodeEdits): void {
+    if (!this.transcript(id)) return;
+    writeJsonAtomic(join(this.episodeDir(id), "edits.json"), edits);
+  }
+
+  markReviewed(id: string): void {
+    const job = this.find(id);
+    if (job?.status !== "needs-review") return;
+    job.status = "ready";
+    this.changed();
+  }
+
+  private initialEdits(transcript: Transcript): EpisodeEdits {
+    const { cleanup, hosts } = this.deps.reviewOptions();
+    const edits = defaultEdits(cleanup, transcript.speakerCount);
+    edits.suggestedNames = suggestSpeakers(transcript.words, transcript.speakerCount, hosts);
+    return edits;
+  }
+
   isBusy(): boolean {
     return this.running !== null;
   }
@@ -188,8 +221,10 @@ export class JobQueue {
       });
 
       writeJsonAtomic(join(this.episodeDir(job.id), "transcript.json"), transcript);
+      writeJsonAtomic(join(this.episodeDir(job.id), "edits.json"), this.initialEdits(transcript));
+      const needsReview = this.deps.reviewOptions().reviewStep;
       Object.assign(job, {
-        status: "transcribed",
+        status: needsReview ? "needs-review" : "ready",
         stage: undefined,
         progress: undefined,
         durationSec: transcript.durationSec,
@@ -197,7 +232,7 @@ export class JobQueue {
         speakerCount: transcript.speakerCount,
         finishedAt: new Date().toISOString(),
       });
-      this.deps.onEvent?.({ type: "transcribed", job });
+      this.deps.onEvent?.({ type: "transcribed", job, needsReview });
     } catch (err) {
       if (err instanceof AbortedError || abort.signal.aborted) {
         Object.assign(job, { status: "cancelled", stage: undefined, progress: undefined });

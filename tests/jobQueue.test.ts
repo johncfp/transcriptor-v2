@@ -47,6 +47,7 @@ function setup(overrides: Partial<JobQueueDeps> = {}) {
     transcriber: fake.transcriber,
     getKey: () => "key",
     needsApproval: () => true,
+    reviewOptions: () => ({ reviewStep: true, cleanup: { repetitions: false }, hosts: [] }),
     onEvent: (e) => events.push(e.type),
     ...overrides,
   };
@@ -82,7 +83,7 @@ test("manual files start right away and run one at a time", async () => {
 
   calls[0]!.resolve(TRANSCRIPT);
   await tick();
-  assert.deepEqual(statuses(queue.list()), ["transcribed", "transcribing"]);
+  assert.deepEqual(statuses(queue.list()), ["needs-review", "transcribing"]);
   assert.equal(queue.list()[0]!.wordCount, 2);
   assert.deepEqual(queue.transcript(queue.list()[0]!.id)?.words, TRANSCRIPT.words);
   assert.deepEqual(events, ["transcribed"]);
@@ -168,4 +169,48 @@ test("a damaged jobs.json is ignored, and unknown ids can't read files", () => {
   const { queue } = setup({ dataDir });
   assert.equal(queue.list().length, 0);
   assert.equal(queue.transcript("../../etc"), null);
+});
+
+test("review off: straight to ready; edits are saved with speaker suggestions", async () => {
+  const { queue, file, calls } = setup({
+    reviewOptions: () => ({ reviewStep: false, cleanup: { repetitions: true }, hosts: ["Nigel T."] }),
+  });
+  queue.add([file("a.mp3")]);
+  await tick();
+  calls[0]!.resolve(TRANSCRIPT);
+  await tick();
+  const job = queue.list()[0]!;
+  assert.equal(job.status, "ready");
+  const edits = queue.edits(job.id)!;
+  assert.equal(edits.cleanup.repetitions, true);
+  assert.equal(edits.suggestedNames[0]?.name, "Nigel T.", "first speaker suggested as the host");
+});
+
+test("review on: edits persist and marking reviewed makes the job ready", async () => {
+  const { queue, file, calls } = setup();
+  queue.add([file("a.mp3")]);
+  await tick();
+  calls[0]!.resolve(TRANSCRIPT);
+  await tick();
+  const id = queue.list()[0]!.id;
+  assert.equal(queue.list()[0]!.status, "needs-review");
+
+  const edits = queue.edits(id)!;
+  queue.saveEdits(id, { ...edits, speakerNames: ["Nigel T.", "Pete M."], removed: [1] });
+  assert.deepEqual(queue.edits(id)!.speakerNames, ["Nigel T.", "Pete M."]);
+  assert.deepEqual(queue.edits(id)!.removed, [1]);
+
+  queue.markReviewed(id);
+  assert.equal(queue.list()[0]!.status, "ready");
+});
+
+test("jobs saved by alpha.1 as 'transcribed' load as needing review", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "t2-queue-"));
+  const id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  writeFileSync(
+    join(dataDir, "jobs.json"),
+    JSON.stringify([{ id, filePath: "x.mp3", fileName: "x.mp3", status: "transcribed" }]),
+  );
+  const { queue } = setup({ dataDir });
+  assert.equal(queue.list()[0]!.status, "needs-review");
 });

@@ -55,8 +55,8 @@ export function SettingsScreen() {
           onChange={(v) => update({ processing: { reviewStep: v } })}
         />
         <Toggle
-          label="Remove false starts and repetitions"
-          hint={`Filler words ("um", "uh") are always removed. This also cuts restarts like "I was, we went". Words are only ever removed, never changed.`}
+          label="Remove repetitions and false starts"
+          hint={`Filler words ("um", "uh") are always removed. This also cuts repeated words ("the the") and cut-off words ("th-"). Restarts like "I was, we went" will be handled by the AI step once show notes are added. Words are only ever removed, never changed.`}
           checked={processing.removeFalseStarts}
           onChange={(v) => update({ processing: { removeFalseStarts: v } })}
         />

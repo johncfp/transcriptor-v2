@@ -6,7 +6,10 @@ export type JobStatus =
   | "awaiting-approval"
   | "queued"
   | "transcribing"
-  | "transcribed"
+  /** Transcribed; waiting for someone to check speakers and words. */
+  | "needs-review"
+  /** Reviewed (or review is off); ready for show notes (M3). */
+  | "ready"
   | "failed"
   | "cancelled";
 
@@ -33,7 +36,10 @@ export interface Job {
 }
 
 /** Statuses where the job is done moving and can be removed or retried. */
-export const SETTLED: ReadonlySet<JobStatus> = new Set(["transcribed", "failed", "cancelled"]);
+export const SETTLED: ReadonlySet<JobStatus> = new Set(["needs-review", "ready", "failed", "cancelled"]);
+
+/** Has a transcript on disk. */
+export const hasTranscript = (status: JobStatus) => status === "needs-review" || status === "ready";
 
 /** Audio formats accepted for v2 (audio only, by user decision). */
 export const AUDIO_EXTENSIONS = ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "webm"] as const;

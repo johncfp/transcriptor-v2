@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from "electron";
 import { IPC } from "../shared/api";
 import { AUDIO_EXTENSIONS, type AddFilesResult } from "../shared/jobs";
+import type { EpisodeEdits } from "../shared/cleanup";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
 import { KeyStore } from "./keyStore";
@@ -52,6 +53,14 @@ function start(): void {
     transcriber: smokeTranscriber(transcriber),
     getKey: (id) => keys.get(id),
     needsApproval: () => settings.get().processing.intake === "approve",
+    reviewOptions: () => {
+      const s = settings.get();
+      return {
+        reviewStep: s.processing.reviewStep,
+        cleanup: { repetitions: s.processing.removeFalseStarts },
+        hosts: s.show.hosts,
+      };
+    },
     onChange: (jobs) => mainWindow?.webContents.send(IPC.jobsChanged, jobs),
     onEvent: (event) =>
       notifyJobEvent(event, {
@@ -210,7 +219,13 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.cancelJob, (_e, id: string) => jobs.cancel(id));
   ipcMain.handle(IPC.retryJob, (_e, id: string) => jobs.retry(id));
   ipcMain.handle(IPC.removeJob, (_e, id: string) => jobs.remove(id));
-  ipcMain.handle(IPC.getTranscript, (_e, id: string) => jobs.transcript(id));
+  ipcMain.handle(IPC.getEpisode, (_e, id: string) => {
+    const transcript = jobs.transcript(id);
+    const edits = jobs.edits(id);
+    return transcript && edits ? { transcript, edits } : null;
+  });
+  ipcMain.handle(IPC.saveEdits, (_e, id: string, edits: EpisodeEdits) => jobs.saveEdits(id, edits));
+  ipcMain.handle(IPC.markReviewed, (_e, id: string) => jobs.markReviewed(id));
 
   ipcMain.handle(IPC.getUpdateStatus, () => updater.get());
   ipcMain.handle(IPC.installUpdate, () => updater.installNow());

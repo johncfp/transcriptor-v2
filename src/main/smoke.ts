@@ -9,7 +9,8 @@ import type { Transcriber } from "./transcribe/types";
  * `npm run smoke` launches the built app with TRANSCRIPTOR_SMOKE_DIR set.
  * The app then uses that folder as its profile and runs a scripted pass:
  * key storage, adding an audio file, transcribing it against a local fake
- * ElevenLabs, opening the transcript, and the Settings screen. It saves
+ * ElevenLabs, reviewing it (suggested names, filler removal, removing a word
+ * by hand, marking it reviewed), and the Settings screen. It saves
  * screenshots plus a report, then quits.
  */
 const dir = process.env.TRANSCRIPTOR_SMOKE_DIR;
@@ -25,8 +26,8 @@ export function smokeTranscriber(real: Transcriber): Transcriber {
 
 function startFakeApi(): Promise<void> {
   const words = [
-    ["Welcome", 0], ["to", 0], ["the", 0], ["show,", 0], ["Pete.", 0],
-    ["Thanks", 1], ["for", 1], ["having", 1], ["me.", 1],
+    ["Hey,", 0], ["I'm", 0], ["Nigel.", 0], ["Um,", 0], ["welcome", 0], ["to", 0], ["the", 0], ["show,", 0], ["Pete.", 0],
+    ["Thanks,", 1], ["uh,", 1], ["really", 1], ["glad", 1], ["to", 1], ["be", 1], ["here.", 1],
   ] as const;
   const server = http.createServer((req, res) => {
     req.resume();
@@ -42,7 +43,8 @@ function startFakeApi(): Promise<void> {
             start: i * 0.5,
             end: i * 0.5 + 0.4,
             speaker_id: `speaker_${speaker}`,
-            logprob: -0.01,
+            // One shaky word, to show the confidence colouring.
+            logprob: text === "glad" ? -1.2 : -0.01,
           })),
         }),
       );
@@ -114,6 +116,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       })()`);
       const keyRoundTrip = keys.hint === "1234" && keys.removed;
 
+      await js(`window.api.updateSettings({ show: { hosts: ["Nigel T."] } })`);
+
       // Pipeline: queue a file (plus one that must be rejected) and wait for the transcript.
       const wav = join(dir, "episode-386.wav");
       writeWav(wav);
@@ -123,17 +127,30 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         return { added: r.added.length, rejected: r.rejected.map((x) => x.fileName) };
       })()`);
       let status = "";
-      for (let i = 0; i < 40 && status !== "transcribed" && status !== "failed"; i++) {
+      for (let i = 0; i < 40 && status !== "needs-review" && status !== "failed"; i++) {
         await pause(150);
         status = await js<string>(`window.api.listJobs().then((j) => j[0]?.status ?? "")`);
       }
       await pause(300);
       await shot("episodes.png");
 
-      await click("button", "View transcript");
+      // Review: suggested names and cleaned text, then remove "really" by hand and mark reviewed.
+      await click("button", "Review");
       await pause(500);
-      const turns = await js<string[]>(`[...document.querySelectorAll(".turn p")].map((p) => p.textContent)`);
-      await shot("transcript.png");
+      const readTurns = () =>
+        js<string[]>(
+          `[...document.querySelectorAll(".turn")].map((t) => t.querySelector(".speaker").textContent + ": " + t.querySelector("p").textContent)`,
+        );
+      const turns = await readTurns();
+      await click(".word", "really");
+      await pause(200);
+      await shot("review.png");
+      await click("button", "Remove word");
+      await pause(300);
+      const afterRemove = await readTurns();
+      await click("button", "Mark as reviewed");
+      await pause(300);
+      const finalStatus = await js<string>(`window.api.listJobs().then((j) => j[0]?.status ?? "")`);
 
       await click(".nav-item", "Settings");
       await pause(500);
@@ -144,8 +161,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
 
       clearTimeout(timeout);
-      const pipeline =
-        added.added === 1 && added.rejected[0] === "notes.txt" && status === "transcribed" && turns.length === 2;
+      const pipeline = added.added === 1 && added.rejected[0] === "notes.txt" && status === "needs-review";
+      const review =
+        turns[0] === "Nigel T.: Hey, I'm Nigel. Welcome to the show, Pete." &&
+        turns[1] === "Pete: Thanks, really glad to be here." &&
+        afterRemove[1] === "Pete: Thanks, glad to be here." &&
+        finalStatus === "ready";
       finish({
         ok:
           probe.hasApi &&
@@ -153,6 +174,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           probe.intake === "approve" &&
           keyRoundTrip &&
           pipeline &&
+          review &&
           sections.length >= 5,
         heading: probe.heading,
         intake: probe.intake,
@@ -160,6 +182,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         added,
         status,
         turns,
+        afterRemove,
+        finalStatus,
         sections,
         newerVersion,
       });

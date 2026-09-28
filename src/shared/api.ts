@@ -4,6 +4,7 @@
 
 import type { AddFilesResult, Job } from "./jobs";
 import type { Settings, SettingsPatch } from "./settings";
+import type { EpisodeEdits } from "./cleanup";
 import type { Transcript } from "./transcript";
 
 export interface KeyStatus {
@@ -47,7 +48,10 @@ export interface Api {
   cancelJob(id: string): Promise<void>;
   retryJob(id: string): Promise<void>;
   removeJob(id: string): Promise<void>;
-  getTranscript(id: string): Promise<Transcript | null>;
+  /** The raw transcript plus its review edits; null if not transcribed. */
+  getEpisode(id: string): Promise<{ transcript: Transcript; edits: EpisodeEdits } | null>;
+  saveEdits(id: string, edits: EpisodeEdits): Promise<void>;
+  markReviewed(id: string): Promise<void>;
   /** Subscribe to queue changes; returns an unsubscribe function. */
   onJobsChanged(fn: (jobs: Job[]) => void): () => void;
   /** A notification was clicked; the UI should show this job. */
@@ -77,7 +81,9 @@ export const IPC = {
   cancelJob: "jobs:cancel",
   retryJob: "jobs:retry",
   removeJob: "jobs:remove",
-  getTranscript: "jobs:transcript",
+  getEpisode: "jobs:episode",
+  saveEdits: "jobs:save-edits",
+  markReviewed: "jobs:mark-reviewed",
   jobsChanged: "jobs:changed",
   showJob: "jobs:show",
   getUpdateStatus: "update:status",

@@ -11,10 +11,11 @@ installed at the same time.
 
 1. **Transcribe**: the audio is sent to ElevenLabs Scribe. (OpenAI's
    transcription API caps uploads at 25 MB, so it isn't used for full episodes.)
-2. **Clean up**: filler words are always removed. False starts and repetitions
-   can also be removed (Settings). Cleanup only ever removes words; it never
-   changes them.
-3. **Review** (optional): fix speaker names and misheard words.
+2. **Clean up**: filler words are always removed. Repeated and cut-off words
+   can also be removed (Settings, or per episode). The raw transcript is kept;
+   cleanup only hides words, and every removal can be undone in review.
+3. **Review** (optional): confirm the suggested speaker names, fix misheard
+   words (low-confidence ones are highlighted), and put back or remove words.
 4. **Write**: an AI provider (Claude, GPT, Kimi or Qwen) writes the show notes
    and the reference file from the transcript. Guest details are checked with
    web lookups, and quotes are checked word for word against the transcript.
@@ -32,8 +33,8 @@ Built in milestones:
 |---|---|---|
 | M0 | Foundation: tray, start at login, settings, key storage, CI | Done |
 | M1 | Transcription pipeline and job queue (ElevenLabs) | Done |
-| M2 | Cleanup and review | Next |
-| M3 | AI writing: show-notes templates, reference file | |
+| M2 | Cleanup and review | Done |
+| M3 | AI writing: show-notes templates, reference file, AI false-start removal | Next |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | |
 | M5 | Drive folder watching (written but switched off) | |
 

@@ -21,7 +21,7 @@ export function notifyJobEvent(
       body: `${job.fileName} is ready to process. Open Transcriptor 2 to start it.`,
     },
     transcribed: {
-      title: "Transcript ready",
+      title: event.type === "transcribed" && event.needsReview ? "Transcript ready to review" : "Transcript ready",
       body: `${job.fileName} has been transcribed.`,
     },
     failed: {
