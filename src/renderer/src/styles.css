@@ -80,9 +80,10 @@ body {
 .brand-name {
   font-weight: 650;
 }
-.brand-version {
+.brand-steps {
   color: var(--muted);
   font-size: 12px;
+  margin-top: 2px;
 }
 
 .nav-item {
@@ -958,4 +959,79 @@ textarea.input {
   background: var(--bg);
   border-radius: 0 6px 6px 0;
   line-height: 1.55;
+}
+
+/* Episode stage colors (Settings > General > Episode colors). The text mixes
+   the stage color with the theme's text color so it stays readable in both themes. */
+.job.staged {
+  border-left: 4px solid var(--stage);
+}
+.job.staged .pill {
+  color: color-mix(in srgb, var(--stage) 70%, var(--text));
+  border-color: var(--stage);
+  background: color-mix(in srgb, var(--stage) 14%, transparent);
+}
+
+.settings-head .unsaved {
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 600;
+}
+.version {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.episode-colors {
+  align-items: flex-start;
+}
+.reset-colors {
+  align-self: flex-start;
+  padding: 2px 0;
+  margin-top: 4px;
+}
+.color-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.color-row input[type="color"] {
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 10;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+}
+.modal h2 {
+  margin: 0 0 6px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }

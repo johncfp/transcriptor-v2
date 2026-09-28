@@ -14,6 +14,8 @@ export interface Settings {
     closeToTray: boolean;
     /** "system" follows Windows/macOS. */
     theme: Theme;
+    /** Episode list colors by stage, as "#rrggbb". */
+    episodeColors: EpisodeColors;
   };
   processing: {
     /** "approve" asks before each new file is processed; "auto" just starts. */
@@ -53,6 +55,8 @@ export interface Settings {
     baseUrl: string;
     /** Show-notes voice preset (src/shared/voices.ts). */
     voice: VoiceId;
+    /** The instruction used when voice is "custom". */
+    customVoice: string;
   };
   /** "full", "standard", "minimal" or "custom" (see src/shared/showNotes.ts). */
   template: string;
@@ -71,6 +75,18 @@ export const SPEAKER_FORMATS = [
 
 export type SpeakerFormat = (typeof SPEAKER_FORMATS)[number]["id"];
 
+export interface EpisodeColors {
+  /** Just added, through transcription and review. */
+  fresh: string;
+  /** Reviewed and ready for (or being written into) show notes. */
+  reviewed: string;
+  /** Show notes are ready. */
+  notesReady: string;
+}
+
+/** Dark yellow, dark orange, dark green. */
+export const DEFAULT_EPISODE_COLORS: EpisodeColors = { fresh: "#a16207", reviewed: "#c2410c", notesReady: "#15803d" };
+
 export const THEMES = [
   { id: "system", label: "Match system" },
   { id: "light", label: "Light" },
@@ -78,6 +94,8 @@ export const THEMES = [
 ] as const;
 
 export type Theme = (typeof THEMES)[number]["id"];
+
+const COLOR_KEYS = new Set(Object.keys(DEFAULT_EPISODE_COLORS));
 
 /** String settings that only accept certain values; anything else keeps the default. */
 const ALLOWED: Record<string, readonly string[]> = {
@@ -101,6 +119,7 @@ export const DEFAULT_SETTINGS: Settings = {
     startAtLogin: true,
     closeToTray: true,
     theme: "system",
+    episodeColors: { ...DEFAULT_EPISODE_COLORS },
   },
   processing: {
     intake: "approve",
@@ -124,7 +143,7 @@ export const DEFAULT_SETTINGS: Settings = {
     email: "",
     signOff: "",
   },
-  writing: { provider: "anthropic", model: "", baseUrl: "", voice: "general" },
+  writing: { provider: "anthropic", model: "", baseUrl: "", voice: "general", customVoice: "" },
   template: "full",
   customSections: [],
 };
@@ -161,6 +180,7 @@ export function mergeSettings<T>(base: T, patch: unknown): T {
       if (Array.isArray(p) && p.every((x) => typeof x === "string")) out[key] = [...p];
     } else if (typeof p === typeof b) {
       if (ALLOWED[key] && !ALLOWED[key].includes(p as string)) continue;
+      if (COLOR_KEYS.has(key) && !/^#[0-9a-f]{6}$/i.test(p as string)) continue;
       out[key] = p;
     }
   }

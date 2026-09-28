@@ -81,7 +81,7 @@ pipeline), `src/preload` (the `window.api` bridge), `src/renderer` (React UI),
 
 ## Releasing
 
-`npm run cut:prerelease` (while in alpha) or `npm run cut:patch` bumps the
+`npm run cut:beta` (while in beta) or `npm run cut:patch` bumps the
 version and pushes a tag. `.github/workflows/release.yml` creates one draft
 release, builds Windows and macOS installers into it, then publishes it.
 Builds are unsigned: on macOS, right-click → Open the first time (or run

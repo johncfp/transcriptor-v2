@@ -24,6 +24,8 @@ export interface WriteEpisodeInput {
   details: EpisodeDetails;
   show: { name: string; hosts: string[] };
   voice: VoiceId;
+  /** The instruction for the "custom" voice. */
+  customVoice?: string;
   writer: WritingProvider;
   call: ProviderCall;
   onStage?: (stage: string) => void;
@@ -97,7 +99,7 @@ export async function writeEpisode(input: WriteEpisodeInput): Promise<WritingRes
   input.onStage?.("Writing show notes");
   const draft = coerceDraft(
     await writer.draft(call, {
-      system: writingSystem(input.voice),
+      system: writingSystem(input.voice, input.customVoice),
       user: writingPrompt({ showName: input.show.name, hosts, guest, facts: confirmedFacts(research), transcript: text }),
     }),
   );

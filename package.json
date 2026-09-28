@@ -26,7 +26,8 @@
     "release": "npm run build && electron-builder --publish always",
     "cut:patch": "npm version patch -m \"Release v%s\" && git push --follow-tags",
     "cut:minor": "npm version minor -m \"Release v%s\" && git push --follow-tags",
-    "cut:prerelease": "npm version prerelease --preid alpha -m \"Release v%s\" && git push --follow-tags"
+    "cut:prerelease": "npm version prerelease --preid alpha -m \"Release v%s\" && git push --follow-tags",
+    "cut:beta": "npm version prerelease --preid beta -m \"Release v%s\" && git push --follow-tags"
   },
   "build": {
     "appId": "io.transcriptor.app2",

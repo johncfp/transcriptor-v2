@@ -1,22 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UpdateStatus } from "../../shared/api";
 import { EpisodesScreen } from "./components/EpisodesScreen";
-import { SettingsScreen } from "./components/SettingsScreen";
 import { EpisodeScreen } from "./components/EpisodeScreen";
+import { SettingsScreen, type SettingsGuard } from "./components/SettingsScreen";
+import { UnsavedDialog } from "./components/UnsavedDialog";
 
 type Screen = { name: "episodes" } | { name: "transcript"; jobId: string } | { name: "settings" };
 
 export function App() {
   const [screen, setScreen] = useState<Screen>({ name: "episodes" });
-  const [version, setVersion] = useState("");
   const [update, setUpdate] = useState<UpdateStatus>({ state: "idle" });
+  /** Where the user was heading when Settings had unsaved changes. */
+  const [pending, setPending] = useState<Screen | null>(null);
+  const settingsGuard = useRef<SettingsGuard | null>(null);
+
+  /** Change screens, but ask first when leaving Settings with unsaved changes. */
+  const goRef = useRef((next: Screen) => setScreen(next));
+  goRef.current = (next: Screen) => {
+    if (screen.name === "settings" && next.name !== "settings" && settingsGuard.current?.dirty) setPending(next);
+    else setScreen(next);
+  };
+  const go = (next: Screen) => goRef.current(next);
 
   useEffect(() => {
-    void window.api.appVersion().then(setVersion);
     void window.api.getUpdateStatus().then(setUpdate);
     const offUpdate = window.api.onUpdateStatus(setUpdate);
-    // A clicked notification opens that episode.
-    const offShow = window.api.onShowJob((jobId) => setScreen({ name: "transcript", jobId }));
+    // A clicked notification opens that episode (through the same unsaved-changes check).
+    const offShow = window.api.onShowJob((jobId) => goRef.current({ name: "transcript", jobId }));
     return () => {
       offUpdate();
       offShow();
@@ -30,20 +40,12 @@ export function App() {
       <nav className="sidebar" aria-label="Main">
         <div className="brand">
           <span className="brand-name">Transcriptor 2</span>
-          {version && <span className="brand-version">v{version}</span>}
+          <span className="brand-steps">Upload | Transcribe | Export</span>
         </div>
-        <button
-          className="nav-item"
-          aria-current={onEpisodes ? "page" : undefined}
-          onClick={() => setScreen({ name: "episodes" })}
-        >
+        <button className="nav-item" aria-current={onEpisodes ? "page" : undefined} onClick={() => go({ name: "episodes" })}>
           Episodes
         </button>
-        <button
-          className="nav-item"
-          aria-current={!onEpisodes ? "page" : undefined}
-          onClick={() => setScreen({ name: "settings" })}
-        >
+        <button className="nav-item" aria-current={!onEpisodes ? "page" : undefined} onClick={() => go({ name: "settings" })}>
           Settings
         </button>
         <UpdateNotice status={update} />
@@ -51,15 +53,30 @@ export function App() {
       <main className={screen.name === "transcript" ? "content full" : "content"}>
         {screen.name === "episodes" && (
           <EpisodesScreen
-            onOpen={(jobId) => setScreen({ name: "transcript", jobId })}
-            onOpenSettings={() => setScreen({ name: "settings" })}
+            onOpen={(jobId) => go({ name: "transcript", jobId })}
+            onOpenSettings={() => go({ name: "settings" })}
           />
         )}
         {screen.name === "transcript" && (
-          <EpisodeScreen key={screen.jobId} jobId={screen.jobId} onBack={() => setScreen({ name: "episodes" })} />
+          <EpisodeScreen key={screen.jobId} jobId={screen.jobId} onBack={() => go({ name: "episodes" })} />
         )}
-        {screen.name === "settings" && <SettingsScreen />}
+        {screen.name === "settings" && <SettingsScreen guard={settingsGuard} />}
       </main>
+      {pending && (
+        <UnsavedDialog
+          onSave={async () => {
+            await settingsGuard.current?.save();
+            setScreen(pending);
+            setPending(null);
+          }}
+          onDiscard={() => {
+            settingsGuard.current?.discard();
+            setScreen(pending);
+            setPending(null);
+          }}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </div>
   );
 }

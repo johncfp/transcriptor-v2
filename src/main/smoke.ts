@@ -116,6 +116,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       win.show();
       await pause(300);
       await shot("home.png");
+      const brand = await js<string>(`document.querySelector(".brand-steps")?.textContent ?? ""`);
 
       // Keys: save, read back the hint, delete; then save one for the run below.
       const keys = await js<{ hint: string; removed: boolean }>(`(async () => {
@@ -277,6 +278,51 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const darkBg = await background();
       const themes = lightBg === "rgb(247, 247, 248)" && darkBg === "rgb(17, 17, 19)";
 
+      // Save: a change stays a draft until saved, and leaving Settings asks first.
+      await click(".tab", "General");
+      await pause(200);
+      const reviewSwitch = `[...document.querySelectorAll(".toggle-row")].find((r) => r.textContent.includes("Review the transcript")).querySelector("input")`;
+      const savedReview = () => js<boolean>(`window.api.getSettings().then((s) => s.processing.reviewStep)`);
+      const heading = () => js<string>(`document.querySelector("h1")?.textContent ?? ""`);
+      const unsavedShown = () => js<boolean>(`document.body.innerText.includes("Unsaved changes")`);
+      await js(`${reviewSwitch}.click()`);
+      await pause(200);
+      const dirtyShown = (await unsavedShown()) && (await savedReview()) === true;
+      await click(".nav-item", "Episodes");
+      await pause(300);
+      const promptShown = await js<boolean>(`document.querySelector(".modal") !== null`);
+      await shot("unsaved.png");
+      await click(".modal button", "Keep editing");
+      await pause(200);
+      const stayed = (await heading()) === "Settings" && (await unsavedShown());
+      await click(".nav-item", "Episodes");
+      await pause(300);
+      await click(".modal button", "Discard");
+      await pause(300);
+      const discarded = (await heading()) === "Episodes" && (await savedReview()) === true;
+      await click(".nav-item", "Settings");
+      await pause(300);
+      await js(`${reviewSwitch}.click()`);
+      await pause(200);
+      await click(".settings-head button", "Save");
+      await pause(300);
+      const savedOk = (await savedReview()) === false && !(await unsavedShown());
+      const version = await js<string>(`document.querySelector(".version")?.textContent ?? ""`);
+      await js(`window.api.updateSettings({ processing: { reviewStep: true } })`);
+      const saveFlow = dirtyShown && promptShown && stayed && discarded && savedOk;
+
+      // Custom voice: picking it shows an editor for your own instruction.
+      await click(".tab", "API keys");
+      await pause(200);
+      await click(".voice-option", "Custom");
+      await pause(200);
+      const customVoice = await js<boolean>(`document.querySelector(".voice-options + .field textarea") !== null`);
+      await js(`document.querySelector(".voice-options + .field textarea").scrollIntoView()`);
+      await pause(200);
+      await shot("custom-voice.png");
+      await click(".settings-head button", "Discard");
+      await pause(200);
+
       // Full-screen size: settings sections side by side; Episodes fills the width; search filters.
       win.setSize(1900, 1000);
       // Resizing is asynchronous; wait for the page to see the new width.
@@ -301,6 +347,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           empty: document.body.innerText.includes("No episodes match"),
         })`);
       };
+      const stageColor = await js<string>(`getComputedStyle(document.querySelector(".job")).borderLeftColor`);
       const searchHit = await typeSearch("showing pete");
       await shot("episodes-wide.png");
       const searchMiss = await typeSearch("zzz");
@@ -330,6 +377,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // Two columns need ~1400px; skip on a screen too small for that.
           (pageWidth < 1400 || settingsColumns === 2) &&
           themes &&
+          saveFlow &&
+          customVoice &&
+          stageColor === "rgb(21, 128, 61)" &&
+          win.getTitle() === "Transcriptor 2 — just transcribe" &&
+          brand === "Upload | Transcribe | Export" &&
+          /^Transcriptor 2 v2\.0\.0/.test(version) &&
           ALL_SECTIONS.every((t) => sections.includes(t)),
         heading: probe.heading,
         intake: probe.intake,
@@ -347,6 +400,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         sections,
         settingsColumns,
         pageWidth,
+        saveFlow: { dirtyShown, promptShown, stayed, discarded, savedOk },
+        stageColor,
+        customVoice,
+        title: win.getTitle(),
+        brand,
+        version,
         lightBg,
         darkBg,
         searchHit,

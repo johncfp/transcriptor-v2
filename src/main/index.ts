@@ -41,6 +41,7 @@ if (process.platform === "win32") app.setAppUserModelId("io.transcriptor.app2");
 registerMediaScheme();
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+const WINDOW_TITLE = "Transcriptor 2 — just transcribe";
 
 let mainWindow: BrowserWindow | null = null;
 let queue: JobQueue | null = null;
@@ -98,6 +99,7 @@ function start(): void {
         details: req.details,
         show: { name: show.name, hosts: show.hosts },
         voice: settings.get().writing.voice,
+        customVoice: settings.get().writing.customVoice,
         writer,
         call: { apiKey, model, baseUrl, signal: req.signal },
         onStage: req.onStage,
@@ -227,7 +229,7 @@ function createWindow(settings: SettingsStore): BrowserWindow {
     minWidth: 760,
     minHeight: 520,
     show: false,
-    title: "Transcriptor 2",
+    title: WINDOW_TITLE,
     backgroundColor: windowBackground(),
     autoHideMenuBar: true,
     webPreferences: {
@@ -243,6 +245,21 @@ function createWindow(settings: SettingsStore): BrowserWindow {
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, url) => {
     if (!devServerUrl || !url.startsWith(devServerUrl)) event.preventDefault();
+  });
+
+  // The page asks to stay open (beforeunload) when Settings has unsaved
+  // changes; Electron doesn't show a prompt for that itself, so ask here.
+  win.webContents.on("will-prevent-unload", (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: "question",
+      buttons: ["Leave without saving", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: "You have unsaved settings.",
+      detail: "Leave without saving them, or cancel and press Save in Settings.",
+    });
+    if (choice === 0) event.preventDefault(); // allow the window to close
+    else quitting = false; // a quit was cancelled; closing the window hides it again
   });
 
   win.on("close", (event) => {

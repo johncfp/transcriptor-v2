@@ -1,6 +1,7 @@
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useState, type CSSProperties, type DragEvent } from "react";
+import { DEFAULT_EPISODE_COLORS, type EpisodeColors } from "../../../shared/settings";
 import type { KeyStatus } from "../../../shared/api";
-import { AUDIO_EXTENSIONS, formatBytes, hasTranscript, type AddFilesResult, type Job } from "../../../shared/jobs";
+import { AUDIO_EXTENSIONS, episodeStage, formatBytes, hasTranscript, type AddFilesResult, type Job } from "../../../shared/jobs";
 import { formatTimestamp } from "../../../shared/transcript";
 import { useJobs } from "../useJobs";
 
@@ -22,6 +23,11 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
   const [dragging, setDragging] = useState(false);
   const [rejected, setRejected] = useState<AddFilesResult["rejected"]>([]);
   const [query, setQuery] = useState("");
+  const [colors, setColors] = useState<EpisodeColors>(DEFAULT_EPISODE_COLORS);
+
+  useEffect(() => {
+    void window.api.getSettings().then((s) => setColors(s.general.episodeColors));
+  }, []);
 
   // Re-check on every queue change too: a key may have been added since this screen opened.
   useEffect(() => {
@@ -100,7 +106,7 @@ export function EpisodesScreen(props: { onOpen: (id: string) => void; onOpenSett
             .reverse()
             .filter((job) => matches(job, query))
             .map((job) => (
-              <JobRow key={job.id} job={job} onOpen={() => props.onOpen(job.id)} />
+              <JobRow key={job.id} job={job} colors={colors} onOpen={() => props.onOpen(job.id)} />
             ))}
         </ul>
       )}
@@ -122,7 +128,8 @@ function matches(job: Job, query: string): boolean {
   return words.every((w) => haystack.includes(w));
 }
 
-function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
+function JobRow({ job, colors, onOpen }: { job: Job; colors: EpisodeColors; onOpen: () => void }) {
+  const stage = episodeStage(job);
   const { id } = job;
   const meta = hasTranscript(job)
       ? [
@@ -136,7 +143,11 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
       : formatBytes(job.fileSize);
 
   return (
-    <li className="job">
+    <li
+      className={stage ? "job staged" : "job"}
+      style={stage ? ({ "--stage": colors[stage] } as CSSProperties) : undefined}
+      data-stage={stage ?? undefined}
+    >
       <div className="job-main">
         <div className="job-title">
           <span className="job-name" title={job.filePath}>

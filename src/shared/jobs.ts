@@ -83,3 +83,29 @@ export function formatBytes(n: number): string {
 /** Private URL scheme the main process serves episode audio on (see src/main/media.ts). */
 export const MEDIA_SCHEME = "t2-media";
 export const audioUrl = (jobId: string) => `${MEDIA_SCHEME}://audio/${encodeURIComponent(jobId)}`;
+
+export type EpisodeStage = "fresh" | "reviewed" | "notesReady";
+
+/**
+ * The stage an episode's color shows: fresh until the transcript is
+ * reviewed, reviewed until the notes are written, then notes ready. A failed
+ * transcription or a cancelled job has no stage color.
+ */
+export function episodeStage(job: Pick<Job, "status" | "failedStep">): EpisodeStage | null {
+  switch (job.status) {
+    case "awaiting-approval":
+    case "queued":
+    case "transcribing":
+    case "needs-review":
+      return "fresh";
+    case "ready":
+    case "writing":
+      return "reviewed";
+    case "written":
+      return "notesReady";
+    case "failed":
+      return job.failedStep === "writing" ? "reviewed" : null;
+    case "cancelled":
+      return null;
+  }
+}

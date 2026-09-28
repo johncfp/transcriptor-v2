@@ -1,7 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MutableRefObject, type ReactNode } from "react";
 import {
+  DEFAULT_EPISODE_COLORS,
+  mergeSettings,
   SPEAKER_FORMATS,
   THEMES,
+  type EpisodeColors,
   type Settings,
   type SettingsPatch,
   type SpeakerFormat,
@@ -30,7 +33,18 @@ function savedTab(): TabId {
   }
 }
 
-export function SettingsScreen() {
+/** What the app needs from Settings to stop someone leaving with unsaved changes. */
+export interface SettingsGuard {
+  dirty: boolean;
+  save: () => Promise<void>;
+  discard: () => void;
+}
+
+/**
+ * Settings are edited as a draft and written when Save is pressed. API keys
+ * are the exception: each has its own Save, straight to the keychain.
+ */
+export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuard | null> }) {
   const [tab, setTab] = useState<TabId>(savedTab);
   const chooseTab = (t: TabId) => {
     setTab(t);
@@ -40,24 +54,76 @@ export function SettingsScreen() {
       // Remembering the tab is a convenience; fine without it.
     }
   };
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [saved, setSaved] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null); // the draft
   const [defaultFolder, setDefaultFolder] = useState("");
+  const [version, setVersion] = useState("");
+  const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
-    void window.api.getSettings().then(setSettings);
+    void window.api.getSettings().then((s) => {
+      setSaved(s);
+      setSettings(s);
+    });
     void window.api.defaultOutputFolder().then(setDefaultFolder);
+    void window.api.appVersion().then(setVersion);
   }, []);
+
+  const dirty = saved !== null && settings !== null && JSON.stringify(saved) !== JSON.stringify(settings);
+  const save = async () => {
+    if (!settings) return;
+    const next = await window.api.updateSettings(settings);
+    setSaved(next);
+    setSettings(next);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2000);
+  };
+  const discard = () => setSettings(saved);
+  guard.current = { dirty, save, discard };
+
+  // Ctrl/Cmd+S saves; closing or quitting with changes asks first (see will-prevent-unload in main).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void guard.current?.save();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [guard]);
+  useEffect(() => {
+    if (!dirty) return;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [dirty]);
 
   if (!settings) return null;
 
-  const update = (patch: SettingsPatch) => {
-    void window.api.updateSettings(patch).then(setSettings);
-  };
+  const update = (patch: SettingsPatch) => setSettings((d) => (d ? mergeSettings(d, patch) : d));
   const { general, processing, output, show } = settings;
 
   return (
     <>
-      <h1>Settings</h1>
+      <div className="page-head settings-head">
+        <h1>Settings</h1>
+        <div className="head-actions">
+          {dirty && <span className="unsaved">Unsaved changes</span>}
+          {justSaved && !dirty && <span className="hint">Saved</span>}
+          {dirty && (
+            <button className="button ghost" onClick={discard}>
+              Discard
+            </button>
+          )}
+          <button className="button primary" disabled={!dirty} onClick={() => void save()}>
+            Save
+          </button>
+        </div>
+      </div>
       <div className="tabs" role="tablist" aria-label="Settings">
         {TABS.map((t) => (
           <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} onClick={() => chooseTab(t.id)}>
@@ -87,6 +153,10 @@ export function SettingsScreen() {
                 options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
                 onChange={(v) => update({ general: { theme: v } })}
               />
+              <EpisodeColorRows colors={general.episodeColors} onChange={(c) => update({ general: { episodeColors: c } })} />
+              <Row label="Version" hint="Updates install automatically on Windows; on Mac the sidebar offers a download.">
+                <span className="version">Transcriptor 2 v{version}</span>
+              </Row>
             </Section>
 
             <Section title="Processing">
@@ -326,5 +396,42 @@ function TextField(props: { label: string; hint?: string; value: string; onCommi
         onKeyDown={(e) => e.key === "Enter" && commit()}
       />
     </Row>
+  );
+}
+
+const STAGES: { key: keyof EpisodeColors; label: string; hint: string }[] = [
+  { key: "fresh", label: "New episodes", hint: "From upload until the transcript is reviewed." },
+  { key: "reviewed", label: "Reviewed", hint: "Ready for show notes, or being written." },
+  { key: "notesReady", label: "Show notes ready", hint: "Notes written; ready to export or already exported." },
+];
+
+/** The colors that mark each stage in the Episodes list. */
+function EpisodeColorRows({ colors, onChange }: { colors: EpisodeColors; onChange: (c: EpisodeColors) => void }) {
+  const isDefault = STAGES.every((s) => colors[s.key].toLowerCase() === DEFAULT_EPISODE_COLORS[s.key]);
+  return (
+    <div className="row episode-colors">
+      <div className="row-label">
+        <span>Episode colors</span>
+        <span className="hint">Marks each episode's stage in the Episodes list.</span>
+        {!isDefault && (
+          <button className="button ghost reset-colors" onClick={() => onChange({ ...DEFAULT_EPISODE_COLORS })}>
+            Reset to defaults
+          </button>
+        )}
+      </div>
+      <div className="color-rows">
+        {STAGES.map((stage) => (
+          <label key={stage.key} className="color-row" title={stage.hint}>
+            <input
+              type="color"
+              value={colors[stage.key]}
+              onChange={(e) => onChange({ ...colors, [stage.key]: e.target.value })}
+              aria-label={`${stage.label} color`}
+            />
+            <span>{stage.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
