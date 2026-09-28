@@ -1,4 +1,5 @@
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
+import { VOICE_IDS, type VoiceId } from "./voices";
 
 // Settings schema shared by the main process (which owns the file on disk)
 // and the renderer (which edits it over IPC). Keep this file free of Node and
@@ -11,6 +12,8 @@ export interface Settings {
     startAtLogin: boolean;
     /** Closing the window hides it to the tray instead of quitting. */
     closeToTray: boolean;
+    /** "system" follows Windows/macOS. */
+    theme: Theme;
   };
   processing: {
     /** "approve" asks before each new file is processed; "auto" just starts. */
@@ -48,6 +51,8 @@ export interface Settings {
     model: string;
     /** Blank = the provider's usual endpoint. Needed for Qwen outside the default region. */
     baseUrl: string;
+    /** Show-notes voice preset (src/shared/voices.ts). */
+    voice: VoiceId;
   };
   /** "full", "standard", "minimal" or "custom" (see src/shared/showNotes.ts). */
   template: string;
@@ -66,10 +71,20 @@ export const SPEAKER_FORMATS = [
 
 export type SpeakerFormat = (typeof SPEAKER_FORMATS)[number]["id"];
 
+export const THEMES = [
+  { id: "system", label: "Match system" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+] as const;
+
+export type Theme = (typeof THEMES)[number]["id"];
+
 /** String settings that only accept certain values; anything else keeps the default. */
 const ALLOWED: Record<string, readonly string[]> = {
   intake: ["approve", "auto"],
   speakerFormat: SPEAKER_FORMATS.map((f) => f.id),
+  theme: THEMES.map((t) => t.id),
+  voice: VOICE_IDS,
 };
 
 export interface ShowProfile {
@@ -85,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
   general: {
     startAtLogin: true,
     closeToTray: true,
+    theme: "system",
   },
   processing: {
     intake: "approve",
@@ -108,7 +124,7 @@ export const DEFAULT_SETTINGS: Settings = {
     email: "",
     signOff: "",
   },
-  writing: { provider: "anthropic", model: "", baseUrl: "" },
+  writing: { provider: "anthropic", model: "", baseUrl: "", voice: "general" },
   template: "full",
   customSections: [],
 };

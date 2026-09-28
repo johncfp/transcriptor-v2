@@ -874,12 +874,15 @@ textarea.input {
   margin-top: 6px;
 }
 
+/* Each settings tab's sections sit side by side when there's room. */
 .settings-grid {
-  columns: 2 620px;
-  column-gap: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 600px), 1fr));
+  gap: 18px;
+  align-items: start;
 }
 .settings-grid > .section {
-  break-inside: avoid;
+  margin-bottom: 0;
 }
 
 .head-actions {
@@ -918,4 +921,41 @@ textarea.input {
 .band-summary .reset {
   margin-left: auto;
   padding: 2px 8px;
+}
+
+.voice-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+.voice-option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.voice-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.voice-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.voice-option input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.voice-prompt {
+  margin: 6px 0 10px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  border-radius: 0 6px 6px 0;
+  line-height: 1.55;
 }

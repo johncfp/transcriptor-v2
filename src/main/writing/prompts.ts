@@ -2,6 +2,7 @@
 // rules here; src/shared/verify.ts checks them afterwards.
 
 import type { SourcedFact } from "../../shared/showNotes";
+import { VOICES, type VoiceId } from "../../shared/voices";
 
 export const RESEARCH_SYSTEM = `You confirm facts about podcast guests so their show notes are accurate.
 
@@ -174,6 +175,17 @@ export function writingPrompt(input: {
   ]
     .filter((l): l is string => typeof l === "string")
     .join("\n");
+}
+
+/**
+ * The writing instructions with the chosen voice added last. The voice
+ * shapes tone and emphasis; the rules above it still apply.
+ */
+export function writingSystem(voice: VoiceId): string {
+  return `${WRITING_SYSTEM}
+
+Voice (how the notes should read; the rules above still apply):
+${VOICES[voice].prompt}`;
 }
 
 /** For providers without schema enforcement: the shape, spelled out in the prompt. */

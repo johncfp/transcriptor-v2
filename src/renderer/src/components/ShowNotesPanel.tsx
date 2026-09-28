@@ -12,6 +12,7 @@ import {
   type EpisodeDetails,
   type WritingResult,
 } from "../../../shared/showNotes";
+import { isVoiceId, VOICES } from "../../../shared/voices";
 import { DocView } from "./DocView";
 import { ExportCard } from "./ExportCard";
 import { Section } from "./Section";
@@ -154,7 +155,8 @@ function ChecksCard({ result }: { result: WritingResult }) {
   return (
     <Section title="Checks">
       <p className="hint">
-        Written by {providerById(result.provider)?.label ?? result.provider} ({result.model}) on{" "}
+        Written by {providerById(result.provider)?.label ?? result.provider} ({result.model})
+        {result.voice && isVoiceId(result.voice) ? ` in the ${VOICES[result.voice].label} voice` : ""} on{" "}
         {new Date(result.generatedAt).toLocaleString()}.
       </p>
       {clean ? (

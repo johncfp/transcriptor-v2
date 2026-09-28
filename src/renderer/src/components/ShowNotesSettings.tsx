@@ -7,26 +7,13 @@ import { Section } from "./Section";
 const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
+/** Which provider and model write the notes. */
 export function ShowNotesSettings({ settings, update }: { settings: Settings; update: (p: SettingsPatch) => void }) {
-  const { writing, template } = settings;
+  const { writing } = settings;
   const [model, setModel] = useState(writing.model);
   const [baseUrl, setBaseUrl] = useState(writing.baseUrl);
-  const [message, setMessage] = useState("");
   useEffect(() => setModel(writing.model), [writing.model]);
   useEffect(() => setBaseUrl(writing.baseUrl), [writing.baseUrl]);
-
-  const sections = templateSections(template, settings.customSections);
-  const custom = template === "custom";
-  const setCustom = (next: SectionId[]) => update({ template: "custom", customSections: next });
-
-  const move = (id: SectionId, by: -1 | 1) => {
-    const list = [...sections];
-    const i = list.indexOf(id);
-    const j = i + by;
-    if (i < 0 || j < 0 || j >= list.length) return;
-    [list[i], list[j]] = [list[j]!, list[i]!];
-    setCustom(list);
-  };
 
   return (
     <Section
@@ -36,7 +23,7 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
       <div className="row">
         <div className="row-label">
           <span>Writing provider</span>
-          <span className="hint">Add its key under API keys below.</span>
+          <span className="hint">Add its key on the API keys tab.</span>
         </div>
         <select
           className="input select"
@@ -89,10 +76,32 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
         </p>
       )}
 
+    </Section>
+  );
+}
+
+/** Which sections the show notes have, in order; custom templates can be shared as files. */
+export function ShowNotesTemplateSection({ settings, update }: { settings: Settings; update: (p: SettingsPatch) => void }) {
+  const { template } = settings;
+  const [message, setMessage] = useState("");
+  const sections = templateSections(template, settings.customSections);
+  const custom = template === "custom";
+  const setCustom = (next: SectionId[]) => update({ template: "custom", customSections: next });
+
+  const move = (id: SectionId, by: -1 | 1) => {
+    const list = [...sections];
+    const i = list.indexOf(id);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j]!, list[i]!];
+    setCustom(list);
+  };
+
+  return (
+    <Section title="Show notes template" intro="Which sections the show notes have, in order.">
       <div className="row">
         <div className="row-label">
           <span>Template</span>
-          <span className="hint">Which sections the show notes have, in order.</span>
         </div>
         <div className="segmented" role="radiogroup" aria-label="Template">
           {[...TEMPLATES, { id: "custom", name: "Custom" }].map((t) => (

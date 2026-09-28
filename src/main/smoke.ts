@@ -248,17 +248,43 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         referenceText.includes("Thanks, glad to be here.") &&
         referenceText.includes("Pete hosts a podcast.");
 
+      // Settings: every section is on one of the tabs.
       await click(".nav-item", "Settings");
       await pause(500);
-      const sections = await js<string[]>(`[...document.querySelectorAll("h2")].map((h) => h.textContent)`);
-      await shot("settings.png");
-      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Show notes").scrollIntoView()`);
+      const sections: string[] = [];
+      for (const [label, file] of [
+        ["General", "settings-general.png"],
+        ["Output", "settings-output.png"],
+        ["Show notes", "settings-notes.png"],
+        ["API keys", "settings-keys.png"],
+      ] as const) {
+        await click(".tab", label);
+        await pause(300);
+        sections.push(...(await js<string[]>(`[...document.querySelectorAll(".settings-grid h2")].map((h) => h.textContent)`)));
+        await shot(file);
+      }
+      await click(".tab", "General");
       await pause(300);
-      await shot("settings-notes.png");
 
-      // Full-screen size: Settings flows into columns; Episodes fills the width; search filters.
-      win.setSize(1900, 1000);
+      // Themes: the page background follows the choice.
+      const background = () => js<string>(`getComputedStyle(document.body).backgroundColor`);
+      await js(`window.api.updateSettings({ general: { theme: "light" } })`);
       await pause(400);
+      const lightBg = await background();
+      await shot("theme-light.png");
+      await js(`window.api.updateSettings({ general: { theme: "dark" } })`);
+      await pause(400);
+      const darkBg = await background();
+      const themes = lightBg === "rgb(247, 247, 248)" && darkBg === "rgb(17, 17, 19)";
+
+      // Full-screen size: settings sections side by side; Episodes fills the width; search filters.
+      win.setSize(1900, 1000);
+      // Resizing is asynchronous; wait for the page to see the new width.
+      let pageWidth = 0;
+      for (let i = 0; i < 30 && pageWidth < 1400; i++) {
+        await pause(100);
+        pageWidth = await js<number>(`window.innerWidth`);
+      }
       await js(`window.scrollTo(0, 0); document.querySelector(".content").scrollTop = 0`);
       await shot("settings-wide.png");
       const settingsColumns = await js<number>(
@@ -301,8 +327,10 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           playback &&
           notes &&
           search &&
-          settingsColumns === 2 &&
-          sections.length >= 5,
+          // Two columns need ~1400px; skip on a screen too small for that.
+          (pageWidth < 1400 || settingsColumns === 2) &&
+          themes &&
+          ALL_SECTIONS.every((t) => sections.includes(t)),
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -318,6 +346,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         notesText,
         sections,
         settingsColumns,
+        pageWidth,
+        lightBg,
+        darkBg,
         searchHit,
         searchMiss,
         newerVersion,
@@ -353,3 +384,16 @@ const SMOKE_DRAFT = {
     frameworks: [],
   },
 };
+
+/** Every settings section, which between them the four tabs must show. */
+const ALL_SECTIONS = [
+  "General",
+  "Processing",
+  "Output",
+  "Confidence bands",
+  "Show profile",
+  "Show notes",
+  "Show notes template",
+  "API keys",
+  "Show notes voice",
+];

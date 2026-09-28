@@ -175,6 +175,7 @@ test("end to end with the real Claude SDK against a local fake API", async () =>
       edits,
       details: { ...EMPTY_DETAILS, episodeNumber: "386", sponsors: "CalmDesk: use code TEST386." },
       show: { name: "This Is A Test Show", hosts: ["Nigel T."] },
+      voice: "seo",
       writer: anthropicWriter,
       call: { apiKey: "sk-ant-test", model: "claude-opus-5", baseUrl: fake.url },
       onStage: (s) => stages.push(s),
@@ -189,6 +190,10 @@ test("end to end with the real Claude SDK against a local fake API", async () =>
     assert.equal(research!.fallbacks, "default");
     assert.match(String(fake.requests[0]!.headers["anthropic-beta"]), /server-side-fallback-2026-07-01/);
     assert.equal(draft!.stream, true);
+    // The voice comes after the accuracy rules, which are still there.
+    const system = JSON.stringify(draft!.system);
+    assert.ok(system.indexOf("Copy each one exactly") < system.indexOf("easy to find in search engines"));
+    assert.equal(result.voice, "seo");
     assert.equal((draft!.output_config as { format: { type: string } }).format.type, "json_schema");
     assert.match(JSON.stringify(draft!.messages), /Hosts Making Life Easy is Hard/, "confirmed fact reaches the writer");
     assert.doesNotMatch(JSON.stringify(draft!.messages), /Invented/, "unconfirmed fact doesn't");

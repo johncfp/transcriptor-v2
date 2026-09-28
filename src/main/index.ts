@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, powerSaveBlocker, shell } from "electron";
 import { IPC } from "../shared/api";
 import { AUDIO_EXTENSIONS, type AddFilesResult } from "../shared/jobs";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -60,10 +60,12 @@ function start(): void {
   const keys = new KeyStore(userData);
 
   applyLoginItem(settings.get().general.startAtLogin);
+  applyTheme(settings.get().general.theme);
   settings.onChange((next, prev) => {
     if (next.general.startAtLogin !== prev.general.startAtLogin) {
       applyLoginItem(next.general.startAtLogin);
     }
+    if (next.general.theme !== prev.general.theme) applyTheme(next.general.theme);
   });
 
   // The writing provider chosen in Settings, with its key and model.
@@ -95,6 +97,7 @@ function start(): void {
         edits: req.edits,
         details: req.details,
         show: { name: show.name, hosts: show.hosts },
+        voice: settings.get().writing.voice,
         writer,
         call: { apiKey, model, baseUrl, signal: req.signal },
         onStage: req.onStage,
@@ -225,7 +228,7 @@ function createWindow(settings: SettingsStore): BrowserWindow {
     minHeight: 520,
     show: false,
     title: "Transcriptor 2",
-    backgroundColor: "#111113",
+    backgroundColor: windowBackground(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "..", "preload", "index.js"),
@@ -293,6 +296,19 @@ app.on("before-quit", (event) => {
 app.on("window-all-closed", () => {
   app.quit();
 });
+
+/**
+ * Light, dark, or follow the OS. Setting Electron's theme source also flips
+ * the page's prefers-color-scheme, so the stylesheet's light/dark tokens
+ * follow without any renderer code, and the title bar matches.
+ */
+function applyTheme(theme: "system" | "light" | "dark"): void {
+  nativeTheme.themeSource = theme;
+  mainWindow?.setBackgroundColor(windowBackground());
+}
+
+/** The page background, shown before the UI paints (matches --bg in styles.css). */
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? "#111113" : "#f7f7f8");
 
 /** True when the OS started us at login, in which case stay in the tray. */
 function launchedHidden(): boolean {

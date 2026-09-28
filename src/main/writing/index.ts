@@ -11,7 +11,8 @@ import {
 } from "../../shared/verify";
 import { anthropicWriter } from "./anthropic";
 import { kimiWriter, openaiWriter, qwenWriter } from "./openai";
-import { RESEARCH_SYSTEM, researchPrompt, WRITING_SYSTEM, writingPrompt } from "./prompts";
+import { RESEARCH_SYSTEM, researchPrompt, writingPrompt, writingSystem } from "./prompts";
+import type { VoiceId } from "../../shared/voices";
 import type { ProviderCall, WritingProvider } from "./types";
 
 export const WRITERS: WritingProvider[] = [anthropicWriter, openaiWriter, kimiWriter, qwenWriter];
@@ -22,6 +23,7 @@ export interface WriteEpisodeInput {
   edits: EpisodeEdits;
   details: EpisodeDetails;
   show: { name: string; hosts: string[] };
+  voice: VoiceId;
   writer: WritingProvider;
   call: ProviderCall;
   onStage?: (stage: string) => void;
@@ -95,7 +97,7 @@ export async function writeEpisode(input: WriteEpisodeInput): Promise<WritingRes
   input.onStage?.("Writing show notes");
   const draft = coerceDraft(
     await writer.draft(call, {
-      system: WRITING_SYSTEM,
+      system: writingSystem(input.voice),
       user: writingPrompt({ showName: input.show.name, hosts, guest, facts: confirmedFacts(research), transcript: text }),
     }),
   );
@@ -106,6 +108,7 @@ export async function writeEpisode(input: WriteEpisodeInput): Promise<WritingRes
     version: 1,
     provider: writer.id,
     model: call.model,
+    voice: input.voice,
     generatedAt: new Date().toISOString(),
     details: input.details,
     host: hosts,

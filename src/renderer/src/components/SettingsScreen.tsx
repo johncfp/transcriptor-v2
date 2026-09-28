@@ -1,11 +1,45 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { SPEAKER_FORMATS, type Settings, type SettingsPatch, type SpeakerFormat } from "../../../shared/settings";
+import {
+  SPEAKER_FORMATS,
+  THEMES,
+  type Settings,
+  type SettingsPatch,
+  type SpeakerFormat,
+} from "../../../shared/settings";
 import { ApiKeysSection } from "./ApiKeysSection";
 import { Section } from "./Section";
-import { ShowNotesSettings } from "./ShowNotesSettings";
+import { ShowNotesSettings, ShowNotesTemplateSection } from "./ShowNotesSettings";
+import { VoiceSection } from "./VoiceSection";
 import { ConfidenceBandsSection } from "./ConfidenceBandsSection";
 
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "output", label: "Output" },
+  { id: "notes", label: "Show notes" },
+  { id: "keys", label: "API keys & voice" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
+const TAB_KEY = "settings.tab";
+function savedTab(): TabId {
+  try {
+    const t = localStorage.getItem(TAB_KEY);
+    return TABS.some((x) => x.id === t) ? (t as TabId) : "general";
+  } catch {
+    return "general";
+  }
+}
+
 export function SettingsScreen() {
+  const [tab, setTab] = useState<TabId>(savedTab);
+  const chooseTab = (t: TabId) => {
+    setTab(t);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      // Remembering the tab is a convenience; fine without it.
+    }
+  };
   const [settings, setSettings] = useState<Settings | null>(null);
   const [defaultFolder, setDefaultFolder] = useState("");
 
@@ -24,153 +58,183 @@ export function SettingsScreen() {
   return (
     <>
       <h1>Settings</h1>
+      <div className="tabs" role="tablist" aria-label="Settings">
+        {TABS.map((t) => (
+          <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} onClick={() => chooseTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
       <div className="settings-grid">
+        {tab === "general" && (
+          <>
+            <Section title="General">
+              <Toggle
+                label="Start at login"
+                hint="Transcriptor 2 opens quietly in the tray when you sign in."
+                checked={general.startAtLogin}
+                onChange={(v) => update({ general: { startAtLogin: v } })}
+              />
+              <Toggle
+                label="Keep running when the window is closed"
+                hint="Closing the window hides it to the tray so work in progress keeps going. Quit from the tray icon."
+                checked={general.closeToTray}
+                onChange={(v) => update({ general: { closeToTray: v } })}
+              />
+              <Choice
+                label="Appearance"
+                value={general.theme}
+                options={THEMES.map((t) => ({ value: t.id, label: t.label }))}
+                onChange={(v) => update({ general: { theme: v } })}
+              />
+            </Section>
 
-      <Section title="General">
-        <Toggle
-          label="Start at login"
-          hint="Transcriptor 2 opens quietly in the tray when you sign in."
-          checked={general.startAtLogin}
-          onChange={(v) => update({ general: { startAtLogin: v } })}
-        />
-        <Toggle
-          label="Keep running when the window is closed"
-          hint="Closing the window hides it to the tray so work in progress keeps going. Quit from the tray icon."
-          checked={general.closeToTray}
-          onChange={(v) => update({ general: { closeToTray: v } })}
-        />
-      </Section>
+            <Section title="Processing">
+              <Choice
+                label="When a new file arrives"
+                value={processing.intake}
+                options={[
+                  { value: "approve", label: "Ask me before processing" },
+                  { value: "auto", label: "Start processing right away" },
+                ]}
+                onChange={(v) => update({ processing: { intake: v } })}
+              />
+              <Toggle
+                label="Review the transcript before writing show notes"
+                hint="Pause after transcription to fix speaker names and misheard words."
+                checked={processing.reviewStep}
+                onChange={(v) => update({ processing: { reviewStep: v } })}
+              />
+              <Toggle
+                label="Remove repetitions and false starts"
+                hint={`Filler words ("um", "uh") are always removed. This also has ElevenLabs drop false starts ("I was, we went") while transcribing, which can't be reviewed or undone, and hides repeated words ("the the") and cut-off words ("th-"), which you can check in review. Applies to episodes transcribed after you turn it on.`}
+                checked={processing.removeFalseStarts}
+                onChange={(v) => update({ processing: { removeFalseStarts: v } })}
+              />
+            </Section>
+          </>
+        )}
 
-      <Section title="Processing">
-        <Choice
-          label="When a new file arrives"
-          value={processing.intake}
-          options={[
-            { value: "approve", label: "Ask me before processing" },
-            { value: "auto", label: "Start processing right away" },
-          ]}
-          onChange={(v) => update({ processing: { intake: v } })}
-        />
-        <Toggle
-          label="Review the transcript before writing show notes"
-          hint="Pause after transcription to fix speaker names and misheard words."
-          checked={processing.reviewStep}
-          onChange={(v) => update({ processing: { reviewStep: v } })}
-        />
-        <Toggle
-          label="Remove repetitions and false starts"
-          hint={`Filler words ("um", "uh") are always removed. This also has ElevenLabs drop false starts ("I was, we went") while transcribing, which can't be reviewed or undone, and hides repeated words ("the the") and cut-off words ("th-"), which you can check in review. Applies to episodes transcribed after you turn it on.`}
-          checked={processing.removeFalseStarts}
-          onChange={(v) => update({ processing: { removeFalseStarts: v } })}
-        />
-      </Section>
+        {tab === "output" && (
+          <>
+            <Section title="Output">
+              <Row label="Save files to" hint={output.folder ? undefined : "Default folder"}>
+                <div className="folder">
+                  <code className="folder-path" title={output.folder || defaultFolder}>
+                    {output.folder || defaultFolder}
+                  </code>
+                  <button
+                    className="button"
+                    onClick={async () => {
+                      const picked = await window.api.pickFolder();
+                      if (picked) update({ output: { folder: picked } });
+                    }}
+                  >
+                    Choose…
+                  </button>
+                  {output.folder && (
+                    <button className="button ghost" onClick={() => update({ output: { folder: "" } })}>
+                      Use default
+                    </button>
+                  )}
+                </div>
+              </Row>
+              <Row label="Formats" hint="Used as the default for each episode. You can change them per episode.">
+                <div className="checks">
+                  <Check
+                    label="Word (.docx)"
+                    checked={output.formats.docx}
+                    onChange={(v) => update({ output: { formats: { ...output.formats, docx: v } } })}
+                  />
+                  <Check
+                    label="Plain text (.txt)"
+                    checked={output.formats.txt}
+                    onChange={(v) => update({ output: { formats: { ...output.formats, txt: v } } })}
+                  />
+                  <Check label="Google Doc (not set up yet)" checked={false} disabled onChange={() => {}} />
+                </div>
+              </Row>
+              <Toggle
+                label="Export automatically when show notes are ready"
+                hint="Saves the transcript, show notes and reference file in a folder for the episode. You can also export from the episode at any time."
+                checked={output.autoExport}
+                onChange={(v) => update({ output: { autoExport: v } })}
+              />
+              <Row label="Speaker format" hint="How each speaker's turn is laid out in the exported transcript.">
+                <select
+                  className="input select"
+                  value={output.speakerFormat}
+                  onChange={(e) => update({ output: { speakerFormat: e.target.value as SpeakerFormat } })}
+                  aria-label="Speaker format"
+                >
+                  {SPEAKER_FORMATS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Toggle
+                label="Timestamps in the exported transcript"
+                hint="Adds each turn's start time, placed to suit the speaker format."
+                checked={output.transcriptTimestamps}
+                onChange={(v) => update({ output: { transcriptTimestamps: v } })}
+              />
+              <Toggle
+                label="Color low-confidence words in the exported transcript"
+                hint="Red for low and orange for medium confidence, in the Word file, so words worth checking stand out. Plain text has no color."
+                checked={output.colorConfidence}
+                onChange={(v) => update({ output: { colorConfidence: v } })}
+              />
+            </Section>
 
-      <Section title="Output">
-        <Row label="Save files to" hint={output.folder ? undefined : "Default folder"}>
-          <div className="folder">
-            <code className="folder-path" title={output.folder || defaultFolder}>
-              {output.folder || defaultFolder}
-            </code>
-            <button
-              className="button"
-              onClick={async () => {
-                const picked = await window.api.pickFolder();
-                if (picked) update({ output: { folder: picked } });
-              }}
+            <ConfidenceBandsSection settings={settings} update={update} />
+          </>
+        )}
+
+        {tab === "notes" && (
+          <>
+            <Section
+              title="Show profile"
+              intro="Filled in once and used in every episode's show notes. Anything left blank is left out."
             >
-              Choose…
-            </button>
-            {output.folder && (
-              <button className="button ghost" onClick={() => update({ output: { folder: "" } })}>
-                Use default
-              </button>
-            )}
-          </div>
-        </Row>
-        <Row label="Formats" hint="Used as the default for each episode. You can change them per episode.">
-          <div className="checks">
-            <Check
-              label="Word (.docx)"
-              checked={output.formats.docx}
-              onChange={(v) => update({ output: { formats: { ...output.formats, docx: v } } })}
-            />
-            <Check
-              label="Plain text (.txt)"
-              checked={output.formats.txt}
-              onChange={(v) => update({ output: { formats: { ...output.formats, txt: v } } })}
-            />
-            <Check label="Google Doc (not set up yet)" checked={false} disabled onChange={() => {}} />
-          </div>
-        </Row>
-        <Toggle
-          label="Export automatically when show notes are ready"
-          hint="Saves the transcript, show notes and reference file in a folder for the episode. You can also export from the episode at any time."
-          checked={output.autoExport}
-          onChange={(v) => update({ output: { autoExport: v } })}
-        />
-        <Row label="Speaker format" hint="How each speaker's turn is laid out in the exported transcript.">
-          <select
-            className="input select"
-            value={output.speakerFormat}
-            onChange={(e) => update({ output: { speakerFormat: e.target.value as SpeakerFormat } })}
-            aria-label="Speaker format"
-          >
-            {SPEAKER_FORMATS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Toggle
-          label="Timestamps in the exported transcript"
-          hint="Adds each turn's start time, placed to suit the speaker format."
-          checked={output.transcriptTimestamps}
-          onChange={(v) => update({ output: { transcriptTimestamps: v } })}
-        />
-        <Toggle
-          label="Color low-confidence words in the exported transcript"
-          hint="Red for low and orange for medium confidence, in the Word file, so words worth checking stand out. Plain text has no color."
-          checked={output.colorConfidence}
-          onChange={(v) => update({ output: { colorConfidence: v } })}
-        />
-      </Section>
+              <TextField label="Show name" value={show.name} onCommit={(v) => update({ show: { name: v } })} />
+              <TextField
+                label="Host names"
+                hint="Separate multiple hosts with commas. Also used to name speakers."
+                value={show.hosts.join(", ")}
+                onCommit={(v) =>
+                  update({
+                    show: {
+                      hosts: v
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    },
+                  })
+                }
+              />
+              <TextField label="Website" value={show.website} onCommit={(v) => update({ show: { website: v } })} />
+              <TextField label="Contact email" value={show.email} onCommit={(v) => update({ show: { email: v } })} />
+              <TextField
+                label="Sign-off line"
+                hint="Closes the show notes, e.g. “Thanks for listening to …”"
+                value={show.signOff}
+                onCommit={(v) => update({ show: { signOff: v } })}
+              />
+            </Section>
 
-      <ConfidenceBandsSection settings={settings} update={update} />
+            <ShowNotesSettings settings={settings} update={update} />
+            <ShowNotesTemplateSection settings={settings} update={update} />
+          </>
+        )}
 
-      <Section
-        title="Show profile"
-        intro="Filled in once and used in every episode's show notes. Anything left blank is left out."
-      >
-        <TextField label="Show name" value={show.name} onCommit={(v) => update({ show: { name: v } })} />
-        <TextField
-          label="Host names"
-          hint="Separate multiple hosts with commas. Also used to name speakers."
-          value={show.hosts.join(", ")}
-          onCommit={(v) =>
-            update({
-              show: {
-                hosts: v
-                  .split(",")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              },
-            })
-          }
-        />
-        <TextField label="Website" value={show.website} onCommit={(v) => update({ show: { website: v } })} />
-        <TextField label="Contact email" value={show.email} onCommit={(v) => update({ show: { email: v } })} />
-        <TextField
-          label="Sign-off line"
-          hint="Closes the show notes, e.g. “Thanks for listening to …”"
-          value={show.signOff}
-          onCommit={(v) => update({ show: { signOff: v } })}
-        />
-      </Section>
-
-      <ShowNotesSettings settings={settings} update={update} />
-
-      <ApiKeysSection />
+        {tab === "keys" && (
+          <>
+            <ApiKeysSection />
+            <VoiceSection settings={settings} update={update} />
+          </>
+        )}
       </div>
     </>
   );
