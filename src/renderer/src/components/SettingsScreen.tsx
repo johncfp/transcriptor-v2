@@ -13,6 +13,7 @@ import { ApiKeysSection } from "./ApiKeysSection";
 import { Section } from "./Section";
 import { ShowNotesSettings, ShowNotesTemplateSection } from "./ShowNotesSettings";
 import { VoiceSection } from "./VoiceSection";
+import { BrandingSection } from "./BrandingSection";
 import { ConfidenceBandsSection } from "./ConfidenceBandsSection";
 
 const TABS = [
@@ -257,12 +258,13 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
               />
               <Toggle
                 label="Color low-confidence words in the exported transcript"
-                hint="Red for low and orange for medium confidence, in the Word file, so words worth checking stand out. Plain text has no color."
+                hint="Red for low and orange for medium confidence, in the Word file, so words worth checking stand out. PDF and plain text have no color."
                 checked={output.colorConfidence}
                 onChange={(v) => update({ output: { colorConfidence: v } })}
               />
             </Section>
 
+            <BrandingSection settings={settings} update={update} />
             <ConfidenceBandsSection settings={settings} update={update} />
           </>
         )}

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileNameFor, safeFileName, type ExportDocument, type ExportFormat } from "../shared/exportDocs";
 import { toPlainText } from "../shared/showNotes";
 import { buildDocx } from "./docx";
+import { coverLines, docBranding, type CoverPage, type ExportBranding } from "./brandingDoc";
 import { blocksToHtml } from "./pdfHtml";
 
 /** Turns a print-ready HTML page into PDF bytes; `folder` is where it may put a temporary file. */
@@ -17,12 +18,17 @@ export interface ExportResult {
  * Write an episode's documents into `<root>/<label>/`, one file per document
  * and format, replacing earlier exports of the same episode.
  */
+export interface ExportOptions {
+  renderPdf?: PdfRenderer;
+  branding?: ExportBranding;
+}
+
 export async function writeExport(
   root: string,
   label: string,
   documents: ExportDocument[],
   formats: ExportFormat[],
-  renderPdf?: PdfRenderer,
+  { renderPdf, branding }: ExportOptions = {},
 ): Promise<ExportResult> {
   if (!formats.length) throw new Error("Choose at least one format to export.");
   if (formats.includes("pdf") && !renderPdf) throw new Error("PDF export isn't available here.");
@@ -32,15 +38,16 @@ export async function writeExport(
   try {
     mkdirSync(folder, { recursive: true });
     for (const doc of documents) {
+      const brand = branding && docBranding(branding, doc.kind, label);
       for (const format of formats) {
         const path = join(folder, fileNameFor(base, doc.kind, format));
         // Plain text gets a byte-order mark so older editors read curly quotes and dashes as UTF-8.
         const data =
           format === "docx"
-            ? buildDocx(doc.blocks)
+            ? buildDocx(doc.blocks, brand)
             : format === "pdf"
-              ? await renderPdf!(blocksToHtml(doc.blocks, `${base} - ${doc.kind}`), folder)
-              : `﻿${toPlainText(doc.blocks)}\n`;
+              ? await renderPdf!(blocksToHtml(doc.blocks, `${base} - ${doc.kind}`, brand), folder)
+              : `﻿${plainCover(brand?.cover)}${toPlainText(doc.blocks)}\n`;
         writeFileSync(path, data);
         files.push(path);
       }
@@ -49,6 +56,11 @@ export async function writeExport(
     throw new Error(explainWriteError(err, folder));
   }
   return { folder, files };
+}
+
+/** Plain text has no pages, so its cover is a few lines above a rule; no logo, header or footer. */
+function plainCover(cover: CoverPage | undefined): string {
+  return cover ? `${coverLines(cover).join("\n")}\n\n${"—".repeat(40)}\n\n` : "";
 }
 
 function explainWriteError(err: unknown, folder: string): string {

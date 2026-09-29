@@ -37,6 +37,8 @@ export interface Settings {
     speakerFormat: SpeakerFormat;
     /** Color low- and medium-confidence words in the exported Word transcript. */
     colorConfidence: boolean;
+    /** Cover page, logo, header and footer on Word and PDF exports. */
+    branding: Branding;
   };
   /**
    * Google Drive folder watching (M5). Built but switched off: nothing reads
@@ -97,6 +99,9 @@ export type Theme = (typeof THEMES)[number]["id"];
 
 const COLOR_KEYS = new Set(Object.keys(DEFAULT_EPISODE_COLORS));
 
+/** An imported logo's file name (see src/main/logo.ts), so settings can't point anywhere else. */
+export const LOGO_FILE = /^logo-\d+\.png$/;
+
 /** String settings that only accept certain values; anything else keeps the default. */
 const ALLOWED: Record<string, readonly string[]> = {
   intake: ["approve", "auto"],
@@ -133,6 +138,14 @@ export const DEFAULT_SETTINGS: Settings = {
     transcriptTimestamps: true,
     speakerFormat: "stacked",
     colorConfidence: true,
+    branding: {
+      coverPage: false,
+      logo: "",
+      logoInHeader: true,
+      headerText: "",
+      footerText: "",
+      pageNumbers: false,
+    },
   },
   confidence: { ...DEFAULT_CONFIDENCE_THRESHOLDS },
   watch: { enabled: false, folderId: "" },
@@ -149,6 +162,19 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /** Deep partial, used for patches sent from the renderer. */
+export interface Branding {
+  /** A first page with the logo, show name, document, episode and date. */
+  coverPage: boolean;
+  /** File name of the imported logo in userData/branding (a PNG); empty = none. */
+  logo: string;
+  /** Also put the logo, small, at the top left of every page after the cover. */
+  logoInHeader: boolean;
+  headerText: string;
+  footerText: string;
+  /** "Page 2 of 5" at the bottom right. */
+  pageNumbers: boolean;
+}
+
 export type SettingsPatch = {
   [K in keyof Settings]?: Settings[K] extends unknown[]
     ? Settings[K]
@@ -181,6 +207,7 @@ export function mergeSettings<T>(base: T, patch: unknown): T {
     } else if (typeof p === typeof b) {
       if (ALLOWED[key] && !ALLOWED[key].includes(p as string)) continue;
       if (COLOR_KEYS.has(key) && !/^#[0-9a-f]{6}$/i.test(p as string)) continue;
+      if (key === "logo" && p !== "" && !LOGO_FILE.test(p as string)) continue;
       out[key] = p;
     }
   }

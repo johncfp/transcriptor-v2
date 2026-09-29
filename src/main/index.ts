@@ -11,6 +11,7 @@ import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
 import { printPdf } from "./pdf";
+import { importLogo, loadLogo, logoPreview, pruneLogos } from "./logo";
 import { clampThresholds } from "../shared/confidence";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
@@ -60,6 +61,8 @@ function start(): void {
   const userData = app.getPath("userData");
   const settings = new SettingsStore(userData);
   const keys = new KeyStore(userData);
+  // Logo copies left behind by drafts that weren't saved.
+  pruneLogos(userData, settings.get().output.branding.logo);
 
   applyLoginItem(settings.get().general.startAtLogin);
   applyTheme(settings.get().general.theme);
@@ -123,7 +126,16 @@ function start(): void {
         },
       });
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
-      return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen, printPdf);
+      const { branding } = s.output;
+      return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+        renderPdf: printPdf,
+        branding: {
+          ...branding,
+          show: s.show.name,
+          date: new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }),
+          logo: branding.logo ? loadLogo(userData, branding.logo) : undefined,
+        },
+      });
     },
     autoExport: () => settings.get().output.autoExport,
     reviewOptions: () => {
@@ -351,6 +363,20 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.getSettings, () => settings.get());
   ipcMain.handle(IPC.updateSettings, (_e, patch: SettingsPatch) => settings.update(patch));
   ipcMain.handle(IPC.defaultOutputFolder, () => defaultOutputFolder());
+  ipcMain.handle(IPC.pickLogo, async () => {
+    const result = await showOpenDialog({
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    const path = result.filePaths[0];
+    if (result.canceled || !path) return null;
+    const userData = app.getPath("userData");
+    const name = importLogo(userData, path);
+    return { name, preview: logoPreview(userData, name) ?? "" };
+  });
+  ipcMain.handle(IPC.logoPreview, (_e, name: unknown) =>
+    typeof name === "string" ? logoPreview(app.getPath("userData"), name) : null,
+  );
   ipcMain.handle(IPC.pickFolder, async () => {
     const result = await showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
     return result.canceled ? null : (result.filePaths[0] ?? null);

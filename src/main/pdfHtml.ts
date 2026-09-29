@@ -1,4 +1,5 @@
 import type { Block, Run } from "../shared/showNotes";
+import { fitInside, type DocBranding, type LogoImage } from "./brandingDoc";
 
 /**
  * The document model as a standalone, print-ready HTML page, for PDF export.
@@ -65,12 +66,61 @@ hr { border: 0; border-bottom: 0.75pt solid #bfbfbf; margin: 8pt 0; }
 a { color: #0563c1; }
 `;
 
+const dataUrl = (image: LogoImage) => `data:image/png;base64,${Buffer.from(image.png).toString("base64")}`;
+
+/** Text as a CSS string. "<" is escaped too, so nothing can close the style element. */
+const cssString = (s: string) =>
+  `"${s.replace(/[\\"]/g, (c) => `\\${c}`).replace(/</g, "\\3C ").replace(/[\r\n]+/g, " ")}"`;
+
+const MARGIN_TEXT = "font-family: Calibri, Carlito, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 9pt; color: #595959;";
+
+/**
+ * Header and footer as CSS page margin boxes, so the cover page (the first)
+ * can go without them. The small logo is declared at 3x so it prints sharp
+ * at about 0.4" tall.
+ */
+function pageStyle(b: DocBranding): string {
+  const boxes: string[] = [];
+  if (b.headerLogo && b.logo) boxes.push(`@top-left { content: image-set(url("${dataUrl(b.logo.small)}") 3x); vertical-align: bottom; padding-bottom: 10pt; }`);
+  if (b.headerText) boxes.push(`@top-right { content: ${cssString(b.headerText)}; ${MARGIN_TEXT} vertical-align: bottom; padding-bottom: 10pt; }`);
+  if (b.footerText) boxes.push(`@bottom-left { content: ${cssString(b.footerText)}; ${MARGIN_TEXT} vertical-align: top; }`);
+  if (b.pageNumbers) {
+    boxes.push(`@bottom-right { content: "Page " counter(page) " of " counter(pages); ${MARGIN_TEXT} vertical-align: top; }`);
+  }
+  if (!boxes.length) return "";
+  const none = ["top-left", "top-right", "bottom-left", "bottom-right"].map((m) => `@${m} { content: none; }`).join(" ");
+  return `@page { ${boxes.join(" ")} }` + (b.cover ? ` @page :first { ${none} }` : "");
+}
+
+const COVER_STYLE = `
+.cover { break-after: page; text-align: center; padding-top: 1.75in; }
+.cover img { display: block; margin: 0 auto 0.45in; }
+.cover .show { font-size: 28pt; font-weight: bold; margin: 0 0 12pt; }
+.cover .kind { font-size: 16pt; color: #595959; margin: 0 0 24pt; }
+.cover .title { font-size: 14pt; margin: 0 0 12pt; }
+.cover .date { font-size: 11pt; color: #595959; }
+`;
+
+function coverHtml(b: DocBranding): string {
+  const c = b.cover!;
+  let img = "";
+  if (b.logo) {
+    // Same box as the Word cover: up to 3.5" wide and 1.75" tall.
+    const [w, h] = fitInside(b.logo.width, b.logo.height, 3.5, 1.75);
+    img = `<img src="${dataUrl(b.logo)}" alt="" style="width:${w.toFixed(3)}in;height:${h.toFixed(3)}in">`;
+  }
+  const line = (cls: string, text: string) => (text.trim() ? `<p class="${cls}">${escapeHtml(text)}</p>` : "");
+  return `<section class="cover">${img}${line("show", c.show)}${line("kind", c.kind)}${line("title", c.title)}${line("date", c.date)}</section>`;
+}
+
 /** A complete HTML page for one document. Nothing in it loads from anywhere. */
-export function blocksToHtml(blocks: Block[], title: string): string {
+export function blocksToHtml(blocks: Block[], title: string, branding?: DocBranding): string {
+  const style = STYLE + (branding ? pageStyle(branding) + (branding.cover ? COVER_STYLE : "") : "");
+  const cover = branding?.cover ? coverHtml(branding) : "";
   return (
     `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">` +
-    `<title>${escapeHtml(title)}</title><style>${STYLE}</style></head>` +
-    `<body>${blocks.map(block).join("\n")}</body></html>`
+    `<title>${escapeHtml(title)}</title><style>${style}</style></head>` +
+    `<body>${cover}${blocks.map(block).join("\n")}</body></html>`
   );
 }

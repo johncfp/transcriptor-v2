@@ -33,6 +33,10 @@ export interface Api {
   defaultOutputFolder(): Promise<string>;
   /** Opens a folder picker; resolves to null if cancelled. */
   pickFolder(): Promise<string | null>;
+  /** Pick an image and copy it in as the export logo; null if cancelled. */
+  pickLogo(): Promise<{ name: string; preview: string } | null>;
+  /** A small data: URL preview of an imported logo, or null if it's gone. */
+  logoPreview(name: string): Promise<string | null>;
 
   listKeys(): Promise<KeyStatus[]>;
   setKey(providerId: string, key: string): Promise<KeyStatus[]>;
@@ -94,6 +98,8 @@ export const IPC = {
   updateSettings: "settings:update",
   defaultOutputFolder: "settings:default-output-folder",
   pickFolder: "dialog:pick-folder",
+  pickLogo: "branding:pick-logo",
+  logoPreview: "branding:logo-preview",
   listKeys: "keys:list",
   setKey: "keys:set",
   deleteKey: "keys:delete",

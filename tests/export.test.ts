@@ -6,10 +6,11 @@ import { test } from "node:test";
 import { strFromU8, unzipSync } from "fflate";
 import { buildTranscriptDoc, episodeLabel, safeFileName } from "../src/shared/exportDocs";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "../src/shared/confidence";
-import type { SpeakerFormat } from "../src/shared/settings";
+import { DEFAULT_SETTINGS, mergeSettings, type SpeakerFormat } from "../src/shared/settings";
 import { EMPTY_DETAILS, toPlainText, type Block } from "../src/shared/showNotes";
 import { buildDocx } from "../src/main/docx";
 import { writeExport } from "../src/main/exporter";
+import { docBranding, type ExportBranding } from "../src/main/brandingDoc";
 
 test("file names are safe on Windows and macOS", () => {
   assert.equal(safeFileName('Episode 386 - AI: "Love" & Work?'), "Episode 386 - AI Love & Work");
@@ -137,10 +138,12 @@ test("export errors are readable", async () => {
 test("PDF export: each document is rendered from its own HTML page", async () => {
   const root = mkdtempSync(join(tmpdir(), "t2-export-"));
   const pages: string[] = [];
-  const result = await writeExport(root, "Episode 386", [{ kind: "Show Notes", blocks: SAMPLE }], ["pdf"], async (html, folder) => {
-    assert.equal(folder, join(root, "Episode 386"), "temporary files go in the episode's folder");
-    pages.push(html);
-    return new TextEncoder().encode("%PDF-1.7 fake");
+  const result = await writeExport(root, "Episode 386", [{ kind: "Show Notes", blocks: SAMPLE }], ["pdf"], {
+    renderPdf: async (html, folder) => {
+      assert.equal(folder, join(root, "Episode 386"), "temporary files go in the episode's folder");
+      pages.push(html);
+      return new TextEncoder().encode("%PDF-1.7 fake");
+    },
   });
   assert.deepEqual(readdirSync(result.folder), ["Episode 386 - Show Notes.pdf"]);
   assert.equal(readFileSync(result.files[0]!, "utf8"), "%PDF-1.7 fake");
@@ -167,4 +170,89 @@ test("PDF HTML: escaped text, links, lists, tables and quotes; nothing loads fro
   assert.match(html, /<td>&lt;script&gt;<\/td>/);
   assert.match(html, /“Hi”.*— Pete/);
   assert.match(html, /Content-Security-Policy" content="default-src 'none'/);
+});
+
+const LOGO = { png: new Uint8Array([137, 80, 78, 71]), width: 400, height: 100, small: { png: new Uint8Array([1]), width: 480, height: 120 } };
+const BRANDING: ExportBranding = {
+  coverPage: true,
+  show: "This Is A Test Show",
+  date: "September 29, 2026",
+  logo: LOGO,
+  logoInHeader: true,
+  headerText: "Confidential",
+  footerText: "© 2026 Test & Co",
+  pageNumbers: true,
+};
+
+test("Word branding: cover page, logo, header and footer parts", () => {
+  const parts = unzipSync(buildDocx(SAMPLE, docBranding(BRANDING, "Show Notes", "Episode 386")));
+  const doc = strFromU8(parts["word/document.xml"]!);
+  const types = strFromU8(parts["[Content_Types].xml"]!);
+  const rels = strFromU8(parts["word/_rels/document.xml.rels"]!);
+  // Cover first: logo (4:1, fitted to 3.5" wide), show, document, episode, date, then a page break.
+  assert.match(doc, /<w:body><w:p>.*r:embed="rIdLogo".*This Is A Test Show.*Show Notes.*Episode 386.*September 29, 2026.*<w:br w:type="page"\/>/);
+  assert.match(doc, /<wp:extent cx="3200400" cy="800100"\/>/);
+  // sectPr: references first, then page setup, then titlePg so the cover has no header or footer.
+  assert.match(doc, /<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"\/><w:footerReference w:type="default" r:id="rIdFooter"\/><w:pgSz[^]*<w:titlePg\/><\/w:sectPr>/);
+  assert.match(rels, /Id="rIdLogo"[^>]*Target="media\/logo\.png"/);
+  assert.deepEqual([...parts["word/media/logo.png"]!], [...LOGO.png]);
+  assert.match(types, /Extension="png"/);
+  assert.match(types, /PartName="\/word\/header1\.xml"/);
+  assert.match(types, /PartName="\/word\/footer1\.xml"/);
+  const header = strFromU8(parts["word/header1.xml"]!);
+  assert.match(header, /r:embed="rIdHeaderLogo".*<w:tab\/>.*Confidential/);
+  assert.match(strFromU8(parts["word/_rels/header1.xml.rels"]!), /Id="rIdHeaderLogo"[^>]*Target="media\/logo\.png"/);
+  const footer = strFromU8(parts["word/footer1.xml"]!);
+  assert.match(footer, /© 2026 Test &amp; Co.*<w:tab\/>.*Page .* PAGE .* of .* NUMPAGES /);
+});
+
+test("Word branding: nothing set means no extra parts, as before", () => {
+  const plain = docBranding({ ...BRANDING, coverPage: false, logo: undefined, headerText: "", footerText: "", pageNumbers: false }, "Transcript", "x");
+  for (const parts of [unzipSync(buildDocx(SAMPLE)), unzipSync(buildDocx(SAMPLE, plain))]) {
+    assert.deepEqual(Object.keys(parts).sort(), [
+      "[Content_Types].xml",
+      "_rels/.rels",
+      "word/_rels/document.xml.rels",
+      "word/document.xml",
+      "word/numbering.xml",
+      "word/styles.xml",
+    ]);
+    assert.ok(!strFromU8(parts["[Content_Types].xml"]!).includes("header1"));
+  }
+  // A header without the logo has no header relationships.
+  const textOnly = unzipSync(buildDocx(SAMPLE, docBranding({ ...BRANDING, coverPage: false, logoInHeader: false }, "Transcript", "x")));
+  assert.ok(textOnly["word/header1.xml"] && !textOnly["word/_rels/header1.xml.rels"] && !textOnly["word/media/logo.png"]);
+  assert.ok(!strFromU8(textOnly["word/document.xml"]!).includes("titlePg"));
+});
+
+test("PDF branding: cover page, margin boxes, and none on the cover", async () => {
+  const { blocksToHtml } = await import("../src/main/pdfHtml");
+  const html = blocksToHtml(SAMPLE, "T", docBranding({ ...BRANDING, headerText: 'Say "hi" </style><script>' }, "Show Notes", "Episode 386"));
+  assert.match(html, /<body><section class="cover"><img src="data:image\/png;base64,iVBORw==" alt="" style="width:3\.500in;height:0\.875in">/);
+  assert.match(html, /<p class="show">This Is A Test Show<\/p><p class="kind">Show Notes<\/p><p class="title">Episode 386<\/p><p class="date">September 29, 2026<\/p><\/section>/);
+  assert.match(html, /@top-left \{ content: image-set\(url\("data:image\/png;base64,AQ=="\) 3x\)/);
+  assert.match(html, /@top-right \{ content: "Say \\"hi\\" \\3C \/style>\\3C script>"/);
+  assert.equal(html.split("</style>").length, 2, "header text can't close the style element");
+  assert.match(html, /@bottom-left \{ content: "© 2026 Test & Co"/);
+  assert.match(html, /@bottom-right \{ content: "Page " counter\(page\) " of " counter\(pages\)/);
+  assert.match(html, /@page :first \{ @top-left \{ content: none; \}/);
+  // Without a cover, every page gets the header and footer.
+  const noCover = blocksToHtml(SAMPLE, "T", docBranding({ ...BRANDING, coverPage: false }, "Show Notes", "x"));
+  assert.ok(!noCover.includes(":first") && !noCover.includes('class="cover"'));
+});
+
+test("plain text gets the cover as lines at the top", async () => {
+  const root = mkdtempSync(join(tmpdir(), "t2-export-"));
+  const result = await writeExport(root, "Episode 386", [{ kind: "Show Notes", blocks: SAMPLE }], ["txt"], { branding: BRANDING });
+  const txt = readFileSync(result.files[0]!, "utf8");
+  assert.ok(txt.startsWith("\ufeffThis Is A Test Show\nShow Notes\nEpisode 386\nSeptember 29, 2026\n\n———"));
+  assert.ok(!txt.includes("Confidential"), "no header or footer in plain text");
+});
+
+test("settings: the logo can only name an imported logo file", () => {
+  const merged = (logo: string) => mergeSettings(DEFAULT_SETTINGS, { output: { branding: { logo } } }).output.branding.logo;
+  assert.equal(merged("logo-1759150000000.png"), "logo-1759150000000.png");
+  assert.equal(merged("../../keys.json"), "");
+  assert.equal(merged("C:\\logo.png"), "");
+  assert.equal(merged(""), "");
 });

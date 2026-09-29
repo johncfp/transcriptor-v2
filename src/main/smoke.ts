@@ -3,6 +3,8 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { app, type BrowserWindow } from "electron";
+import { strFromU8, unzipSync } from "fflate";
+import { importLogo } from "./logo";
 import { startFakeAnthropic } from "./testing/fakeAnthropic";
 import type { Transcriber } from "./transcribe/types";
 
@@ -238,6 +240,22 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         pdfExport.files.length === 3 &&
         pdfExport.files.every((f) => f.endsWith(".pdf") && readFileSync(f).subarray(0, 5).toString() === "%PDF-") &&
         !readdirSync(pdfExport.folder).some((f) => f.startsWith(".t2-print"));
+      // Branding: the app icon as the logo, then a Word and PDF export with a cover, header and footer.
+      const logo = importLogo(app.getPath("userData"), join(__dirname, "..", "icon.png"));
+      await js(`window.api.updateSettings({ output: { branding: {
+        coverPage: true, logo: ${JSON.stringify(logo)}, logoInHeader: true,
+        headerText: "Confidential", footerText: "© 2026 Smoke Test", pageNumbers: true } } })`);
+      const branded = await js<{ folder: string; files: string[] }>(
+        `window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["docx", "pdf"]))`,
+      );
+      const brandedDocx = unzipSync(readFileSync(branded.files.find((f) => f.endsWith("Show Notes.docx"))!));
+      const brandingOk =
+        branded.files.length === 6 &&
+        !!brandedDocx["word/header1.xml"] &&
+        !!brandedDocx["word/footer1.xml"] &&
+        !!brandedDocx["word/media/logo.png"] &&
+        strFromU8(brandedDocx["word/document.xml"]!).includes("<w:titlePg/>") &&
+        branded.files.filter((f) => f.endsWith(".pdf")).every((f) => readFileSync(f).subarray(0, 5).toString() === "%PDF-");
       await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Export").scrollIntoView()`);
       await pause(300);
       await shot("export.png");
@@ -254,6 +272,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         notesText.includes("https://pete.example/") &&
         exportOk &&
         pdfOk &&
+        brandingOk &&
         checksText.includes("1 quote left out") &&
         referenceText.includes("Thanks, glad to be here.") &&
         referenceText.includes("Pete hosts a podcast.");
@@ -273,6 +292,11 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         sections.push(...(await js<string[]>(`[...document.querySelectorAll(".settings-grid h2")].map((h) => h.textContent)`)));
         await shot(file);
       }
+      await click(".tab", "Output");
+      await pause(600);
+      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Cover page, header and footer").scrollIntoView()`);
+      await pause(500);
+      await shot("settings-branding.png");
       await click(".tab", "General");
       await pause(300);
 
@@ -399,6 +423,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, search, themes, saveFlow, customVoice },
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -412,6 +437,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         notesStatus,
         exported,
         pdfExport,
+        branded,
         notesText,
         sections,
         windowIcon,
@@ -466,6 +492,7 @@ const ALL_SECTIONS = [
   "General",
   "Processing",
   "Output",
+  "Cover page, header and footer",
   "Confidence bands",
   "Show profile",
   "Show notes",
