@@ -158,7 +158,7 @@ function JobRow({ job, colors, onOpen }: { job: Job; colors: EpisodeColors; onOp
         <div className="hint">{(job.status === "transcribing" || job.status === "writing") && job.stage ? job.stage : meta}</div>
         {job.status === "transcribing" && <Progress value={job.progress ?? null} />}
         {job.status === "writing" && job.stage !== "Waiting" && <Progress value={null} />}
-        {job.status === "failed" && job.error && <div className="hint error">{job.error}</div>}
+        {(job.status === "failed" || job.status === "cancelled") && job.error && <div className="hint error">{job.error}</div>}
       </div>
       <div className="job-actions">
         {job.status === "awaiting-approval" && (

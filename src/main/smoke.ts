@@ -1,10 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { app, type BrowserWindow } from "electron";
 import { strFromU8, unzipSync } from "fflate";
 import { importLogo } from "./logo";
+import { fileKey } from "./watch/folderWatcher";
 import { startFakeAnthropic } from "./testing/fakeAnthropic";
 import type { Transcriber } from "./transcribe/types";
 
@@ -458,6 +459,49 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const movedToDone = join(driveRoot, "Done", "Show A", "Episode 2.wav");
       for (let i = 0; i < 20 && !existsSync(movedToDone); i++) await pause(250);
       const claimsDir = join(driveRoot, ".transcriptor", "claims");
+
+      // A file another computer claimed an hour ago and never finished: listed as
+      // stuck on the Drive tab, and taken over from there.
+      const stuckRel = join("Show B", "Stuck episode.wav");
+      mkdirSync(join(driveRoot, "Show B"), { recursive: true });
+      mkdirSync(claimsDir, { recursive: true });
+      writeFileSync(
+        join(claimsDir, `${fileKey(stuckRel, statSync(wav).size)}.studio-pc.json`),
+        JSON.stringify({ machine: "studio-pc", name: "Studio PC", at: Date.now() - 3_600_000, file: "Show B/Stuck episode.wav" }),
+      );
+      copyFileSync(wav, join(driveRoot, stuckRel));
+      await click(".nav-item", "Settings");
+      await pause(300);
+      await click(".tab", "Drive");
+      let stuckRows = 0;
+      for (let i = 0; i < 40 && stuckRows === 0; i++) {
+        await pause(500);
+        stuckRows = await js<number>(`document.querySelectorAll(".stuck-list li").length`);
+      }
+      await js(`document.querySelector(".stuck-list")?.scrollIntoView()`);
+      await pause(300);
+      await shot("settings-drive-stuck.png");
+      const stuckText = await js<string>(`document.querySelector(".stuck-list")?.textContent ?? ""`);
+      await click(".stuck-list button", "Take over");
+      let takenOver: WatchedJob | undefined;
+      for (let i = 0; i < 60 && !(takenOver && ["needs-review", "ready"].includes(takenOver.status)); i++) {
+        await pause(500);
+        takenOver = (await js<WatchedJob[]>(`window.api.listJobs()`)).find((j) => j.watchedPath === stuckRel);
+        if (takenOver?.status === "awaiting-approval") await js(`window.api.approveJob(${JSON.stringify(takenOver.id)})`);
+      }
+      const stuckDone = join(driveRoot, "Done", stuckRel);
+      for (let i = 0; i < 20 && !existsSync(stuckDone); i++) await pause(250);
+      const takeOver = {
+        rows: stuckRows,
+        text: stuckText,
+        status: takenOver?.status ?? null,
+        movedToDone: existsSync(stuckDone),
+      };
+      await click(".tab", "General");
+      await pause(200);
+      await click(".nav-item", "Episodes");
+      await pause(200);
+
       const folderWatch = {
         job: watched ?? null,
         movedToDone: existsSync(movedToDone),
@@ -465,6 +509,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         existingLeft: existsSync(join(driveRoot, "already there.wav")),
         claimsLeft: existsSync(claimsDir) ? readdirSync(claimsDir).length : 0,
         jobs: (await js<WatchedJob[]>(`window.api.listJobs()`)).filter((j) => j.watchedPath).length,
+        takeOver,
       };
       await js(`window.api.updateSettings({ folderWatch: { enabled: false } })`);
       const folderWatchOk =
@@ -475,7 +520,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         folderWatch.originalGone &&
         folderWatch.existingLeft &&
         folderWatch.claimsLeft === 0 &&
-        folderWatch.jobs === 1;
+        folderWatch.jobs === 2 &&
+        takeOver.rows === 1 &&
+        takeOver.text.includes("Stuck episode.wav") &&
+        takeOver.text.includes("Claimed by Studio PC 1 hour ago") &&
+        takeOver.status !== null &&
+        takeOver.movedToDone;
 
       const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
 

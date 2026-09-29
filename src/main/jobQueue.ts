@@ -53,7 +53,12 @@ export interface JobQueueDeps {
   onEvent?: (event: JobEvent) => void;
   /** Called with true while a job is running, false when the queue goes idle. */
   onBusyChange?: (busy: boolean) => void;
+  /** Right before a job is transcribed: a reason to skip it instead, or null to go ahead. */
+  beforeTranscribe?: (job: Job) => Promise<string | null>;
 }
+
+/** Stops a job before transcription without counting as a failure. */
+class SkippedError extends Error {}
 
 export type JobEvent =
   | { type: "awaiting-approval"; job: Job }
@@ -296,7 +301,9 @@ export class JobQueue {
       if (step === "transcription") await this.transcribe(job, abort.signal);
       else await this.writeNotes(job, abort.signal);
     } catch (err) {
-      if (err instanceof AbortedError || abort.signal.aborted) {
+      if (err instanceof SkippedError) {
+        Object.assign(job, { status: "cancelled", stage: undefined, progress: undefined, error: err.message });
+      } else if (err instanceof AbortedError || abort.signal.aborted) {
         if (step === "writing") Object.assign(job, { status: this.afterWritingStops(job.id), stage: undefined });
         else Object.assign(job, { status: "cancelled", stage: undefined, progress: undefined });
       } else {
@@ -321,6 +328,8 @@ export class JobQueue {
   private async transcribe(job: Job, signal: AbortSignal): Promise<void> {
     Object.assign(job, { status: "transcribing", stage: "Starting", progress: null, error: undefined });
     this.changed();
+    const skip = await this.deps.beforeTranscribe?.(job);
+    if (skip) throw new SkippedError(skip);
 
     const { transcriber } = this.deps;
     const key = this.deps.getKey(transcriber.providerId);

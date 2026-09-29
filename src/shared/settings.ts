@@ -50,7 +50,12 @@ export interface Settings {
    * Watching a folder on this computer, typically one Google Drive for
    * Desktop keeps in sync (src/main/watch/folderWatcher.ts).
    */
-  folderWatch: { enabled: boolean; folder: string };
+  folderWatch: {
+    enabled: boolean;
+    folder: string;
+    /** How long to let other computers' claims sync before taking a file (1, 5 or 15). */
+    settleMinutes: number;
+  };
   /** Where words get a low- or medium-confidence color. */
   confidence: { lowMax: number; mediumMax: number };
   show: ShowProfile;
@@ -158,7 +163,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   confidence: { ...DEFAULT_CONFIDENCE_THRESHOLDS },
   watch: { enabled: false, folderId: "" },
-  folderWatch: { enabled: false, folder: "" },
+  folderWatch: { enabled: false, folder: "", settleMinutes: 1 },
   show: {
     name: "",
     hosts: [],

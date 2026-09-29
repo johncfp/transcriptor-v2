@@ -1,7 +1,21 @@
 import { useEffect, useState } from "react";
-import type { FolderWatchStatus } from "../../../shared/api";
+import type { FolderWatchStatus, StuckFile } from "../../../shared/api";
 import type { Settings, SettingsPatch } from "../../../shared/settings";
 import { Section } from "./Section";
+
+const cleanError = (err: unknown) =>
+  String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+
+const SETTLE_CHOICES = [1, 5, 15];
+
+/** "3 hours ago", "20 minutes ago". */
+function ago(at: number): string {
+  const minutes = Math.max(1, Math.round((Date.now() - at) / 60_000));
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
 
 /**
  * Watching a folder that Google Drive for Desktop keeps in sync. Only the
@@ -12,10 +26,16 @@ export function FolderWatchSection({ settings, update }: { settings: Settings; u
   const { folderWatch } = settings;
   const [drive, setDrive] = useState<string | null | undefined>(undefined);
   const [status, setStatus] = useState<FolderWatchStatus | null>(null);
+  const [stuck, setStuck] = useState<StuckFile[]>([]);
+  const [taking, setTaking] = useState<string | null>(null);
+  const [takeError, setTakeError] = useState("");
 
   useEffect(() => {
     void window.api.driveForDesktop().then(setDrive);
-    const poll = () => void window.api.folderWatchStatus().then(setStatus);
+    const poll = () => {
+      void window.api.folderWatchStatus().then(setStatus);
+      void window.api.stuckFiles().then(setStuck);
+    };
     poll();
     const timer = setInterval(poll, 3000);
     return () => clearInterval(timer);
@@ -86,6 +106,76 @@ export function FolderWatchSection({ settings, update }: { settings: Settings; u
           onChange={(e) => update({ folderWatch: { ...folderWatch, enabled: e.target.checked } })}
         />
       </label>
+      <div className="row">
+        <div className="row-label">
+          <span>Wait for other computers</span>
+          <span className="hint">
+            How long to let other computers' claims on a new file sync before taking it. Raise it if Drive syncs slowly
+            for your team.
+          </span>
+        </div>
+        <div className="row-control">
+          <select
+            className="input select"
+            aria-label="Wait for other computers"
+            value={folderWatch.settleMinutes}
+            onChange={(e) => update({ folderWatch: { ...folderWatch, settleMinutes: Number(e.target.value) } })}
+          >
+            {SETTLE_CHOICES.map((m) => (
+              <option key={m} value={m}>
+                {m} minute{m === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {running && stuck.length > 0 && (
+        <div className="stuck">
+          <p className="hint warn">
+            {stuck.length === 1 ? "This file was" : "These files were"} claimed by another computer but not finished.
+            Take one over only if that computer is off or isn't running Transcriptor 2; otherwise both may transcribe
+            it.
+          </p>
+          <ul className="stuck-list" aria-label="Unfinished files">
+            {stuck.map((f) => (
+              <li key={f.key}>
+                <span>
+                  <b>{f.file}</b>
+                  <span className="hint">
+                    {" "}
+                    Claimed by {f.claimedBy} {ago(f.claimedAt)}
+                  </span>
+                </span>
+                <button
+                  className="button"
+                  disabled={taking !== null}
+                  onClick={async () => {
+                    setTaking(f.key);
+                    setTakeError("");
+                    try {
+                      await window.api.takeOverFile(f.key);
+                      setStuck(await window.api.stuckFiles());
+                    } catch (err) {
+                      setTakeError(cleanError(err));
+                    } finally {
+                      setTaking(null);
+                    }
+                  }}
+                >
+                  {taking === f.key ? "Taking over…" : "Take over"}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {takeError && <p className="hint error">{takeError}</p>}
+        </div>
+      )}
+      <p className="notice watch-warning" role="note">
+        <b>Sharing a folder with teammates?</b> If possible, have just one computer watch it. Computers coordinate
+        through Drive, and if Drive syncs very slowly two of them can still start the same episode; each checks again
+        just before transcribing, which catches most of these, but not all. A file whose computer went away shows up
+        above after 15 minutes, to take over by hand.
+      </p>
       <ul className="watch-notes">
         <li>Files already in the folder when watching starts are left alone.</li>
         <li>

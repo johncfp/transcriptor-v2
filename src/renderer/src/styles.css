@@ -295,6 +295,25 @@ h3 {
   align-items: center;
   gap: 8px;
 }
+.watch-warning {
+  margin: 12px 0 0;
+}
+.stuck {
+  margin-top: 10px;
+}
+.stuck-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.stuck-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
 .watch-notes {
   margin: 12px 0 0;
   padding-left: 18px;

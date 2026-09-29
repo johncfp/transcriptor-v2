@@ -19,8 +19,12 @@ import { readJson, writeJsonAtomic } from "../jsonFile";
  *   file into .transcriptor/claims, waits for the claims to sync, and only
  *   the earliest claim goes ahead, so an episode is transcribed (and billed)
  *   once.
- * - The file is copied into the app and queued. Once it's transcribed, the
- *   original moves into Done, keeping its subfolder path.
+ * - The file is copied into the app and queued. Right before it's
+ *   transcribed the claims are read again, in case a slow sync has brought
+ *   in an earlier claim since. Once it's transcribed, the original moves into
+ *   Done, keeping its subfolder path.
+ * - A file another computer claimed long ago but never finished (that
+ *   computer went away) is listed as stuck, and can be taken over by hand.
  */
 
 export const DONE_FOLDER = "Done";
@@ -47,6 +51,17 @@ export interface FolderWatcherDeps {
   stableMs?: number;
   /** How long to let other computers' claims sync before deciding (default 60 s). */
   settleMs?: number;
+  /** How long another computer's unfinished claim stands before it's listed as stuck (default 15 min). */
+  stuckMs?: number;
+}
+
+/** A file another computer claimed but hasn't moved to Done. */
+export interface StuckFile {
+  key: string;
+  /** Relative to the watched folder, with "/" separators. */
+  file: string;
+  claimedBy: string;
+  claimedAt: number;
 }
 
 interface WatchState {
@@ -215,25 +230,93 @@ export class FolderWatcher {
     return at;
   }
 
-  /** The earliest claim for a file; ties go to the lower machine id, so every computer agrees. */
-  private async winner(key: string): Promise<Claim | null> {
+  /** Every readable claim, by file key, earliest first (ties go to the lower machine id, so every computer agrees). */
+  private async claims(): Promise<Map<string, (Claim & { path: string })[]>> {
+    const byKey = new Map<string, (Claim & { path: string })[]>();
     let names: string[] = [];
     try {
       names = await readdir(this.claimsDir);
     } catch {
-      return null;
+      return byKey;
     }
-    const claims: Claim[] = [];
-    for (const n of names.filter((n) => n.startsWith(`${key}.`) && n.endsWith(".json"))) {
+    for (const n of names.filter((n) => n.endsWith(".json"))) {
+      const key = n.split(".")[0]!;
       try {
-        const c = JSON.parse(await readFile(join(this.claimsDir, n), "utf8")) as Claim;
-        if (typeof c.at === "number" && typeof c.machine === "string") claims.push(c);
+        const path = join(this.claimsDir, n);
+        const c = JSON.parse(await readFile(path, "utf8")) as Claim;
+        if (typeof c.at === "number" && typeof c.machine === "string") byKey.set(key, [...(byKey.get(key) ?? []), { ...c, path }]);
       } catch {
         // Half-synced claim: ignored this time round.
       }
     }
-    claims.sort((a, b) => a.at - b.at || a.machine.localeCompare(b.machine));
-    return claims[0] ?? null;
+    for (const list of byKey.values()) list.sort((a, b) => a.at - b.at || a.machine.localeCompare(b.machine));
+    return byKey;
+  }
+
+  private async winner(key: string): Promise<Claim | null> {
+    return (await this.claims()).get(key)?.[0] ?? null;
+  }
+
+  private async dropClaims(key: string): Promise<void> {
+    const names = await readdir(this.claimsDir).catch(() => [] as string[]);
+    await Promise.all(names.filter((n) => n.startsWith(`${key}.`)).map((n) => rm(join(this.claimsDir, n), { force: true })));
+  }
+
+  /**
+   * Files another computer claimed at least `stuckMs` ago that are still in
+   * the folder (so weren't finished). Usually that computer went away.
+   */
+  async stuck(): Promise<StuckFile[]> {
+    const mine = new Set(Object.values(this.state.picked).map((p) => p.key));
+    const out: StuckFile[] = [];
+    for (const [key, list] of await this.claims()) {
+      const first = list[0]!;
+      if (mine.has(key) || first.machine === this.deps.machineId) continue;
+      if (this.now - first.at < (this.deps.stuckMs ?? 15 * 60_000)) continue;
+      if (!(await exists(join(this.deps.root, first.file)))) continue;
+      out.push({ key, file: first.file, claimedBy: first.name || "another computer", claimedAt: first.at });
+    }
+    return out.sort((a, b) => a.claimedAt - b.claimedAt);
+  }
+
+  /**
+   * Take a stuck file: the old claims are removed and this computer's claim
+   * replaces them, so the other computer backs off if it comes back.
+   */
+  async takeOver(key: string): Promise<void> {
+    const list = (await this.claims()).get(key);
+    const file = list?.[0]?.file;
+    if (!file || !(await exists(join(this.deps.root, file)))) throw new Error("That file is no longer waiting in the folder.");
+    const relPath = file.split("/").join(sep);
+    await this.dropClaims(key);
+    this.candidates.delete(key);
+    await this.claim(key, relPath);
+    this.state.seen = this.state.seen.filter((k) => k !== key);
+    await this.take(key, relPath);
+  }
+
+  /**
+   * Checked right before a job from this folder is transcribed: null to go
+   * ahead, or why not, when a slow sync has since brought in an earlier claim
+   * from another computer, or the file has left the folder. Then this
+   * computer's claim is withdrawn and the job forgotten.
+   */
+  async stillMine(jobId: string): Promise<string | null> {
+    const picked = this.state.picked[jobId];
+    if (!picked) return null;
+    const winner = await this.winner(picked.key);
+    let reason: string | null = null;
+    if (winner && winner.machine !== this.deps.machineId) {
+      reason = `${winner.name || "Another computer"} claimed this file first and is transcribing it, so it was skipped here.`;
+    } else if (!(await exists(join(this.deps.root, picked.relPath)))) {
+      reason = "The file is no longer in the watched folder (another computer may have finished it), so it was skipped here.";
+    }
+    if (reason) {
+      await rm(join(this.claimsDir, `${picked.key}.${this.deps.machineId}.json`), { force: true });
+      delete this.state.picked[jobId];
+      this.save();
+    }
+    return reason;
   }
 
   private async take(key: string, relPath: string): Promise<void> {
@@ -269,8 +352,7 @@ export class FolderWatcher {
         to = join(this.deps.root, DONE_FOLDER, `${picked.relPath.slice(0, -ext.length || undefined)} (${n})${ext}`);
       }
       await rename(from, to);
-      const names = await readdir(this.claimsDir).catch(() => [] as string[]);
-      await Promise.all(names.filter((n) => n.startsWith(`${picked.key}.`)).map((n) => rm(join(this.claimsDir, n), { force: true })));
+      await this.dropClaims(picked.key);
       delete this.state.picked[jobId];
       this.save();
     } catch (err) {

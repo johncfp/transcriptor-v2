@@ -163,3 +163,64 @@ test("folder watch: Done keeps earlier files; a missing folder is a readable err
   await gone.w.scan();
   assert.match(gone.w.status().error ?? "", /can't be found/);
 });
+
+test("folder watch: a file whose computer went away is listed as stuck and can be taken over", async () => {
+  const { root, clock, put, watcher } = setup();
+  const a = watcher("machine-a");
+  const b = watcher("machine-b");
+  await a.w.scan();
+  await b.w.scan();
+  put("ep.wav");
+  await b.w.scan();
+  clock.advance(21_000);
+  await b.w.scan(); // B claims
+  clock.advance(61_000);
+  await b.w.scan(); // B takes it... and then goes away before transcribing
+  assert.equal(b.queued.length, 1);
+  await a.w.scan();
+  clock.advance(21_000);
+  await a.w.scan();
+  clock.advance(61_000);
+  await a.w.scan();
+  assert.equal(a.queued.length, 0, "A backs off: B claimed first");
+
+  assert.deepEqual(await a.w.stuck(), [], "not stuck yet");
+  clock.advance(15 * 60_000);
+  const stuck = await a.w.stuck();
+  assert.equal(stuck.length, 1);
+  assert.equal(stuck[0]!.file, "ep.wav");
+  assert.equal(stuck[0]!.claimedBy, "machine-b's laptop");
+
+  await a.w.takeOver(stuck[0]!.key);
+  assert.equal(a.queued.length, 1, "A takes it over");
+  assert.deepEqual(await a.w.stuck(), []);
+  // B comes back: its job is skipped right before transcription.
+  assert.match((await b.w.stillMine("job-machine-b-1")) ?? "", /machine-a's laptop claimed this file first/);
+  assert.equal(await a.w.stillMine("job-machine-a-1"), null);
+  await a.w.transcribed("job-machine-a-1");
+  assert.ok(existsSync(join(root, "Done", "ep.wav")));
+  await assert.rejects(a.w.takeOver(stuck[0]!.key), /no longer waiting/);
+});
+
+test("folder watch: an earlier claim that syncs in late stops the job before transcription", async () => {
+  const { root, clock, put, watcher } = setup();
+  const { w, queued } = watcher("machine-a");
+  await w.scan();
+  put("ep.wav");
+  await w.scan();
+  clock.advance(21_000);
+  await w.scan();
+  clock.advance(61_000);
+  await w.scan();
+  assert.equal(queued.length, 1);
+  // Drive finally syncs machine B's claim, made before A's.
+  const claims = join(root, ".transcriptor", "claims");
+  const mine = readdirSync(claims)[0]!;
+  const key = mine.split(".")[0]!;
+  writeFileSync(join(claims, `${key}.machine-b.json`), JSON.stringify({ machine: "machine-b", name: "Studio PC", at: 1, file: "ep.wav" }));
+
+  assert.match((await w.stillMine("job-machine-a-1")) ?? "", /Studio PC claimed this file first/);
+  assert.deepEqual(readdirSync(claims), [`${key}.machine-b.json`], "A's claim is withdrawn");
+  await w.transcribed("job-machine-a-1"); // no longer A's: nothing moves
+  assert.ok(existsSync(join(root, "ep.wav")));
+});

@@ -87,14 +87,20 @@ What happens:
 - The episode's exports go to `Transcriptor Exports/` inside the watched
   folder rather than the Output folder, so Drive syncs them for everyone.
 - Several computers can watch the same shared folder. Each writes a claim
-  into a hidden `.transcriptor/claims` folder, waits a minute for the claims
-  to sync, and only the earliest claim goes ahead, so each episode is
-  transcribed (and billed) once.
+  into a hidden `.transcriptor/claims` folder, waits for the claims to sync
+  (1 minute by default; 5 or 15 on the Drive tab for slow syncs), and only
+  the earliest claim goes ahead. Each checks the claims again right before
+  transcribing, and skips the episode if an earlier claim has synced in
+  since. This makes a double transcription (and bill) unlikely, but Drive
+  gives no sync guarantee, so one computer per folder is safest; the Drive
+  tab says so.
 - Files are only picked up while the app is running (it keeps running in the
   tray); it looks every 30 seconds.
-- Limits: if the computer that claimed a file goes away before transcribing
-  it, the others don't take it over; that file needs adding by hand. Moving a
-  file into another subfolder before it's picked up makes it a new file.
+- If the computer that claimed a file goes away before finishing it, the file
+  is listed on the Drive tab after 15 minutes with a **Take over** button
+  (use it only when that computer is off or not running the app).
+- Moving a file into another subfolder before it's picked up makes it a new
+  file.
 
 It works the same with any folder kept in sync (OneDrive, Dropbox).
 

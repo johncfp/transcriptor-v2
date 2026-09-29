@@ -40,6 +40,10 @@ export interface Api {
   driveForDesktop(): Promise<string | null>;
   /** The folder watcher's state, or null when it isn't running. */
   folderWatchStatus(): Promise<FolderWatchStatus | null>;
+  /** Files another computer claimed long ago and never finished. */
+  stuckFiles(): Promise<StuckFile[]>;
+  /** Process a stuck file on this computer instead; rejects with a readable message. */
+  takeOverFile(key: string): Promise<void>;
   /** A writing provider's live model list, using its saved key; rejects with a readable message. */
   listModels(provider: string): Promise<ModelOption[]>;
   /** Pick an image and copy it in as the export logo; null if cancelled. */
@@ -110,6 +114,8 @@ export const IPC = {
   pickWatchFolder: "folder-watch:pick",
   driveForDesktop: "folder-watch:drive",
   folderWatchStatus: "folder-watch:status",
+  stuckFiles: "folder-watch:stuck",
+  takeOverFile: "folder-watch:take-over",
   listModels: "writing:list-models",
   pickLogo: "branding:pick-logo",
   logoPreview: "branding:logo-preview",
@@ -157,4 +163,12 @@ export interface FolderWatchStatus {
   /** New files waiting to finish syncing, or for other computers' claims. */
   waiting: number;
   error: string | null;
+}
+
+/** A file another computer claimed on a shared watched folder but hasn't finished. */
+export interface StuckFile {
+  key: string;
+  file: string;
+  claimedBy: string;
+  claimedAt: number;
 }

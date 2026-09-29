@@ -366,3 +366,18 @@ test("export: the transcript can be exported before any show notes exist", async
   await queue.exportNow(id, ["docx"]);
   assert.equal(writing, null);
 });
+
+test("a job can be skipped right before transcription, without counting as a failure", async () => {
+  const { queue, file, calls, events } = setup({
+    beforeTranscribe: async (job) => (job.watchedPath ? "Another computer claimed this file first." : null),
+  });
+  queue.add([file("from drive.mp3")], "manual", { watchedPath: "Show A/from drive.mp3", exportRoot: "X/Transcriptor Exports" });
+  await tick();
+  await tick();
+  const job = queue.list()[0]!;
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.error, "Another computer claimed this file first.");
+  assert.equal(job.exportRoot, "X/Transcriptor Exports");
+  assert.equal(calls.length, 0, "nothing was sent for transcription");
+  assert.ok(!events.includes("failed"));
+});

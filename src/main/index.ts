@@ -153,6 +153,8 @@ function start(): void {
       };
     },
     onChange: (jobs) => mainWindow?.webContents.send(IPC.jobsChanged, jobs),
+    // A slow sync may have brought in another computer's earlier claim since the file was taken.
+    beforeTranscribe: async (job) => (job.watchedPath && folderWatcher ? folderWatcher.stillMine(job.id) : null),
     onEvent: (event) => {
       // A watched file's original moves to Done once it's transcribed.
       if (event.type === "transcribed") void folderWatcher?.transcribed(event.job.id);
@@ -179,7 +181,7 @@ function start(): void {
   const applyFolderWatch = () => {
     folderWatcher?.stop();
     folderWatcher = null;
-    const { enabled, folder } = settings.get().folderWatch;
+    const { enabled, folder, settleMinutes } = settings.get().folderWatch;
     if (!enabled || !folder.trim()) return;
     const root = folder.trim();
     folderWatcher = new FolderWatcher({
@@ -193,13 +195,15 @@ function start(): void {
         return added[0]?.id ?? "";
       },
       onError: (message) => console.error("[folder watch]", message),
+      settleMs: Math.min(60, Math.max(1, Math.round(settleMinutes) || 1)) * 60_000,
       // The smoke test can't wait minutes for files to settle.
-      ...(SMOKE ? { scanMs: 500, stableMs: 1000, settleMs: 1000 } : {}),
+      ...(SMOKE ? { scanMs: 500, stableMs: 1000, settleMs: 1000, stuckMs: 2000 } : {}),
     });
     folderWatcher.start();
   };
   settings.onChange((s, prev) => {
-    if (s.folderWatch.enabled !== prev.folderWatch.enabled || s.folderWatch.folder !== prev.folderWatch.folder) applyFolderWatch();
+    const [a, b] = [s.folderWatch, prev.folderWatch];
+    if (a.enabled !== b.enabled || a.folder !== b.folder || a.settleMinutes !== b.settleMinutes) applyFolderWatch();
   });
   applyFolderWatch();
   app.on("before-quit", () => folderWatcher?.stop());
@@ -410,6 +414,12 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle(IPC.folderWatchStatus, () => folderWatcher?.status() ?? null);
+  ipcMain.handle(IPC.stuckFiles, async () => (folderWatcher ? folderWatcher.stuck() : []));
+  ipcMain.handle(IPC.takeOverFile, async (_e, key: unknown) => {
+    if (!folderWatcher) throw new Error("The folder isn't being watched.");
+    if (typeof key !== "string" || !/^[0-9a-f]{24}$/.test(key)) throw new Error("Unknown file.");
+    await folderWatcher.takeOver(key);
+  });
   ipcMain.handle(IPC.listModels, (_e, provider: unknown) => {
     const info = typeof provider === "string" ? providerById(provider) : undefined;
     if (!info || info.role !== "writing") throw new Error("Unknown provider.");
