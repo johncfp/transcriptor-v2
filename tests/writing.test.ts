@@ -298,3 +298,11 @@ test("template files: round trip, unknown sections dropped, junk rejected", asyn
   assert.throws(() => readTemplateFile("{}"), /isn't a Transcriptor 2 template/);
   assert.throws(() => readTemplateFile("not json"), /isn't a Transcriptor 2 template/);
 });
+
+test("the sample template imports as the Standard sections", async () => {
+  const { readTemplateFile, sampleTemplateFile } = await import("../src/main/templateFile");
+  const { TEMPLATES, SECTION_IDS } = await import("../src/shared/showNotes");
+  const sample = sampleTemplateFile();
+  assert.deepEqual(readTemplateFile(JSON.stringify(sample)), TEMPLATES.find((t) => t.id === "standard")!.sections);
+  assert.deepEqual(Object.keys(sample.availableSections), SECTION_IDS);
+});

@@ -294,8 +294,8 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
               />
             </Section>
 
-            <ShowNotesSettings settings={settings} update={update} />
             <ShowNotesTemplateSection settings={settings} update={update} />
+            <ShowNotesSettings settings={settings} update={update} />
           </>
         )}
 

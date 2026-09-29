@@ -33,6 +33,7 @@ const api: Api = {
   getWriting: (id) => ipcRenderer.invoke(IPC.getWriting, id),
   exportTemplate: (sections) => ipcRenderer.invoke(IPC.exportTemplate, sections),
   importTemplate: () => ipcRenderer.invoke(IPC.importTemplate),
+  saveSampleTemplate: () => ipcRenderer.invoke(IPC.saveSampleTemplate),
   exportEpisode: (id, formats) => ipcRenderer.invoke(IPC.exportEpisode, id, formats),
   openFolder: (path) => ipcRenderer.invoke(IPC.openFolder, path),
   onJobsChanged: (fn) => listen(IPC.jobsChanged, fn),

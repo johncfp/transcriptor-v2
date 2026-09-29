@@ -356,6 +356,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       // Packaged builds only: can the public releases feed be read without a token?
       const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
 
+      // The window's taskbar icon ships next to the main bundle.
+      const windowIcon = existsSync(join(__dirname, "..", process.platform === "win32" ? "icon.ico" : "icon.png"));
+
       clearTimeout(timeout);
       const pipeline = added.added === 1 && added.rejected[0] === "notes.txt" && status === "needs-review";
       const review =
@@ -383,7 +386,10 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           win.getTitle() === "Transcriptor 2 — just transcribe" &&
           brand === "Upload | Transcribe | Export" &&
           /^Transcriptor 2 v2\.0\.0/.test(version) &&
-          ALL_SECTIONS.every((t) => sections.includes(t)),
+          ALL_SECTIONS.every((t) => sections.includes(t)) &&
+          // The template comes before the provider and model on the Show notes tab.
+          sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
+          windowIcon,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -398,6 +404,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         exported,
         notesText,
         sections,
+        windowIcon,
         settingsColumns,
         pageWidth,
         saveFlow: { dirtyShown, promptShown, stayed, discarded, savedOk },

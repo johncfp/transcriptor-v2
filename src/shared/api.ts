@@ -60,6 +60,8 @@ export interface Api {
   getWriting(id: string): Promise<WritingResult | null>;
   /** Save a custom template's sections to a file others can import. */
   exportTemplate(sections: SectionId[]): Promise<boolean>;
+  /** Save an annotated sample template file to start a custom one from. */
+  saveSampleTemplate(): Promise<boolean>;
   /** Pick a template file; resolves to its sections, or null if cancelled. */
   importTemplate(): Promise<SectionId[] | null>;
   /** Export the episode's documents; rejects with a readable message on failure. */
@@ -111,6 +113,7 @@ export const IPC = {
   getWriting: "jobs:writing",
   exportTemplate: "template:export",
   importTemplate: "template:import",
+  saveSampleTemplate: "template:sample",
   exportEpisode: "jobs:export",
   openFolder: "shell:open-folder",
   jobsChanged: "jobs:changed",

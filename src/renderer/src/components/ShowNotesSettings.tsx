@@ -182,6 +182,15 @@ export function ShowNotesTemplateSection({ settings, update }: { settings: Setti
         >
           Export template…
         </button>
+        <button
+          className="button ghost"
+          onClick={async () => {
+            setMessage("");
+            if (await window.api.saveSampleTemplate()) setMessage("Sample saved. Edit its sections, then import it.");
+          }}
+        >
+          Save sample template…
+        </button>
         {message && <span className="hint">{message}</span>}
       </div>
     </Section>

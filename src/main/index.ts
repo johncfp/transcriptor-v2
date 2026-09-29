@@ -5,7 +5,7 @@ import { AUDIO_EXTENSIONS, type AddFilesResult } from "../shared/jobs";
 import { readFileSync, writeFileSync } from "node:fs";
 import type { EpisodeEdits } from "../shared/cleanup";
 import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
-import { readTemplateFile, templateFile } from "./templateFile";
+import { readTemplateFile, sampleTemplateFile, templateFile } from "./templateFile";
 import { cleanTranscript } from "../shared/cleanup";
 import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
@@ -215,6 +215,9 @@ function start(): void {
     onQuit: () => app.quit(),
   });
 
+  // The packaged macOS app gets its Dock icon from the bundle; dev runs don't.
+  if (process.platform === "darwin" && !app.isPackaged) app.dock?.setIcon(join(__dirname, "..", "icon.png"));
+
   mainWindow = createWindow(settings);
   if (!launchedHidden()) mainWindow.once("ready-to-show", () => mainWindow?.show());
   if (SMOKE) runSmokeTest(mainWindow, { checkForUpdate: () => updater.check() });
@@ -230,6 +233,9 @@ function createWindow(settings: SettingsStore): BrowserWindow {
     minHeight: 520,
     show: false,
     title: WINDOW_TITLE,
+    // Without this the taskbar shows Electron's default icon. Windows wants
+    // the multi-size .ico so the taskbar and Alt+Tab pick a sharp size.
+    icon: join(__dirname, "..", process.platform === "win32" ? "icon.ico" : "icon.png"),
     backgroundColor: windowBackground(),
     autoHideMenuBar: true,
     webPreferences: {
@@ -398,6 +404,13 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
       : dialog.showSaveDialog({ defaultPath: "show-notes-template.json" }));
     if (result.canceled || !result.filePath) return false;
     writeFileSync(result.filePath, JSON.stringify(templateFile(sections), null, 2));
+    return true;
+  });
+  ipcMain.handle(IPC.saveSampleTemplate, async () => {
+    const options = { defaultPath: "sample-show-notes-template.json", filters: [{ name: "Template", extensions: ["json"] }] };
+    const result = await (mainWindow ? dialog.showSaveDialog(mainWindow, options) : dialog.showSaveDialog(options));
+    if (result.canceled || !result.filePath) return false;
+    writeFileSync(result.filePath, JSON.stringify(sampleTemplateFile(), null, 2));
     return true;
   });
   ipcMain.handle(IPC.importTemplate, async () => {

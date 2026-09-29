@@ -26,5 +26,6 @@ const targets = [
 
 mkdirSync(join(root, "out"), { recursive: true });
 copyFileSync(join(root, "build/icon.png"), join(root, "out/icon.png"));
+copyFileSync(join(root, "build/icon.ico"), join(root, "out/icon.ico"));
 
 await Promise.all(targets.map((t) => build({ ...common, ...t })));
