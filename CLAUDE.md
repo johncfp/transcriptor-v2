@@ -3,7 +3,7 @@
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
 file (Claude by default) → DOCX/TXT export. Runs from the tray on Windows and
-macOS. Currently **2.0.0-beta.3**. The README has the feature overview and the
+macOS. Currently **2.0.0-beta.4**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
 ## Working with the owner
