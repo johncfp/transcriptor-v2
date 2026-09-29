@@ -18,6 +18,7 @@ import { JobQueue } from "./jobQueue";
 import { providerById } from "../shared/providers";
 import { anthropicWriter } from "./writing/anthropic";
 import { writeEpisode, writerById } from "./writing";
+import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
 import { notifyJobEvent } from "./notify";
@@ -82,6 +83,7 @@ function start(): void {
       apiKey: keys.get(writer.id),
       model: w.model.trim() || writer.defaultModel,
       baseUrl: w.baseUrl.trim() || undefined,
+      effort: providerById(writer.id)?.effort && w.effort ? w.effort : undefined,
     };
   };
 
@@ -92,7 +94,7 @@ function start(): void {
     getKey: (id) => keys.get(id),
     needsApproval: () => settings.get().processing.intake === "approve",
     write: (req) => {
-      const { writer, apiKey, model, baseUrl } = writerSetup();
+      const { writer, apiKey, model, baseUrl, effort } = writerSetup();
       if (!apiKey) {
         throw new Error(`Add your ${providerById(writer.id)?.label ?? writer.label} API key in Settings, then retry.`);
       }
@@ -105,7 +107,7 @@ function start(): void {
         voice: settings.get().writing.voice,
         customVoice: settings.get().writing.customVoice,
         writer,
-        call: { apiKey, model, baseUrl, signal: req.signal },
+        call: { apiKey, model, baseUrl, effort, signal: req.signal },
         onStage: req.onStage,
       });
     },
@@ -363,6 +365,16 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.getSettings, () => settings.get());
   ipcMain.handle(IPC.updateSettings, (_e, patch: SettingsPatch) => settings.update(patch));
   ipcMain.handle(IPC.defaultOutputFolder, () => defaultOutputFolder());
+  ipcMain.handle(IPC.listModels, (_e, provider: unknown) => {
+    const info = typeof provider === "string" ? providerById(provider) : undefined;
+    if (!info || info.role !== "writing") throw new Error("Unknown provider.");
+    const key = keys.get(info.id);
+    if (!key) throw new Error(`Add your ${info.label} API key on the API keys tab to see its models.`);
+    // The key only ever goes to the saved API address for that provider, never one from the renderer.
+    const w = settings.get().writing;
+    const baseUrl = w.provider === info.id && w.baseUrl.trim() ? w.baseUrl.trim() : undefined;
+    return listModels(info.id, key, baseUrl);
+  });
   ipcMain.handle(IPC.pickLogo, async () => {
     const result = await showOpenDialog({
       properties: ["openFile"],

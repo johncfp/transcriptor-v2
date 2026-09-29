@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PROVIDERS, providerById } from "../../../shared/providers";
+import { EFFORTS, EFFORT_LABELS, PROVIDERS, providerById, type Effort, type ModelOption } from "../../../shared/providers";
 import type { Settings, SettingsPatch } from "../../../shared/settings";
 import { SECTIONS, SECTION_IDS, TEMPLATES, templateSections, type SectionId } from "../../../shared/showNotes";
 import { Section } from "./Section";
@@ -7,13 +7,50 @@ import { Section } from "./Section";
 const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
-/** Which provider and model write the notes. */
+/** "Other…" in the model list: type a model name instead. */
+const OTHER = ":other";
+
+type ModelList = { state: "loading" } | { state: "ready"; models: ModelOption[] } | { state: "error"; message: string };
+
+/** Which provider, model and effort level write the notes. */
 export function ShowNotesSettings({ settings, update }: { settings: Settings; update: (p: SettingsPatch) => void }) {
   const { writing } = settings;
+  const provider = providerById(writing.provider);
+  const defaultModel = provider?.defaultModel ?? "";
   const [model, setModel] = useState(writing.model);
   const [baseUrl, setBaseUrl] = useState(writing.baseUrl);
+  const [typing, setTyping] = useState(false);
+  const [list, setList] = useState<ModelList>({ state: "loading" });
+  const [reload, setReload] = useState(0);
   useEffect(() => setModel(writing.model), [writing.model]);
   useEffect(() => setBaseUrl(writing.baseUrl), [writing.baseUrl]);
+
+  // The provider's live model list, so new models show up without an app update.
+  useEffect(() => {
+    let live = true;
+    setList({ state: "loading" });
+    window.api.listModels(writing.provider).then(
+      (models) => live && setList({ state: "ready", models }),
+      (err) => live && setList({ state: "error", message: cleanError(err) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [writing.provider, reload]);
+
+  const models = list.state === "ready" ? list.models : [];
+  const listed = (id: string) => models.some((m) => m.id === id);
+  const current = writing.model || defaultModel;
+  // Levels the chosen model takes, when its provider says; otherwise all of them.
+  const efforts: readonly Effort[] = models.find((m) => m.id === current)?.efforts ?? EFFORTS;
+  const showList = list.state === "ready" && models.length > 0 && !typing;
+
+  const chooseModel = (next: string) => {
+    const nextEfforts = models.find((m) => m.id === (next || defaultModel))?.efforts;
+    // A level the new model doesn't take goes back to Auto.
+    const effort = writing.effort && nextEfforts && !nextEfforts.includes(writing.effort) ? "" : writing.effort;
+    update({ writing: { ...writing, model: next, effort } });
+  };
 
   return (
     <Section
@@ -28,7 +65,10 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
         <select
           className="input select"
           value={writing.provider}
-          onChange={(e) => update({ writing: { ...writing, provider: e.target.value, model: "", baseUrl: "" } })}
+          onChange={(e) => {
+            setTyping(false);
+            update({ writing: { ...writing, provider: e.target.value, model: "", baseUrl: "", effort: "" } });
+          }}
         >
           {PROVIDERS.filter((p) => p.role === "writing").map((p) => (
             <option key={p.id} value={p.id}>
@@ -40,16 +80,81 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
       <div className="row">
         <div className="row-label">
           <span>Model</span>
-          <span className="hint">Leave blank for the default.</span>
+          <span className={`hint${list.state === "error" ? " error" : ""}`}>
+            {list.state === "loading"
+              ? `Loading ${provider?.label ?? ""}'s models…`
+              : list.state === "error"
+                ? `${list.message} You can still type a model name.`
+                : showList
+                  ? `Listed live from ${provider?.label ?? "the provider"}, so new models appear here.`
+                  : "Type the model's name, as the provider writes it. Blank uses the default."}
+          </span>
         </div>
-        <input
-          className="input"
-          value={model}
-          placeholder={providerById(writing.provider)?.defaultModel ?? ""}
-          onChange={(e) => setModel(e.target.value)}
-          onBlur={() => model !== writing.model && update({ writing: { ...writing, model: model.trim() } })}
-        />
+        <div className="row-control model-control">
+          {showList ? (
+            <select
+              className="input select"
+              aria-label="Model"
+              value={writing.model === "" ? "" : listed(writing.model) ? writing.model : `custom:${writing.model}`}
+              onChange={(e) => (e.target.value === OTHER ? setTyping(true) : chooseModel(e.target.value.replace(/^custom:/, "")))}
+            >
+              <option value="">
+                Default ({models.find((m) => m.id === defaultModel)?.label ?? defaultModel})
+              </option>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label === m.id ? m.id : `${m.label} (${m.id})`}
+                </option>
+              ))}
+              {writing.model && !listed(writing.model) && <option value={`custom:${writing.model}`}>{writing.model}</option>}
+              <option value={OTHER}>Other…</option>
+            </select>
+          ) : (
+            <input
+              className="input"
+              aria-label="Model"
+              value={model}
+              placeholder={defaultModel}
+              onChange={(e) => setModel(e.target.value)}
+              onBlur={() => model.trim() !== writing.model && chooseModel(model.trim())}
+              onKeyDown={(e) => e.key === "Enter" && model.trim() !== writing.model && chooseModel(model.trim())}
+            />
+          )}
+          {typing && models.length > 0 ? (
+            <button className="button ghost" onClick={() => setTyping(false)}>
+              Show list
+            </button>
+          ) : list.state === "error" ? (
+            <button className="button ghost" onClick={() => setReload((n) => n + 1)}>
+              Try again
+            </button>
+          ) : null}
+        </div>
       </div>
+      {provider?.effort && (
+        <div className="row">
+          <div className="row-label">
+            <span>Effort</span>
+            <span className="hint">
+              How much the model thinks before writing. Higher is more thorough but slower and costs more. Auto uses the
+              model's own default.
+            </span>
+          </div>
+          <select
+            className="input select"
+            aria-label="Effort"
+            value={writing.effort}
+            onChange={(e) => update({ writing: { ...writing, effort: e.target.value as "" | Effort } })}
+          >
+            <option value="">Auto</option>
+            {EFFORTS.filter((e) => efforts.includes(e) || e === writing.effort).map((e) => (
+              <option key={e} value={e}>
+                {EFFORT_LABELS[e]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {(writing.provider === "qwen" || writing.provider === "moonshot") && (
         <div className="row">
           <div className="row-label">

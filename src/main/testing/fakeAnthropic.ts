@@ -24,6 +24,23 @@ export interface FakeAnthropic {
   close: () => void;
 }
 
+/** Capabilities as the Models API reports them, trimmed to what the app reads. */
+function caps(efforts: string[], adaptive = true) {
+  const levels = ["low", "medium", "high", "xhigh", "max"];
+  return {
+    structured_outputs: { supported: true },
+    thinking: { supported: true, types: { enabled: { supported: !adaptive }, adaptive: { supported: adaptive } } },
+    effort: { supported: efforts.length > 0, ...Object.fromEntries(levels.map((l) => [l, { supported: efforts.includes(l) }])) },
+  };
+}
+
+/** The fake model list: two usable models, and one without adaptive thinking that the app should hide. */
+export const FAKE_MODELS = [
+  { type: "model", id: "claude-opus-5-5", display_name: "Claude Opus 5.5", created_at: "2026-09-01T00:00:00Z", capabilities: caps(["low", "medium", "high", "xhigh", "max"]) },
+  { type: "model", id: "claude-opus-5", display_name: "Claude Opus 5", created_at: "2026-05-01T00:00:00Z", capabilities: caps(["low", "medium", "high", "xhigh", "max"]) },
+  { type: "model", id: "claude-haiku-4-5-20251001", display_name: "Claude Haiku 4.5", created_at: "2025-10-01T00:00:00Z", capabilities: caps([], false) },
+];
+
 function sse(res: http.ServerResponse, text: string): void {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -60,6 +77,17 @@ export function startFakeAnthropic(opts: FakeAnthropicOptions): Promise<FakeAnth
     req.on("end", () => {
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as Record<string, unknown>;
       requests.push({ path: req.url ?? "", headers: req.headers, body });
+      if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
+        res.writeHead(opts.status ?? 200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify(
+            opts.status
+              ? { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }
+              : { data: FAKE_MODELS, has_more: false, first_id: FAKE_MODELS[0]!.id, last_id: FAKE_MODELS.at(-1)!.id },
+          ),
+        );
+        return;
+      }
       if (opts.status) {
         res.writeHead(opts.status, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }));

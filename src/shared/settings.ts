@@ -1,3 +1,4 @@
+import { EFFORTS, type Effort } from "./providers";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
 import { VOICE_IDS, type VoiceId } from "./voices";
 
@@ -55,6 +56,8 @@ export interface Settings {
     model: string;
     /** Blank = the provider's usual endpoint. Needed for Qwen outside the default region. */
     baseUrl: string;
+    /** Effort level for providers that take one (see EFFORTS); blank = the model's own default. */
+    effort: "" | Effort;
     /** Show-notes voice preset (src/shared/voices.ts). */
     voice: VoiceId;
     /** The instruction used when voice is "custom". */
@@ -108,6 +111,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   speakerFormat: SPEAKER_FORMATS.map((f) => f.id),
   theme: THEMES.map((t) => t.id),
   voice: VOICE_IDS,
+  effort: ["", ...EFFORTS],
 };
 
 export interface ShowProfile {
@@ -156,7 +160,7 @@ export const DEFAULT_SETTINGS: Settings = {
     email: "",
     signOff: "",
   },
-  writing: { provider: "anthropic", model: "", baseUrl: "", voice: "general", customVoice: "" },
+  writing: { provider: "anthropic", model: "", baseUrl: "", effort: "", voice: "general", customVoice: "" },
   template: "full",
   customSections: [],
 };

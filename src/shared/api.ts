@@ -2,6 +2,7 @@
 // Every call crosses IPC into the main process; the renderer never sees
 // Node, the file system, or a stored API key.
 
+import type { ModelOption } from "./providers";
 import type { AddFilesResult, Job } from "./jobs";
 import type { Settings, SettingsPatch } from "./settings";
 import type { EpisodeDetails, SectionId, WritingResult } from "./showNotes";
@@ -33,6 +34,8 @@ export interface Api {
   defaultOutputFolder(): Promise<string>;
   /** Opens a folder picker; resolves to null if cancelled. */
   pickFolder(): Promise<string | null>;
+  /** A writing provider's live model list, using its saved key; rejects with a readable message. */
+  listModels(provider: string): Promise<ModelOption[]>;
   /** Pick an image and copy it in as the export logo; null if cancelled. */
   pickLogo(): Promise<{ name: string; preview: string } | null>;
   /** A small data: URL preview of an imported logo, or null if it's gone. */
@@ -98,6 +101,7 @@ export const IPC = {
   updateSettings: "settings:update",
   defaultOutputFolder: "settings:default-output-folder",
   pickFolder: "dialog:pick-folder",
+  listModels: "writing:list-models",
   pickLogo: "branding:pick-logo",
   logoPreview: "branding:logo-preview",
   listKeys: "keys:list",

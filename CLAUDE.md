@@ -59,8 +59,11 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
 - Settings are edited as a draft and saved with the Save button; new fields
   need a default in `DEFAULT_SETTINGS` and pass through `mergeSettings`.
 - Before writing Claude API code, check current model IDs and parameters
-  (default model `claude-opus-5`, adaptive thinking, `web_search_20260209`,
-  `fallbacks: "default"` for Opus 5).
+  (default model `claude-opus-5-5`, adaptive thinking, `web_search_20260209`,
+  `fallbacks: "default"` for Opus 5.5 and 5). Effort is optional
+  (`writing.effort`, blank = the model's default, which is `medium` on Opus
+  5.5): Claude gets `output_config.effort`, GPT `reasoning.effort`. Settings
+  lists models live from each provider (`src/main/writing/models.ts`).
 
 ## Releases and distribution
 

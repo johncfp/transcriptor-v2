@@ -85,6 +85,8 @@ export interface WritingResult {
   version: 1;
   provider: string;
   model: string;
+  /** The effort level asked for; absent = the model's own default. */
+  effort?: string;
   /** Voice preset used (src/shared/voices.ts); missing on notes from before voices existed. */
   voice?: string;
   generatedAt: string;

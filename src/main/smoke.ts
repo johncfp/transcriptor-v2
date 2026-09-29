@@ -266,7 +266,6 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(300);
       const referenceText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
       await shot("reference.png");
-      claude.close();
       const notes =
         notesStatus === "written" &&
         notesText.includes("Episode 386: Showing Up with Pete") &&
@@ -300,6 +299,23 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Cover page, header and footer").scrollIntoView()`);
       await pause(500);
       await shot("settings-branding.png");
+
+      // Model and effort: the live list from the fake Claude API, the default model, and Auto effort.
+      await click(".tab", "Show notes");
+      await pause(800);
+      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Show notes").scrollIntoView()`);
+      await pause(400);
+      const modelOptions = await js<string[]>(`[...document.querySelectorAll("select[aria-label=Model] option")].map((o) => o.textContent)`);
+      const effortOptions = await js<string[]>(`[...document.querySelectorAll("select[aria-label=Effort] option")].map((o) => o.textContent)`);
+      await shot("settings-model.png");
+      claude.close();
+      const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
+      const modelPicker =
+        JSON.stringify(modelOptions) ===
+          JSON.stringify(["Default (Claude Opus 5.5)", "Claude Opus 5.5 (claude-opus-5-5)", "Claude Opus 5 (claude-opus-5)", "Other…"]) &&
+        JSON.stringify(effortOptions) === JSON.stringify(["Auto", "Low", "Medium", "High", "Extra high", "Max"]) &&
+        draftRequest?.model === "claude-opus-5-5" &&
+        (draftRequest?.output_config as { effort?: string } | undefined)?.effort === undefined;
       await click(".tab", "General");
       await pause(300);
 
@@ -423,10 +439,13 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           brand === "Upload | Transcribe | Export" &&
           /^Transcriptor 2 v2\.0\.0/.test(version) &&
           ALL_SECTIONS.every((t) => sections.includes(t)) &&
+          modelPicker &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, search, themes, saveFlow, customVoice },
+        modelOptions,
+        effortOptions,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,

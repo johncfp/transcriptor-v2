@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Job } from "../../../shared/jobs";
-import { providerById } from "../../../shared/providers";
+import { EFFORT_LABELS, providerById, type Effort } from "../../../shared/providers";
 import type { Settings } from "../../../shared/settings";
 import {
   buildReference,
@@ -155,7 +155,8 @@ function ChecksCard({ result }: { result: WritingResult }) {
   return (
     <Section title="Checks">
       <p className="hint">
-        Written by {providerById(result.provider)?.label ?? result.provider} ({result.model})
+        Written by {providerById(result.provider)?.label ?? result.provider} ({result.model}
+        {result.effort ? `, ${EFFORT_LABELS[result.effort as Effort]?.toLowerCase() ?? result.effort} effort` : ""})
         {result.voice && isVoiceId(result.voice) ? ` in the ${VOICES[result.voice].label} voice` : ""} on{" "}
         {new Date(result.generatedAt).toLocaleString()}.
       </p>

@@ -12,7 +12,7 @@ type BetaMessageParam = Anthropic.Beta.BetaMessageParam;
  * Models that get server-side refusal fallbacks: if the model declines, the
  * API re-runs the same request on a fallback model inside the same call.
  */
-const FALLBACK_MODELS = new Set(["claude-opus-5", "claude-fable-5-1"]);
+const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"]);
 
 function client(call: ProviderCall): Anthropic {
   return new Anthropic({ apiKey: call.apiKey, baseURL: call.baseUrl, maxRetries: 2 });
@@ -90,6 +90,7 @@ export const anthropicWriter: WritingProvider = {
               { type: "web_search_20260209", name: "web_search", max_uses: 6 },
               { ...RESEARCH_TOOL, strict: true },
             ],
+            ...(call.effort ? { output_config: { effort: call.effort } } : {}),
             ...fallbackParams(call.model),
           },
           { signal: call.signal },
@@ -126,7 +127,10 @@ export const anthropicWriter: WritingProvider = {
             thinking: { type: "adaptive" },
             system: prompt.system,
             messages: [{ role: "user", content: prompt.user }],
-            output_config: { format: { type: "json_schema", schema: WRITING_SCHEMA } },
+            output_config: {
+              format: { type: "json_schema", schema: WRITING_SCHEMA },
+              ...(call.effort ? { effort: call.effort } : {}),
+            },
             ...fallbackParams(call.model),
           },
           { signal: call.signal },

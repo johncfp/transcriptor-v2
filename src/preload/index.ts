@@ -13,6 +13,7 @@ const api: Api = {
   updateSettings: (patch) => ipcRenderer.invoke(IPC.updateSettings, patch),
   defaultOutputFolder: () => ipcRenderer.invoke(IPC.defaultOutputFolder),
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder),
+  listModels: (provider) => ipcRenderer.invoke(IPC.listModels, provider),
   pickLogo: () => ipcRenderer.invoke(IPC.pickLogo),
   logoPreview: (name) => ipcRenderer.invoke(IPC.logoPreview, name),
   listKeys: () => ipcRenderer.invoke(IPC.listKeys),

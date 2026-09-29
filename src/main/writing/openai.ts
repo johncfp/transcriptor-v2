@@ -103,6 +103,7 @@ export const openaiWriter: WritingProvider = {
         input: prompt.user,
         tools: [{ type: "web_search" }],
         include: ["web_search_call.action.sources"],
+        ...(call.effort ? { reasoning: { effort: call.effort } } : {}),
         text: { format: { type: "json_schema", name: "guest_research", schema: RESEARCH_TOOL.input_schema, strict: true } },
       },
       call.signal,
@@ -122,6 +123,7 @@ export const openaiWriter: WritingProvider = {
         instructions: prompt.system,
         input: prompt.user,
         text: { format: { type: "json_schema", name: "show_notes", schema: WRITING_SCHEMA, strict: true } },
+        ...(call.effort ? { reasoning: { effort: call.effort } } : {}),
       },
       call.signal,
     );

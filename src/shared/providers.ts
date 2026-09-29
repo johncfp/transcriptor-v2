@@ -18,6 +18,32 @@ export interface ProviderInfo {
   unavailable?: string;
   /** Writing providers: the model used when Settings leaves it blank. */
   defaultModel?: string;
+  /** Writing providers: takes an effort level (see EFFORTS). */
+  effort?: boolean;
+}
+
+/**
+ * Effort levels, lowest to highest: how much the model thinks before writing.
+ * Claude (output_config.effort) and GPT (reasoning.effort) both take these;
+ * not every model takes every level.
+ */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Effort = (typeof EFFORTS)[number];
+export const EFFORT_LABELS: Record<Effort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
+
+/** A model a writing provider offers, from its live model list. */
+export interface ModelOption {
+  id: string;
+  /** Display name, e.g. "Claude Opus 5.5"; the id when the provider has none. */
+  label: string;
+  /** Effort levels it takes; null when the provider doesn't say. */
+  efforts: Effort[] | null;
 }
 
 export const PROVIDERS: ProviderInfo[] = [
@@ -46,7 +72,8 @@ export const PROVIDERS: ProviderInfo[] = [
     role: "writing",
     label: "Claude",
     company: "Anthropic",
-    defaultModel: "claude-opus-5",
+    defaultModel: "claude-opus-5-5",
+    effort: true,
     keyUrl: "https://console.anthropic.com/settings/keys",
     sends: "the full transcript and your show details",
   },
@@ -56,6 +83,7 @@ export const PROVIDERS: ProviderInfo[] = [
     label: "GPT",
     company: "OpenAI",
     defaultModel: "gpt-5.5",
+    effort: true,
     keyUrl: "https://platform.openai.com/api-keys",
     sends: "the full transcript and your show details",
   },

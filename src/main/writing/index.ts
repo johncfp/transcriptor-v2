@@ -110,6 +110,7 @@ export async function writeEpisode(input: WriteEpisodeInput): Promise<WritingRes
     version: 1,
     provider: writer.id,
     model: call.model,
+    ...(call.effort ? { effort: call.effort } : {}),
     voice: input.voice,
     generatedAt: new Date().toISOString(),
     details: input.details,

@@ -17,7 +17,9 @@ import {
 import { startFakeAnthropic } from "../src/main/testing/fakeAnthropic";
 import { castOf, writeEpisode } from "../src/main/writing";
 import { anthropicWriter } from "../src/main/writing/anthropic";
-import { kimiWriter, parseLooseJson, readResponses } from "../src/main/writing/openai";
+import { kimiWriter, openaiWriter, parseLooseJson, readResponses } from "../src/main/writing/openai";
+import { claudeEfforts, claudeUsable, listModels } from "../src/main/writing/models";
+import { DEFAULT_SETTINGS, mergeSettings } from "../src/shared/settings";
 
 // A small two-person episode: host (speaker 0) then guest (speaker 1).
 function episode(): { transcript: Transcript; edits: EpisodeEdits } {
@@ -177,7 +179,7 @@ test("end to end with the real Claude SDK against a local fake API", async () =>
       show: { name: "This Is A Test Show", hosts: ["Nigel T."] },
       voice: "seo",
       writer: anthropicWriter,
-      call: { apiKey: "sk-ant-test", model: "claude-opus-5", baseUrl: fake.url },
+      call: { apiKey: "sk-ant-test", model: "claude-opus-5-5", baseUrl: fake.url, effort: "high" },
       onStage: (s) => stages.push(s),
     });
 
@@ -188,6 +190,12 @@ test("end to end with the real Claude SDK against a local fake API", async () =>
     assert.ok(tools.some((t) => t.type === "web_search_20260209"));
     assert.ok(tools.some((t) => t.name === "record_guest_research" && t.strict === true));
     assert.equal(research!.fallbacks, "default");
+    // Effort goes in output_config on both calls; the draft keeps its JSON schema alongside it.
+    assert.deepEqual(research!.output_config, { effort: "high" });
+    assert.equal((draft!.output_config as { effort: string }).effort, "high");
+    assert.equal(draft!.fallbacks, "default");
+    assert.equal(result.model, "claude-opus-5-5");
+    assert.equal(result.effort, "high");
     assert.match(String(fake.requests[0]!.headers["anthropic-beta"]), /server-side-fallback-2026-07-01/);
     assert.equal(draft!.stream, true);
     // The voice comes after the accuracy rules, which are still there.
@@ -305,4 +313,110 @@ test("the sample template imports as the Standard sections", async () => {
   const sample = sampleTemplateFile();
   assert.deepEqual(readTemplateFile(JSON.stringify(sample)), TEMPLATES.find((t) => t.id === "standard")!.sections);
   assert.deepEqual(Object.keys(sample.availableSections), SECTION_IDS);
+});
+
+test("Claude: Auto effort sends no effort at all", async () => {
+  const fake = await startFakeAnthropic({ draft: {} });
+  try {
+    await anthropicWriter.research({ apiKey: "k", model: "claude-opus-5-5", baseUrl: fake.url }, { system: "s", user: "u" });
+    await anthropicWriter.draft({ apiKey: "k", model: "claude-opus-5-5", baseUrl: fake.url }, { system: "s", user: "u" });
+    const [research, draft] = fake.requests.map((r) => r.body);
+    assert.equal(research!.output_config, undefined);
+    assert.deepEqual(Object.keys(draft!.output_config as object), ["format"]);
+  } finally {
+    fake.close();
+  }
+});
+
+test("GPT: effort goes in reasoning.effort on both calls, and only when set", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      bodies.push(JSON.parse(body));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: '{"identified":false,"facts":[],"links":[]}' }] }] }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    await openaiWriter.research({ apiKey: "k", model: "gpt-5.5", baseUrl: url, effort: "xhigh" }, { system: "s", user: "u" });
+    await openaiWriter.draft({ apiKey: "k", model: "gpt-5.5", baseUrl: url, effort: "xhigh" }, { system: "s", user: "u" });
+    await openaiWriter.draft({ apiKey: "k", model: "gpt-5.5", baseUrl: url }, { system: "s", user: "u" });
+    assert.deepEqual(bodies[0]!.reasoning, { effort: "xhigh" });
+    assert.deepEqual(bodies[1]!.reasoning, { effort: "xhigh" });
+    assert.equal(bodies[2]!.reasoning, undefined);
+  } finally {
+    server.close();
+  }
+});
+
+test("model list: Claude's usable models with their effort levels; a bad key is readable", async () => {
+  const fake = await startFakeAnthropic({ draft: {} });
+  try {
+    const models = await listModels("anthropic", "k", fake.url);
+    assert.deepEqual(
+      models.map((m) => m.id),
+      ["claude-opus-5-5", "claude-opus-5"],
+      "newest first; Haiku 4.5 (no adaptive thinking) is left out",
+    );
+    assert.equal(models[0]!.label, "Claude Opus 5.5");
+    assert.deepEqual(models[0]!.efforts, ["low", "medium", "high", "xhigh", "max"]);
+  } finally {
+    fake.close();
+  }
+  const bad = await startFakeAnthropic({ draft: {}, status: 401 });
+  try {
+    await assert.rejects(listModels("anthropic", "bad", bad.url), /Claude rejected the API key/);
+  } finally {
+    bad.close();
+  }
+});
+
+test("model list: Claude capabilities are read defensively", () => {
+  const level = (on: string[]) => Object.fromEntries(["low", "medium", "high", "xhigh", "max"].map((l) => [l, { supported: on.includes(l) }]));
+  assert.equal(claudeEfforts(undefined), null, "not listed: unknown");
+  assert.deepEqual(claudeEfforts({ effort: { supported: false } }), []);
+  assert.deepEqual(claudeEfforts({ effort: { supported: true, ...level(["low", "medium", "high"]) } }), ["low", "medium", "high"]);
+  assert.equal(claudeUsable(undefined), true);
+  assert.equal(claudeUsable({ thinking: { types: { adaptive: { supported: true } } }, structured_outputs: { supported: false } }), false);
+});
+
+test("model list: GPT keeps text models, newest first; Kimi and Qwen list everything", async () => {
+  const server = http.createServer((req, res) => {
+    assert.equal(req.headers.authorization, "Bearer k");
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        data: [
+          { id: "gpt-5.5", created: 300 },
+          { id: "gpt-6-astra", created: 400 },
+          { id: "gpt-realtime", created: 500 },
+          { id: "text-embedding-3-large", created: 100 },
+          { id: "gpt-image-2", created: 450 },
+          { id: "o4-mini", created: 200 },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const gpt = await listModels("openai", "k", url);
+    assert.deepEqual(gpt.map((m) => m.id), ["gpt-6-astra", "gpt-5.5", "o4-mini"]);
+    assert.equal(gpt[0]!.efforts, null, "GPT doesn't say which levels a model takes");
+    assert.equal((await listModels("moonshot", "k", url)).length, 6);
+  } finally {
+    server.close();
+  }
+});
+
+test("settings: effort must be a known level or blank", () => {
+  const merged = (effort: string) => mergeSettings(DEFAULT_SETTINGS, { writing: { effort } }).writing.effort;
+  assert.equal(DEFAULT_SETTINGS.writing.effort, "");
+  assert.equal(merged("xhigh"), "xhigh");
+  assert.equal(merged(""), "");
+  assert.equal(merged("turbo"), "");
 });

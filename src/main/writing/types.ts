@@ -1,3 +1,4 @@
+import type { Effort } from "../../shared/providers";
 import type { RawResearch } from "../../shared/verify";
 
 export interface ProviderCall {
@@ -5,6 +6,8 @@ export interface ProviderCall {
   model: string;
   /** Overrides the API origin (Qwen's region-specific endpoint; tests). */
   baseUrl?: string;
+  /** Only for providers that take one; omitted = the model's own default. */
+  effort?: Effort;
   signal?: AbortSignal;
 }
 
