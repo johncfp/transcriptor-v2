@@ -44,7 +44,7 @@ export interface JobQueueDeps {
   /** True when a writing provider has a key, so notes can be written without asking. */
   canWrite: () => boolean;
   /** Write the episode's documents to disk; `formats` overrides the Settings default. */
-  exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[]) => ExportResult;
+  exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[]) => Promise<ExportResult>;
   /** Export as soon as show notes are written. */
   autoExport: () => boolean;
   /** Every change, including progress ticks. */
@@ -224,14 +224,14 @@ export class JobQueue {
    * Export the episode's documents now. The outcome is recorded on the job
    * (last export, or the error) as well as returned.
    */
-  exportNow(id: string, formats?: ExportFormat[]): ExportResult {
+  async exportNow(id: string, formats?: ExportFormat[]): Promise<ExportResult> {
     const job = this.find(id);
     const transcript = this.transcript(id);
     const edits = this.edits(id);
     const details = this.details(id);
     if (!job || !transcript || !edits || !details) throw new Error("This episode hasn't been transcribed yet.");
     try {
-      const result = this.deps.exportEpisode({ job, transcript, edits, details, writing: this.writing(id) }, formats);
+      const result = await this.deps.exportEpisode({ job, transcript, edits, details, writing: this.writing(id) }, formats);
       Object.assign(job, { exported: { at: new Date().toISOString(), ...result }, exportError: undefined });
       return result;
     } catch (err) {
@@ -388,7 +388,7 @@ export class JobQueue {
     });
     if (this.deps.autoExport()) {
       try {
-        this.exportNow(job.id);
+        await this.exportNow(job.id);
       } catch {
         // Recorded on the job as exportError; the notes themselves are done.
       }

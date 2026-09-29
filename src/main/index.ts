@@ -10,6 +10,7 @@ import { cleanTranscript } from "../shared/cleanup";
 import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
+import { printPdf } from "./pdf";
 import { clampThresholds } from "../shared/confidence";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
@@ -122,7 +123,7 @@ function start(): void {
         },
       });
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
-      return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen);
+      return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen, printPdf);
     },
     autoExport: () => settings.get().output.autoExport,
     reviewOptions: () => {
@@ -444,7 +445,7 @@ function showOpenDialog(opts: Electron.OpenDialogOptions) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, opts) : dialog.showOpenDialog(opts);
 }
 
-const EXPORT_FORMATS: ExportFormat[] = ["docx", "txt"];
+const EXPORT_FORMATS: ExportFormat[] = ["docx", "pdf", "txt"];
 
 export function defaultOutputFolder(): string {
   return join(app.getPath("documents"), "Transcriptor 2");

@@ -102,13 +102,13 @@ test("DOCX: the parts Word needs, heading styles, restarting lists, working link
   assert.match(doc, /<w:tbl>.*00:00.*<\/w:tbl><w:p>/, "a paragraph follows the table");
 });
 
-test("export writes each document in each format into the episode's folder", () => {
+test("export writes each document in each format into the episode's folder", async () => {
   const root = mkdtempSync(join(tmpdir(), "t2-export-"));
   const docs = [
     { kind: "Transcript" as const, blocks: SAMPLE },
     { kind: "Show Notes" as const, blocks: SAMPLE },
   ];
-  const result = writeExport(root, 'Episode 386 - Love: "AI"', docs, ["docx", "txt"]);
+  const result = await writeExport(root, 'Episode 386 - Love: "AI"', docs, ["docx", "txt"]);
   assert.equal(result.folder, join(root, "Episode 386 - Love AI"));
   assert.deepEqual(readdirSync(result.folder).sort(), [
     "Episode 386 - Love AI - Show Notes.docx",
@@ -121,14 +121,50 @@ test("export writes each document in each format into the episode's folder", () 
   assert.match(txt, /“Nobody has ever fallen in love with an optimized calendar\.”/);
 
   // Exporting again replaces the files rather than adding copies.
-  writeExport(root, 'Episode 386 - Love: "AI"', docs, ["docx", "txt"]);
+  await writeExport(root, 'Episode 386 - Love: "AI"', docs, ["docx", "txt"]);
   assert.equal(readdirSync(result.folder).length, 4);
 });
 
-test("export errors are readable", () => {
+test("export errors are readable", async () => {
   const root = mkdtempSync(join(tmpdir(), "t2-export-"));
-  assert.throws(() => writeExport(root, "x", [], []), /Choose at least one format/);
+  await assert.rejects(writeExport(root, "x", [], []), /Choose at least one format/);
+  await assert.rejects(writeExport(root, "x", [], ["pdf"]), /PDF export isn't available/);
   // A file where the folder should be.
   writeFileSync(join(root, "Episode 1"), "");
-  assert.throws(() => writeExport(root, "Episode 1", [{ kind: "Transcript", blocks: [] }], ["txt"]), /Couldn't|export/i);
+  await assert.rejects(writeExport(root, "Episode 1", [{ kind: "Transcript", blocks: [] }], ["txt"]), /Couldn't|export/i);
+});
+
+test("PDF export: each document is rendered from its own HTML page", async () => {
+  const root = mkdtempSync(join(tmpdir(), "t2-export-"));
+  const pages: string[] = [];
+  const result = await writeExport(root, "Episode 386", [{ kind: "Show Notes", blocks: SAMPLE }], ["pdf"], async (html, folder) => {
+    assert.equal(folder, join(root, "Episode 386"), "temporary files go in the episode's folder");
+    pages.push(html);
+    return new TextEncoder().encode("%PDF-1.7 fake");
+  });
+  assert.deepEqual(readdirSync(result.folder), ["Episode 386 - Show Notes.pdf"]);
+  assert.equal(readFileSync(result.files[0]!, "utf8"), "%PDF-1.7 fake");
+  assert.match(pages[0]!, /<title>Episode 386 - Show Notes<\/title>/);
+});
+
+test("PDF HTML: escaped text, links, lists, tables and quotes; nothing loads from outside", async () => {
+  const { blocksToHtml } = await import("../src/main/pdfHtml");
+  const html = blocksToHtml(
+    [
+      { type: "heading", level: 1, text: "Love & <AI>" },
+      { type: "paragraph", runs: [{ text: "Site: ", bold: true }, { text: "https://pete.example/?a=1&b=2" }] },
+      { type: "paragraph", runs: [{ text: "unsure", color: "DC2626" }] },
+      { type: "list", ordered: true, items: [[{ text: "One" }], [{ text: "Two" }]] },
+      { type: "table", header: ["Time", "Topic"], rows: [["00:00", "<script>"]] },
+      { type: "quote", text: "Hi", attribution: "Pete" },
+    ],
+    "T",
+  );
+  assert.match(html, /<h1>Love &amp; &lt;AI&gt;<\/h1>/);
+  assert.match(html, /<b>Site: <\/b><a href="https:\/\/pete\.example\/\?a=1&amp;b=2">/);
+  assert.ok(!html.includes("DC2626"), "confidence colors are Word-only");
+  assert.match(html, /<ol><li>One<\/li><li>Two<\/li><\/ol>/);
+  assert.match(html, /<td>&lt;script&gt;<\/td>/);
+  assert.match(html, /“Hi”.*— Pete/);
+  assert.match(html, /Content-Security-Policy" content="default-src 'none'/);
 });

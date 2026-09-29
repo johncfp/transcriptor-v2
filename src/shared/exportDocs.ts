@@ -16,7 +16,7 @@ import {
 } from "./showNotes";
 import { formatTimestamp } from "./transcript";
 
-export type ExportFormat = "docx" | "txt";
+export type ExportFormat = "docx" | "txt" | "pdf";
 export type DocKind = "Transcript" | "Show Notes" | "Reference";
 
 export interface ExportDocument {

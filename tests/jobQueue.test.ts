@@ -50,7 +50,7 @@ function setup(overrides: Partial<JobQueueDeps> = {}) {
     reviewOptions: () => ({ reviewStep: true, cleanup: { repetitions: false }, hosts: [] }),
     write: () => Promise.reject(new Error("no writer in this test")),
     canWrite: () => false,
-    exportEpisode: () => ({ folder: "out", files: [] }),
+    exportEpisode: async () => ({ folder: "out", files: [] }),
     autoExport: () => false,
     onEvent: (e) => events.push(e.type),
     ...overrides,
@@ -326,7 +326,7 @@ test("export: automatic after writing, recorded on the job; a failed export does
   const { queue, id } = await transcribed({
     write: async () => WRITTEN,
     autoExport: () => true,
-    exportEpisode: (data) => {
+    exportEpisode: async (data) => {
       exports++;
       if (broken) throw new Error("Couldn't save the file. If it's open in Word, close it and export again.");
       assert.equal(data.writing?.notes.summary, "S");
@@ -351,18 +351,18 @@ test("export: automatic after writing, recorded on the job; a failed export does
   assert.match(job.exportError!, /close it and export again/);
 
   broken = false;
-  queue.exportNow(id, ["txt"]);
+  await queue.exportNow(id, ["txt"]);
   assert.equal(queue.list()[0]!.exportError, undefined);
 });
 
 test("export: the transcript can be exported before any show notes exist", async () => {
   let writing: unknown = "unset";
   const { queue, id } = await transcribed({
-    exportEpisode: (data) => {
+    exportEpisode: async (data) => {
       writing = data.writing;
       return { folder: "out", files: [] };
     },
   });
-  queue.exportNow(id, ["docx"]);
+  await queue.exportNow(id, ["docx"]);
   assert.equal(writing, null);
 });

@@ -7,9 +7,10 @@ import { Section } from "./Section";
 const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
-/** Export this episode's documents as Word and/or text files. */
+/** Export this episode's documents as Word, PDF and/or text files. */
 export function ExportCard({ job, settings, hasNotes }: { job: Job; settings: Settings; hasNotes: boolean }) {
-  const [formats, setFormats] = useState({ docx: settings.output.formats.docx, txt: settings.output.formats.txt });
+  const { docx, pdf, txt } = settings.output.formats;
+  const [formats, setFormats] = useState({ docx, pdf, txt });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => setError(job.exportError ?? ""), [job.exportError]);
@@ -23,6 +24,10 @@ export function ExportCard({ job, settings, hasNotes }: { job: Job; settings: Se
         <label className="check">
           <input type="checkbox" checked={formats.docx} onChange={(e) => setFormats({ ...formats, docx: e.target.checked })} />
           Word (.docx)
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={formats.pdf} onChange={(e) => setFormats({ ...formats, pdf: e.target.checked })} />
+          PDF (.pdf)
         </label>
         <label className="check">
           <input type="checkbox" checked={formats.txt} onChange={(e) => setFormats({ ...formats, txt: e.target.checked })} />

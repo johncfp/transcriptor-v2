@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -230,6 +230,14 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         exported.folder.startsWith(exportRoot) &&
         exported.files.length === 3 &&
         exported.files.every((f) => f.endsWith(".docx") && existsSync(f));
+      // PDF: each document printed through Chromium, with no temporary page left behind.
+      const pdfExport = await js<{ folder: string; files: string[] }>(
+        `window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["pdf"]))`,
+      );
+      const pdfOk =
+        pdfExport.files.length === 3 &&
+        pdfExport.files.every((f) => f.endsWith(".pdf") && readFileSync(f).subarray(0, 5).toString() === "%PDF-") &&
+        !readdirSync(pdfExport.folder).some((f) => f.startsWith(".t2-print"));
       await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Export").scrollIntoView()`);
       await pause(300);
       await shot("export.png");
@@ -245,6 +253,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         !notesText.includes("We are so glad you came") &&
         notesText.includes("https://pete.example/") &&
         exportOk &&
+        pdfOk &&
         checksText.includes("1 quote left out") &&
         referenceText.includes("Thanks, glad to be here.") &&
         referenceText.includes("Pete hosts a podcast.");
@@ -402,6 +411,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         finalStatus,
         notesStatus,
         exported,
+        pdfExport,
         notesText,
         sections,
         windowIcon,

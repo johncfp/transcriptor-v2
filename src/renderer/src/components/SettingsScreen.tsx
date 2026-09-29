@@ -217,6 +217,11 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
                     onChange={(v) => update({ output: { formats: { ...output.formats, docx: v } } })}
                   />
                   <Check
+                    label="PDF (.pdf)"
+                    checked={output.formats.pdf}
+                    onChange={(v) => update({ output: { formats: { ...output.formats, pdf: v } } })}
+                  />
+                  <Check
                     label="Plain text (.txt)"
                     checked={output.formats.txt}
                     onChange={(v) => update({ output: { formats: { ...output.formats, txt: v } } })}
