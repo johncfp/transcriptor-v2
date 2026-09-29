@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -287,6 +287,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         ["General", "settings-general.png"],
         ["Output", "settings-output.png"],
         ["Show notes", "settings-notes.png"],
+        ["Drive", "settings-drive.png"],
         ["API keys", "settings-keys.png"],
       ] as const) {
         await click(".tab", label);
@@ -439,6 +440,43 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const search = searchHit.rows === 1 && !searchHit.empty && searchMiss.rows === 0 && searchMiss.empty;
 
       // Packaged builds only: can the public releases feed be read without a token?
+      // Drive: a watched folder skips what's already there, picks up a new file in a
+      // subfolder, and moves it into Done once transcribed; exports go next to it.
+      const driveRoot = join(dir, "drive");
+      mkdirSync(join(driveRoot, "Show A"), { recursive: true });
+      copyFileSync(wav, join(driveRoot, "already there.wav"));
+      await js(`window.api.updateSettings({ folderWatch: { enabled: true, folder: ${JSON.stringify(driveRoot)} } })`);
+      await pause(1500); // the first look only notes what's there
+      copyFileSync(wav, join(driveRoot, "Show A", "Episode 2.wav"));
+      type WatchedJob = { id: string; fileName: string; status: string; watchedPath?: string; exportRoot?: string };
+      let watched: WatchedJob | undefined;
+      for (let i = 0; i < 60 && !(watched && ["needs-review", "ready"].includes(watched.status)); i++) {
+        await pause(500);
+        watched = (await js<WatchedJob[]>(`window.api.listJobs()`)).find((j) => j.watchedPath);
+        if (watched?.status === "awaiting-approval") await js(`window.api.approveJob(${JSON.stringify(watched.id)})`);
+      }
+      const movedToDone = join(driveRoot, "Done", "Show A", "Episode 2.wav");
+      for (let i = 0; i < 20 && !existsSync(movedToDone); i++) await pause(250);
+      const claimsDir = join(driveRoot, ".transcriptor", "claims");
+      const folderWatch = {
+        job: watched ?? null,
+        movedToDone: existsSync(movedToDone),
+        originalGone: !existsSync(join(driveRoot, "Show A", "Episode 2.wav")),
+        existingLeft: existsSync(join(driveRoot, "already there.wav")),
+        claimsLeft: existsSync(claimsDir) ? readdirSync(claimsDir).length : 0,
+        jobs: (await js<WatchedJob[]>(`window.api.listJobs()`)).filter((j) => j.watchedPath).length,
+      };
+      await js(`window.api.updateSettings({ folderWatch: { enabled: false } })`);
+      const folderWatchOk =
+        folderWatch.job?.watchedPath === join("Show A", "Episode 2.wav") &&
+        folderWatch.job.fileName === "Episode 2.wav" &&
+        folderWatch.job.exportRoot === join(driveRoot, "Transcriptor Exports") &&
+        folderWatch.movedToDone &&
+        folderWatch.originalGone &&
+        folderWatch.existingLeft &&
+        folderWatch.claimsLeft === 0 &&
+        folderWatch.jobs === 1;
+
       const newerVersion = app.isPackaged ? await hooks.checkForUpdate() : "skipped (not packaged)";
 
       // The window's taskbar icon ships next to the main bundle.
@@ -474,10 +512,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           /^Transcriptor 2 v2\.0\.0/.test(version) &&
           ALL_SECTIONS.every((t) => sections.includes(t)) &&
           modelPicker &&
+          folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, folderWatchOk, search, themes, saveFlow, customVoice },
+        folderWatch,
         modelOptions,
         effortOptions,
         selectWidths,
@@ -558,4 +598,5 @@ const ALL_SECTIONS = [
   "Show notes template",
   "API keys",
   "Show notes voice",
+  "Watch a Drive folder",
 ];

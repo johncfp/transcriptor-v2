@@ -45,6 +45,10 @@ export interface Job {
   guest?: string | null;
   /** The last export of this episode's documents. */
   exported?: { at: string; folder: string; files: string[] };
+  /** Exports go here instead of the Output folder (watched-folder episodes). */
+  exportRoot?: string;
+  /** Where a watched file was found, relative to the watched folder. */
+  watchedPath?: string;
   /** Why the last export failed (the notes themselves are fine). */
   exportError?: string;
 }

@@ -34,6 +34,12 @@ export interface Api {
   defaultOutputFolder(): Promise<string>;
   /** Opens a folder picker; resolves to null if cancelled. */
   pickFolder(): Promise<string | null>;
+  /** Pick the folder to watch, starting in Drive for Desktop's folder when there is one. */
+  pickWatchFolder(): Promise<string | null>;
+  /** Drive for Desktop's "My Drive" folder on this computer, or null. */
+  driveForDesktop(): Promise<string | null>;
+  /** The folder watcher's state, or null when it isn't running. */
+  folderWatchStatus(): Promise<FolderWatchStatus | null>;
   /** A writing provider's live model list, using its saved key; rejects with a readable message. */
   listModels(provider: string): Promise<ModelOption[]>;
   /** Pick an image and copy it in as the export logo; null if cancelled. */
@@ -101,6 +107,9 @@ export const IPC = {
   updateSettings: "settings:update",
   defaultOutputFolder: "settings:default-output-folder",
   pickFolder: "dialog:pick-folder",
+  pickWatchFolder: "folder-watch:pick",
+  driveForDesktop: "folder-watch:drive",
+  folderWatchStatus: "folder-watch:status",
   listModels: "writing:list-models",
   pickLogo: "branding:pick-logo",
   logoPreview: "branding:logo-preview",
@@ -138,3 +147,14 @@ export const IPC = {
   openExternal: "shell:open-external",
   appVersion: "app:version",
 } as const;
+
+export interface FolderWatchStatus {
+  root: string;
+  /** Epoch ms of the last look at the folder. */
+  lastScan: number | null;
+  /** Files picked up since the app started. */
+  pickedUp: number;
+  /** New files waiting to finish syncing, or for other computers' claims. */
+  waiting: number;
+  error: string | null;
+}

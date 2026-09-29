@@ -5,7 +5,7 @@ transcript, show notes, and a reference file for reusing the episode's content
 later. It runs in the background from the system tray on Windows and macOS.
 
 Transcriptor 2 is a clean rebuild, separate from Transcriptor 1. Both can be
-installed at the same time. Current release: **2.0.0-beta.1**. To install it,
+installed at the same time. Current release: **2.0.0-beta.3**. To install it,
 see [INSTALL.md](INSTALL.md).
 
 ## How it works
@@ -36,10 +36,13 @@ see [INSTALL.md](INSTALL.md).
    (Documents/Transcriptor 2 unless you pick another), with a choice of five
    speaker formats. Runs automatically when the notes are written, or from the
    episode's Export card. The Word files use real heading and list styles, so
-   they convert cleanly to Google Docs.
+   they convert cleanly to Google Docs. PDF is also available, and Word and
+   PDF can have a cover page, a logo, and header and footer text.
 
-Also: light and dark themes, episode search, color-coded episode stages, and
-Settings in tabs with a Save button.
+Also: watching a Google Drive folder through Drive for Desktop (below), a
+live model list with an effort level for Claude and GPT, light and dark
+themes, episode search, color-coded episode stages, and Settings in tabs with
+a Save button.
 
 Each person uses their own API keys, stored encrypted with the computer's
 keychain. **Audio and transcripts are sent to the providers you choose**;
@@ -56,12 +59,50 @@ Built in milestones:
 | M2 | Cleanup and review | Done |
 | M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
-| M5 | Drive folder watching (written but switched off) | Done (off) |
+| M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.
 
-## Google Drive setup (folder watching: built, switched off)
+## Watching a Google Drive folder (Drive for Desktop)
+
+Settings → **Drive**. With Google Drive for Desktop installed and signed in,
+Drive keeps your folders in sync on the computer, so Transcriptor 2 watches
+that local folder: no Google Cloud setup, sign-in or Drive permission.
+
+1. Install Google Drive for Desktop and sign in (it shows up as `G:\My Drive`
+   on Windows, or under Google Drive in Finder on macOS).
+2. Settings → Drive → **Choose…** the folder episodes are dropped into (a
+   shared folder works), turn on **Watch this folder**, then **Save**.
+
+What happens:
+
+- Files already in the folder when watching starts are left alone.
+  Subfolders are watched too.
+- A new audio file is picked up once it has finished syncing (it has to stop
+  changing for about 20 seconds). It's copied into the app and queued; with
+  "Ask me before processing" on, it waits for approval.
+- Once it's transcribed, the original moves into `Done/` inside the watched
+  folder, keeping its subfolder path.
+- The episode's exports go to `Transcriptor Exports/` inside the watched
+  folder rather than the Output folder, so Drive syncs them for everyone.
+- Several computers can watch the same shared folder. Each writes a claim
+  into a hidden `.transcriptor/claims` folder, waits a minute for the claims
+  to sync, and only the earliest claim goes ahead, so each episode is
+  transcribed (and billed) once.
+- Files are only picked up while the app is running (it keeps running in the
+  tray); it looks every 30 seconds.
+- Limits: if the computer that claimed a file goes away before transcribing
+  it, the others don't take it over; that file needs adding by hand. Moving a
+  file into another subfolder before it's picked up makes it a new file.
+
+It works the same with any folder kept in sync (OneDrive, Dropbox).
+
+## Google Drive sign-in version (built, switched off)
+
+The watcher below talks to the Drive API directly instead, for computers
+without Drive for Desktop. It isn't needed while the Drive for Desktop
+version above suits the workflow.
 
 Transcriptor 2 can watch a Google Drive folder and pick up new episode audio
 on its own: each new audio file is downloaded and queued, then waits for

@@ -40,7 +40,7 @@ export function ExportCard({ job, settings, hasNotes }: { job: Job; settings: Se
       </div>
       <p className="hint">
         {hasNotes ? "Transcript, show notes and reference file." : "The transcript now; show notes and the reference file once they're written."}{" "}
-        Saved to {settings.output.folder || "Documents › Transcriptor 2"}, in a folder for this episode.
+        Saved to {job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"}, in a folder for this episode.
       </p>
       <div className="notes-actions">
         <button

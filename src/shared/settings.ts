@@ -46,6 +46,11 @@ export interface Settings {
    * these until the wiring in src/main/index.ts is turned on.
    */
   watch: { enabled: boolean; folderId: string };
+  /**
+   * Watching a folder on this computer, typically one Google Drive for
+   * Desktop keeps in sync (src/main/watch/folderWatcher.ts).
+   */
+  folderWatch: { enabled: boolean; folder: string };
   /** Where words get a low- or medium-confidence color. */
   confidence: { lowMax: number; mediumMax: number };
   show: ShowProfile;
@@ -153,6 +158,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   confidence: { ...DEFAULT_CONFIDENCE_THRESHOLDS },
   watch: { enabled: false, folderId: "" },
+  folderWatch: { enabled: false, folder: "" },
   show: {
     name: "",
     hosts: [],

@@ -14,12 +14,14 @@ import { Section } from "./Section";
 import { ShowNotesSettings, ShowNotesTemplateSection } from "./ShowNotesSettings";
 import { VoiceSection } from "./VoiceSection";
 import { BrandingSection } from "./BrandingSection";
+import { FolderWatchSection } from "./FolderWatchSection";
 import { ConfidenceBandsSection } from "./ConfidenceBandsSection";
 
 const TABS = [
   { id: "general", label: "General" },
   { id: "output", label: "Output" },
   { id: "notes", label: "Show notes" },
+  { id: "drive", label: "Drive" },
   { id: "keys", label: "API keys & voice" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -306,6 +308,8 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
             <ShowNotesSettings settings={settings} update={update} />
           </>
         )}
+
+        {tab === "drive" && <FolderWatchSection settings={settings} update={update} />}
 
         {tab === "keys" && (
           <>

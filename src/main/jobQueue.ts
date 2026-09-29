@@ -98,7 +98,7 @@ export class JobQueue {
     return this.jobs;
   }
 
-  add(paths: string[], source: JobSource = "manual"): AddFilesResult {
+  add(paths: string[], source: JobSource = "manual", extra: Pick<Job, "exportRoot" | "watchedPath"> = {}): AddFilesResult {
     const result: AddFilesResult = { added: [], rejected: [] };
     for (const filePath of paths) {
       const fileName = basename(filePath);
@@ -116,6 +116,7 @@ export class JobQueue {
         // Files added by hand are already the user's choice; only watched files wait.
         status: source === "watch" && this.deps.needsApproval() ? "awaiting-approval" : "queued",
         addedAt: new Date().toISOString(),
+        ...extra,
       };
       this.jobs.push(job);
       result.added.push(job);

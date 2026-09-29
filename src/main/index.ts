@@ -32,6 +32,10 @@ import { createTray } from "./tray";
 // import { GOOGLE_OAUTH, refreshTokens, signIn } from "./watch/googleAuth";
 // import { GoogleTokenStore } from "./watch/tokenStore";
 import { Updater } from "./updater";
+import { hostname } from "node:os";
+import { randomUUID } from "node:crypto";
+import { EXPORTS_FOLDER, FolderWatcher } from "./watch/folderWatcher";
+import { findDriveForDesktop } from "./watch/driveFolder";
 
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
@@ -129,7 +133,7 @@ function start(): void {
       });
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       const { branding } = s.output;
-      return writeExport(s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+      return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
         renderPdf: printPdf,
         branding: {
           ...branding,
@@ -149,11 +153,14 @@ function start(): void {
       };
     },
     onChange: (jobs) => mainWindow?.webContents.send(IPC.jobsChanged, jobs),
-    onEvent: (event) =>
+    onEvent: (event) => {
+      // A watched file's original moves to Done once it's transcribed.
+      if (event.type === "transcribed") void folderWatcher?.transcribed(event.job.id);
       notifyJobEvent(event, {
         windowFocused: mainWindow?.isFocused() ?? false,
         onClick: showJob,
-      }),
+      });
+    },
     // Keep the computer from sleeping mid-upload. The screen can still turn off.
     onBusyChange: (busy) => {
       if (busy && sleepBlocker === null) sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
@@ -167,6 +174,35 @@ function start(): void {
   const updater = new Updater((s) => mainWindow?.webContents.send(IPC.updateStatusChanged, s));
   registerIpc(settings, keys, queue, updater);
   const jobs = queue;
+
+  // --- Watching a folder (Google Drive for Desktop) --------------------------
+  const applyFolderWatch = () => {
+    folderWatcher?.stop();
+    folderWatcher = null;
+    const { enabled, folder } = settings.get().folderWatch;
+    if (!enabled || !folder.trim()) return;
+    const root = folder.trim();
+    folderWatcher = new FolderWatcher({
+      root,
+      inboxDir: join(userData, "inbox"),
+      statePath: join(userData, "folder-watch.json"),
+      machineId: machineId(userData),
+      machineName: hostname(),
+      onFile: (path, relPath) => {
+        const { added } = jobs.add([path], "watch", { exportRoot: join(root, EXPORTS_FOLDER), watchedPath: relPath });
+        return added[0]?.id ?? "";
+      },
+      onError: (message) => console.error("[folder watch]", message),
+      // The smoke test can't wait minutes for files to settle.
+      ...(SMOKE ? { scanMs: 500, stableMs: 1000, settleMs: 1000 } : {}),
+    });
+    folderWatcher.start();
+  };
+  settings.onChange((s, prev) => {
+    if (s.folderWatch.enabled !== prev.folderWatch.enabled || s.folderWatch.folder !== prev.folderWatch.folder) applyFolderWatch();
+  });
+  applyFolderWatch();
+  app.on("before-quit", () => folderWatcher?.stop());
 
   // --- Google Drive folder watching (M5) ------------------------------------
   // Built and tested, but switched off until the intake workflow is settled.
@@ -365,6 +401,15 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.getSettings, () => settings.get());
   ipcMain.handle(IPC.updateSettings, (_e, patch: SettingsPatch) => settings.update(patch));
   ipcMain.handle(IPC.defaultOutputFolder, () => defaultOutputFolder());
+  ipcMain.handle(IPC.driveForDesktop, () => findDriveForDesktop());
+  ipcMain.handle(IPC.pickWatchFolder, async () => {
+    const result = await showOpenDialog({
+      properties: ["openDirectory"],
+      defaultPath: settings.get().folderWatch.folder || findDriveForDesktop() || undefined,
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle(IPC.folderWatchStatus, () => folderWatcher?.status() ?? null);
   ipcMain.handle(IPC.listModels, (_e, provider: unknown) => {
     const info = typeof provider === "string" ? providerById(provider) : undefined;
     if (!info || info.role !== "writing") throw new Error("Unknown provider.");
@@ -477,6 +522,22 @@ function sanitizeDetails(value: unknown): EpisodeDetails {
     if (typeof v[key] === "string") out[key] = (v[key] as string).slice(0, 5000);
   }
   return out;
+}
+
+let folderWatcher: FolderWatcher | null = null;
+
+/** A random id for this computer, kept in userData, so claims on shared folders can tell computers apart. */
+function machineId(userData: string): string {
+  const path = join(userData, "machine-id");
+  try {
+    const id = readFileSync(path, "utf8").trim();
+    if (id) return id;
+  } catch {
+    // First run.
+  }
+  const id = randomUUID();
+  writeFileSync(path, id);
+  return id;
 }
 
 function showOpenDialog(opts: Electron.OpenDialogOptions) {

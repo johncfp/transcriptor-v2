@@ -295,6 +295,17 @@ h3 {
   align-items: center;
   gap: 8px;
 }
+.watch-notes {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.watch-notes li + li {
+  margin-top: 4px;
+}
+
 .logo-control {
   display: flex;
   align-items: center;

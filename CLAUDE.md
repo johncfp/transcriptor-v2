@@ -3,7 +3,7 @@
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
 file (Claude by default) → DOCX/TXT export. Runs from the tray on Windows and
-macOS. Currently **2.0.0-beta.1**. The README has the feature overview and the
+macOS. Currently **2.0.0-beta.3**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
 ## Working with the owner
@@ -37,7 +37,8 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   (persistent queue: transcribe → review → write → export), `transcribe/`
   (ElevenLabs, streamed multipart), `writing/` (Claude via the official SDK;
   GPT/Kimi/Qwen over HTTP), `docx.ts`, `exporter.ts`, `media.ts` (t2-media://
-  audio for playback), `updater.ts`, `watch/` (Google Drive watcher, built but
+  audio for playback), `updater.ts`, `watch/` (`folderWatcher.ts` watches a Drive for Desktop folder: Settings >
+  Drive; the Google Drive API watcher is built but
   switched off: see README), `smoke.ts`.
 - `src/shared`: pure logic used by both sides: settings schema, cleanup,
   speaker suggestions, show-notes model and templates, verification of AI output
