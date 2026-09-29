@@ -7,6 +7,9 @@ const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
  * Audio player for review. Tracks the playhead every animation frame while
  * playing, but only reports a word change (`onWord`) when the spoken word
  * actually changes, so the transcript isn't re-rendered 60 times a second.
+ * Chromium stops animation frames while the window is hidden or covered,
+ * though the audio plays on, so the media clock's timeupdate events report
+ * too; the highlight is then never more than a quarter second behind.
  */
 export function Player(props: {
   src: string;
@@ -67,7 +70,10 @@ export function Player(props: {
           setDuration(e.currentTarget.duration);
           setError(false);
         }}
-        onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+        onTimeUpdate={(e) => {
+          setTime(e.currentTarget.currentTime);
+          report(e.currentTarget.currentTime);
+        }}
         onSeeked={(e) => report(e.currentTarget.currentTime)}
         onPlay={() => {
           setPlaying(true);

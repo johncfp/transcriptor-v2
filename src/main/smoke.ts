@@ -174,9 +174,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       })`);
       await js(`document.querySelector("audio").play()`);
       await pause(1300);
-      const played = await js<{ time: number; current: string | null }>(`({
+      // "hidden" when Windows reports the window as covered: Chromium then stops
+      // animation frames, and the highlight follows the audio's timeupdate events.
+      const played = await js<{ time: number; current: string | null; visibility: string }>(`({
         time: document.querySelector("audio").currentTime,
         current: document.querySelector(".word.current")?.textContent ?? null,
+        visibility: document.visibilityState,
       })`);
       await js(`document.querySelector("audio").pause()`);
       await pause(200);
