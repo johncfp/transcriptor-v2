@@ -307,6 +307,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(400);
       const modelOptions = await js<string[]>(`[...document.querySelectorAll("select[aria-label=Model] option")].map((o) => o.textContent)`);
       const effortOptions = await js<string[]>(`[...document.querySelectorAll("select[aria-label=Effort] option")].map((o) => o.textContent)`);
+      const selectWidths = await js<number[]>(
+        `["Model", "Effort"].map((l) => document.querySelector("select[aria-label=" + l + "]")?.getBoundingClientRect().width ?? 0)`,
+      );
       await shot("settings-model.png");
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
@@ -315,6 +318,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           JSON.stringify(["Default (Claude Opus 5.5)", "Claude Opus 5.5 (claude-opus-5-5)", "Claude Opus 5 (claude-opus-5)", "Other…"]) &&
         JSON.stringify(effortOptions) === JSON.stringify(["Auto", "Low", "Medium", "High", "Extra high", "Max"]) &&
         draftRequest?.model === "claude-opus-5-5" &&
+        selectWidths[0]! > 0 &&
+        selectWidths[0] === selectWidths[1] &&
         (draftRequest?.output_config as { effort?: string } | undefined)?.effort === undefined;
       await click(".tab", "General");
       await pause(300);
@@ -446,6 +451,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, search, themes, saveFlow, customVoice },
         modelOptions,
         effortOptions,
+        selectWidths,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,

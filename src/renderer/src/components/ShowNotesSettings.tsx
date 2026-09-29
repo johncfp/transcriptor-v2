@@ -140,19 +140,21 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
               model's own default.
             </span>
           </div>
-          <select
-            className="input select"
-            aria-label="Effort"
-            value={writing.effort}
-            onChange={(e) => update({ writing: { ...writing, effort: e.target.value as "" | Effort } })}
-          >
-            <option value="">Auto</option>
-            {EFFORTS.filter((e) => efforts.includes(e) || e === writing.effort).map((e) => (
-              <option key={e} value={e}>
-                {EFFORT_LABELS[e]}
-              </option>
-            ))}
-          </select>
+          <div className="row-control">
+            <select
+              className="input select"
+              aria-label="Effort"
+              value={writing.effort}
+              onChange={(e) => update({ writing: { ...writing, effort: e.target.value as "" | Effort } })}
+            >
+              <option value="">Auto</option>
+              {EFFORTS.filter((e) => efforts.includes(e) || e === writing.effort).map((e) => (
+                <option key={e} value={e}>
+                  {EFFORT_LABELS[e]}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
       {(writing.provider === "qwen" || writing.provider === "moonshot") && (
