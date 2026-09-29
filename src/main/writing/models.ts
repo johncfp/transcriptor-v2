@@ -38,8 +38,7 @@ async function claudeModels(apiKey: string, baseUrl?: string): Promise<ModelOpti
     // Newest first; iterating fetches every page.
     for await (const m of api.models.list({ limit: 100 })) {
       const caps = (m as unknown as { capabilities?: Caps }).capabilities;
-      if (!claudeUsable(caps)) continue;
-      out.push({ id: m.id, label: m.display_name || m.id, efforts: claudeEfforts(caps) });
+      out.push({ id: m.id, label: m.display_name || m.id, efforts: claudeEfforts(caps), usable: claudeUsable(caps) });
     }
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
@@ -79,9 +78,8 @@ async function openAiStyleModels(provider: string, apiKey: string, baseUrl?: str
   const data = ((await res.json().catch(() => ({}))) as { data?: { id?: unknown; created?: unknown }[] }).data ?? [];
   return data
     .filter((m): m is { id: string; created?: unknown } => typeof m.id === "string")
-    .filter((m) => provider !== "openai" || isGptWriter(m.id))
     .sort((a, b) => (Number(b.created) || 0) - (Number(a.created) || 0) || a.id.localeCompare(b.id))
-    .map((m) => ({ id: m.id, label: m.id, efforts: null }));
+    .map((m) => ({ id: m.id, label: m.id, efforts: null, usable: provider !== "openai" || isGptWriter(m.id) }));
 }
 
 export function listModels(provider: string, apiKey: string, baseUrl?: string): Promise<ModelOption[]> {

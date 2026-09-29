@@ -7,7 +7,7 @@ import { Section } from "./Section";
 const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
-/** "Other…" in the model list: type a model name instead. */
+/** "Other…" in the model list: type a model name instead (not for Claude, whose list is complete). */
 const OTHER = ":other";
 
 type ModelList = { state: "loading" } | { state: "ready"; models: ModelOption[] } | { state: "error"; message: string };
@@ -22,6 +22,7 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
   const [typing, setTyping] = useState(false);
   const [list, setList] = useState<ModelList>({ state: "loading" });
   const [reload, setReload] = useState(0);
+  const [problem, setProblem] = useState("");
   useEffect(() => setModel(writing.model), [writing.model]);
   useEffect(() => setBaseUrl(writing.baseUrl), [writing.baseUrl]);
 
@@ -38,12 +39,36 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
     };
   }, [writing.provider, reload]);
 
-  const models = list.state === "ready" ? list.models : [];
+  const all = list.state === "ready" ? list.models : [];
+  const models = all.filter((m) => m.usable);
   const listed = (id: string) => models.some((m) => m.id === id);
   const current = writing.model || defaultModel;
   // Levels the chosen model takes, when its provider says; otherwise all of them.
-  const efforts: readonly Effort[] = models.find((m) => m.id === current)?.efforts ?? EFFORTS;
+  const efforts: readonly Effort[] = all.find((m) => m.id === current)?.efforts ?? EFFORTS;
   const showList = list.state === "ready" && models.length > 0 && !typing;
+  // Claude lists every model the key can use, so there's nothing else to type.
+  const canType = writing.provider !== "anthropic";
+
+  /** Why a model name can't be used, or "" if it can (or the list couldn't be loaded to check). */
+  const whyNot = (id: string): string => {
+    if (!id || list.state !== "ready") return "";
+    const found = all.find((m) => m.id === id);
+    if (!found) return `${provider?.label ?? "The provider"} doesn't list a model called “${id}”.`;
+    if (!found.usable && writing.provider === "anthropic") {
+      return `${found.label} can't write show notes: it doesn't have the thinking and structured output they need.`;
+    }
+    return "";
+  };
+  const savedProblem = whyNot(writing.model);
+  const commitTyped = () => {
+    const next = model.trim();
+    if (next === writing.model) return;
+    const why = whyNot(next);
+    setProblem(why);
+    if (why) return;
+    chooseModel(next);
+    setTyping(false);
+  };
 
   const chooseModel = (next: string) => {
     const nextEfforts = models.find((m) => m.id === (next || defaultModel))?.efforts;
@@ -54,6 +79,7 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
 
   return (
     <Section
+      className="col-left"
       title="Show notes"
       intro="Written from the reviewed transcript. Guest details are checked with a web search, and quotes are checked word for word against the transcript."
     >
@@ -67,6 +93,7 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
           value={writing.provider}
           onChange={(e) => {
             setTyping(false);
+            setProblem("");
             update({ writing: { ...writing, provider: e.target.value, model: "", baseUrl: "", effort: "" } });
           }}
         >
@@ -80,8 +107,10 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
       <div className="row">
         <div className="row-label">
           <span>Model</span>
-          <span className={`hint${list.state === "error" ? " error" : ""}`}>
-            {list.state === "loading"
+          <span className={`hint${list.state === "error" || problem || savedProblem ? " error" : ""}`}>
+            {problem || savedProblem
+              ? `${problem || savedProblem} Choose one from the list${canType ? " or check the name" : ""}.`
+              : list.state === "loading"
               ? `Loading ${provider?.label ?? ""}'s models…`
               : list.state === "error"
                 ? `${list.message} You can still type a model name.`
@@ -96,7 +125,11 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
               className="input select"
               aria-label="Model"
               value={writing.model === "" ? "" : listed(writing.model) ? writing.model : `custom:${writing.model}`}
-              onChange={(e) => (e.target.value === OTHER ? setTyping(true) : chooseModel(e.target.value.replace(/^custom:/, "")))}
+              onChange={(e) => {
+                setProblem("");
+                if (e.target.value === OTHER) setTyping(true);
+                else chooseModel(e.target.value.replace(/^custom:/, ""));
+              }}
             >
               <option value="">
                 Default ({models.find((m) => m.id === defaultModel)?.label ?? defaultModel})
@@ -106,8 +139,13 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
                   {m.label === m.id ? m.id : `${m.label} (${m.id})`}
                 </option>
               ))}
-              {writing.model && !listed(writing.model) && <option value={`custom:${writing.model}`}>{writing.model}</option>}
-              <option value={OTHER}>Other…</option>
+              {writing.model && !listed(writing.model) && (
+                <option value={`custom:${writing.model}`}>
+                  {writing.model}
+                  {savedProblem ? " (not available)" : ""}
+                </option>
+              )}
+              {canType && <option value={OTHER}>Other…</option>}
             </select>
           ) : (
             <input
@@ -115,13 +153,25 @@ export function ShowNotesSettings({ settings, update }: { settings: Settings; up
               aria-label="Model"
               value={model}
               placeholder={defaultModel}
-              onChange={(e) => setModel(e.target.value)}
-              onBlur={() => model.trim() !== writing.model && chooseModel(model.trim())}
-              onKeyDown={(e) => e.key === "Enter" && model.trim() !== writing.model && chooseModel(model.trim())}
+              // Nothing to check a typed name against until the list has loaded (or failed to).
+              disabled={list.state === "loading"}
+              onChange={(e) => {
+                setModel(e.target.value);
+                setProblem("");
+              }}
+              onBlur={commitTyped}
+              onKeyDown={(e) => e.key === "Enter" && commitTyped()}
             />
           )}
           {typing && models.length > 0 ? (
-            <button className="button ghost" onClick={() => setTyping(false)}>
+            <button
+              className="button ghost"
+              onClick={() => {
+                // Keep any "doesn't list" message: the typed name wasn't saved.
+                setTyping(false);
+                setModel(writing.model);
+              }}
+            >
               Show list
             </button>
           ) : list.state === "error" ? (
@@ -205,7 +255,7 @@ export function ShowNotesTemplateSection({ settings, update }: { settings: Setti
   };
 
   return (
-    <Section title="Show notes template" intro="Which sections the show notes have, in order.">
+    <Section className="col-right-tall" title="Show notes template" intro="Which sections the show notes have, in order.">
       <div className="row">
         <div className="row-label">
           <span>Template</span>

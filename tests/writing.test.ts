@@ -358,10 +358,11 @@ test("model list: Claude's usable models with their effort levels; a bad key is 
   try {
     const models = await listModels("anthropic", "k", fake.url);
     assert.deepEqual(
-      models.map((m) => m.id),
+      models.filter((m) => m.usable).map((m) => m.id),
       ["claude-opus-5-5", "claude-opus-5"],
-      "newest first; Haiku 4.5 (no adaptive thinking) is left out",
+      "newest first; Haiku 4.5 (no adaptive thinking) isn't usable",
     );
+    assert.equal(models.find((m) => m.id.startsWith("claude-haiku"))?.usable, false, "but it is listed, so a typed name can be checked");
     assert.equal(models[0]!.label, "Claude Opus 5.5");
     assert.deepEqual(models[0]!.efforts, ["low", "medium", "high", "xhigh", "max"]);
   } finally {
@@ -384,7 +385,7 @@ test("model list: Claude capabilities are read defensively", () => {
   assert.equal(claudeUsable({ thinking: { types: { adaptive: { supported: true } } }, structured_outputs: { supported: false } }), false);
 });
 
-test("model list: GPT keeps text models, newest first; Kimi and Qwen list everything", async () => {
+test("model list: GPT offers text models, newest first; Kimi and Qwen offer everything", async () => {
   const server = http.createServer((req, res) => {
     assert.equal(req.headers.authorization, "Bearer k");
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -405,9 +406,10 @@ test("model list: GPT keeps text models, newest first; Kimi and Qwen list everyt
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try {
     const gpt = await listModels("openai", "k", url);
-    assert.deepEqual(gpt.map((m) => m.id), ["gpt-6-astra", "gpt-5.5", "o4-mini"]);
+    assert.deepEqual(gpt.filter((m) => m.usable).map((m) => m.id), ["gpt-6-astra", "gpt-5.5", "o4-mini"]);
+    assert.equal(gpt.length, 6, "the rest are listed too, for checking typed names");
     assert.equal(gpt[0]!.efforts, null, "GPT doesn't say which levels a model takes");
-    assert.equal((await listModels("moonshot", "k", url)).length, 6);
+    assert.ok((await listModels("moonshot", "k", url)).every((m) => m.usable));
   } finally {
     server.close();
   }

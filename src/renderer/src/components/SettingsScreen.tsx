@@ -272,6 +272,7 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
         {tab === "notes" && (
           <>
             <Section
+              className="col-left"
               title="Show profile"
               intro="Filled in once and used in every episode's show notes. Anything left blank is left out."
             >

@@ -903,6 +903,23 @@ textarea.input {
 .settings-grid > .section {
   margin-bottom: 0;
 }
+.settings-grid {
+  container-type: inline-size;
+}
+/*
+ * Show notes tab, two columns: the profile and the provider settings stack on
+ * the left, the (tall) template sits on the right. One column keeps the
+ * source order: profile, template, provider.
+ */
+@container (min-width: 1218px) {
+  .settings-grid > .col-left {
+    grid-column: 1;
+  }
+  .settings-grid > .col-right-tall {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
 
 .head-actions {
   display: flex;

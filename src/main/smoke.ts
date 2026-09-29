@@ -311,13 +311,28 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         `["Model", "Effort"].map((l) => document.querySelector("select[aria-label=" + l + "]")?.getBoundingClientRect().width ?? 0)`,
       );
       await shot("settings-model.png");
+      // A saved model Claude doesn't list is flagged, not silently kept.
+      await js(`window.api.updateSettings({ writing: { model: "hertzog" } })`);
+      await click(".nav-item", "Episodes");
+      await pause(300);
+      await click(".nav-item", "Settings");
+      await pause(300);
+      await click(".tab", "Show notes");
+      await pause(800);
+      const unknownModel = await js<{ hint: string; selected: string }>(`(() => {
+        const select = document.querySelector("select[aria-label=Model]");
+        return { hint: select.closest(".row").querySelector(".hint.error")?.textContent ?? "", selected: select.selectedOptions[0]?.textContent ?? "" };
+      })()`);
+      await js(`window.api.updateSettings({ writing: { model: "" } })`);
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
       const modelPicker =
         JSON.stringify(modelOptions) ===
-          JSON.stringify(["Default (Claude Opus 5.5)", "Claude Opus 5.5 (claude-opus-5-5)", "Claude Opus 5 (claude-opus-5)", "Other…"]) &&
+          JSON.stringify(["Default (Claude Opus 5.5)", "Claude Opus 5.5 (claude-opus-5-5)", "Claude Opus 5 (claude-opus-5)"]) &&
         JSON.stringify(effortOptions) === JSON.stringify(["Auto", "Low", "Medium", "High", "Extra high", "Max"]) &&
         draftRequest?.model === "claude-opus-5-5" &&
+        unknownModel.hint.includes("doesn't list a model called “hertzog”") &&
+        unknownModel.selected === "hertzog (not available)" &&
         selectWidths[0]! > 0 &&
         selectWidths[0] === selectWidths[1] &&
         (draftRequest?.output_config as { effort?: string } | undefined)?.effort === undefined;
@@ -393,6 +408,19 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const settingsColumns = await js<number>(
         `new Set([...document.querySelectorAll(".settings-grid > .section")].map((s) => Math.round(s.getBoundingClientRect().left))).size`,
       );
+      // Show notes tab, two columns: the provider settings sit right under the show profile.
+      await click(".tab", "Show notes");
+      await pause(400);
+      const notesLayout = await js<{ profile: number[]; notes: number[] }>(`(() => {
+        const box = (t) => { const r = [...document.querySelectorAll(".settings-grid > .section")].find((s) => s.querySelector("h2").textContent === t).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.bottom)]; };
+        return { profile: box("Show profile"), notes: box("Show notes") };
+      })()`);
+      await shot("settings-notes-wide.png");
+      const notesStacked =
+        pageWidth < 1400 ||
+        (notesLayout.profile[0] === notesLayout.notes[0] && Math.abs(notesLayout.notes[1]! - notesLayout.profile[2]! - 18) <= 2);
+      await click(".tab", "General");
+      await pause(200);
       await click(".nav-item", "Episodes");
       await pause(400);
       const typeSearch = async (text: string) => {
@@ -436,6 +464,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           search &&
           // Two columns need ~1400px; skip on a screen too small for that.
           (pageWidth < 1400 || settingsColumns === 2) &&
+          notesStacked &&
           themes &&
           saveFlow &&
           customVoice &&
@@ -452,6 +481,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         modelOptions,
         effortOptions,
         selectWidths,
+        unknownModel,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -470,6 +500,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         sections,
         windowIcon,
         settingsColumns,
+        notesLayout,
         pageWidth,
         saveFlow: { dirtyShown, promptShown, stayed, discarded, savedOk },
         stageColor,

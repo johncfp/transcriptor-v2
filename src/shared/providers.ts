@@ -44,6 +44,12 @@ export interface ModelOption {
   label: string;
   /** Effort levels it takes; null when the provider doesn't say. */
   efforts: Effort[] | null;
+  /**
+   * Whether it's offered for show notes. Claude models without adaptive
+   * thinking or structured outputs can't be used at all; GPT's audio, image
+   * and embedding models are kept off the list but can still be typed in.
+   */
+  usable: boolean;
 }
 
 export const PROVIDERS: ProviderInfo[] = [
