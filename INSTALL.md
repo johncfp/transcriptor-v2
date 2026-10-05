@@ -1,20 +1,21 @@
 # Installing Transcriptor 2 (beta)
 
-Version **2.0.0-beta.1**. Transcriptor 2 turns an episode's audio into a clean
-transcript, show notes and a reference file. It's separate from Transcriptor 1,
-and both can be installed at the same time.
+Version **2.0.0-beta.5**. Transcriptor 2 turns an episode's audio into a clean
+transcript, show notes, a reference file and, if you like, short social media
+clips with captions. It's separate from Transcriptor 1, and both can be
+installed at the same time.
 
 ## 1. Download
 
 | Computer | File |
 |---|---|
-| Windows 10 or 11 | [Transcriptor2-Setup.exe](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.1/Transcriptor2-Setup.exe) |
-| Mac with Apple Silicon (M1 or later) | [Transcriptor2-mac-arm64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.1/Transcriptor2-mac-arm64.dmg) |
-| Mac with an Intel processor | [Transcriptor2-mac-x64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.1/Transcriptor2-mac-x64.dmg) |
+| Windows 10 or 11 | [Transcriptor2-Setup.exe](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.5/Transcriptor2-Setup.exe) |
+| Mac with Apple Silicon (M1 or later) | [Transcriptor2-mac-arm64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.5/Transcriptor2-mac-arm64.dmg) |
+| Mac with an Intel processor | [Transcriptor2-mac-x64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.5/Transcriptor2-mac-x64.dmg) |
 
-The same files may also be in the shared "v2 Beta 1" Drive folder. Not sure
-which Mac you have? Open the Apple menu → **About This Mac**: "Chip: Apple M…"
-means Apple Silicon; "Processor: Intel…" means Intel.
+All versions are on the [releases page](https://github.com/johncfp/transcriptor2-releases/releases).
+Not sure which Mac you have? Open the Apple menu → **About This Mac**: "Chip:
+Apple M…" means Apple Silicon; "Processor: Intel…" means Intel.
 
 ## 2. Install
 
@@ -53,16 +54,23 @@ Open **Settings** (left sidebar). Changes are saved when you press **Save**
 
 1. **API keys & voice** tab:
    - Add your **ElevenLabs** key (transcription).
-   - Add your **Claude** key (show notes and guest lookup).
+   - Add your **Claude** key (show notes, guest lookup and social clips).
    - Pick a **Show notes voice**: General, Industry, SEO, or Custom.
 2. **Show notes** tab: fill in the **Show profile**. **Host names** matter,
    because they're used to name speakers automatically. Choose a show-notes
-   **template**.
-3. **Output** tab: check where files are saved (Documents › Transcriptor 2 by
-   default), the formats (Word and/or plain text), and the **Speaker format**.
-4. **General** tab: theme, episode colors, and whether to review each
+   **template**, and the model and effort that write the notes.
+3. **Social** tab (optional): turn on **Suggest social clips** to have short
+   clips and captions suggested after the show notes. Set how many clips, how
+   long, which platforms get captions, the model (Claude Sonnet 5.5 at medium
+   effort by default) and the captions' voice.
+4. **Output** tab: check where files are saved (Documents › Transcriptor 2 by
+   default), the formats (Word, PDF and/or plain text), the **Speaker
+   format**, and an optional cover page, logo, header and footer.
+5. **Drive** tab (optional): watch a Google Drive for Desktop folder, so audio
+   added there is picked up automatically.
+6. **General** tab: theme, episode colors, and whether to review each
    transcript before the show notes are written.
-5. Press **Save**.
+7. Press **Save**.
 
 Each person uses their own API keys. Keys are stored encrypted on your
 computer and are only sent to the service they belong to.
@@ -74,13 +82,20 @@ computer and are only sent to the service they belong to.
 2. The episode is transcribed in the background. You'll get a notification
    when it's ready. Episodes are colored by stage: yellow while new, orange once
    reviewed, green when the show notes are ready.
-3. **Review**: check the speaker names, listen along, and fix any words shown
-   in red or orange. Press **Mark as reviewed**.
+3. **Transcript** tab: check the speaker names, listen along, and fix any
+   words shown in red or orange. Press **Mark as reviewed**.
 4. **Show notes** tab: add the episode number, sponsor reads and next-week
    line, then **Write show notes**. Quotes are checked word for word against the
    transcript, and guest details are confirmed with a web search.
 5. The transcript, show notes and reference file are exported automatically,
    or use **Export** on the episode. **Open folder** shows the files.
+6. **Clips** tab: choose **Suggest clips** (or they're suggested automatically
+   if social clips are on). Each clip's words and times come from the
+   transcript. Play a clip, trim its start or end a word at a time, edit the
+   title and captions (with each platform's character count and a **Copy**
+   button), and **Keep** the ones you want. **Export kept clips** saves each as
+   a WAV file in a **Clips** folder, with a Social Clips document of their
+   captions.
 
 Closing the window keeps Transcriptor 2 running in the tray so work continues.
 To quit, use the tray icon.
@@ -94,10 +109,11 @@ To quit, use the tray icon.
 
 ## Privacy
 
-Transcriptor 2 doesn't process audio or text on your computer. The audio is
-sent to ElevenLabs to transcribe, and the transcript to Claude (or the writing
-provider you choose) for show notes, under those companies' terms. Don't
-process recordings you don't have the right to share.
+Transcriptor 2 doesn't process audio or text on your computer, apart from
+cutting clips. The audio is sent to ElevenLabs to transcribe, and the
+transcript to Claude (or the writing provider you choose) for show notes and
+social clips, under those companies' terms. Don't process recordings you don't
+have the right to share.
 
 ## Something wrong?
 
