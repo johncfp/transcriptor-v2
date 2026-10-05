@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { cleanTranscript, defaultEdits, type EpisodeEdits } from "../src/shared/cleanup";
-import { checkClips, cleanHashtag, coerceClips, type ClipCheckOptions, type ClipDraft } from "../src/shared/clips";
+import {
+  checkClips,
+  cleanHashtag,
+  clipContext,
+  coerceClips,
+  nudgeClip,
+  reviseClip,
+  type ClipCheckOptions,
+  type ClipDraft,
+  type ClipEdit,
+} from "../src/shared/clips";
 import type { Transcript, Word } from "../src/shared/transcript";
 import { startFakeAnthropic } from "../src/main/testing/fakeAnthropic";
 import { anthropicWriter } from "../src/main/writing/anthropic";
@@ -254,4 +264,78 @@ test("Claude: social clips use their own schema, model, effort and fallbacks, an
   } finally {
     fake.close();
   }
+});
+
+// --- Review edits -------------------------------------------------------------
+
+function reviewed() {
+  const { transcript, edits } = episode();
+  const ctx = clipContext(transcript, edits, null, "https://example.com/show");
+  const { clips } = check([draft({ captions: { instagram: caption("Every new tool has a price.", ["focus"]), x: caption("Short.") } })]);
+  const clip = clips[0]!;
+  const edit: ClipEdit = { title: clip.title, kept: false, firstWord: clip.firstWord, lastWord: clip.lastWord, captions: {} };
+  return { transcript, ctx, clip, edit };
+}
+
+test("review: trimming moves by whole words, skipping removed fillers, and the text follows", () => {
+  const { transcript, ctx, clip } = reviewed();
+  const words = transcript.words;
+  assert.equal(words[clip.firstWord]!.text, "so");
+
+  const earlier = nudgeClip(ctx.turns, clip, "start", -1)!;
+  assert.equal(words[earlier.firstWord]!.text, "me.", "past the removed \"Um\" to the word before it");
+  const later = nudgeClip(ctx.turns, clip, "end", -1)!;
+  assert.equal(words[later.lastWord]!.text, "a");
+
+  const trimmed = reviseClip(clip, { ...reviewedEdit(clip), ...later }, ctx);
+  assert.match(trimmed.lines.at(-1)!.text, /that's not a$/);
+  assert.equal(trimmed.end, words[later.lastWord]!.end + 0.1, "the cut follows: up to the next word, 0.1 s later");
+  assert.equal(nudgeClip(ctx.turns, { firstWord: 5, lastWord: 5 }, "start", 1), null, "a clip keeps at least one word");
+  assert.equal(nudgeClip(ctx.turns, { firstWord: 0, lastWord: 5 }, "start", -1), null, "nothing before the first word");
+});
+
+const reviewedEdit = (c: { title: string; kept: boolean; firstWord: number; lastWord: number }): ClipEdit => ({
+  title: c.title,
+  kept: c.kept,
+  firstWord: c.firstWord,
+  lastWord: c.lastWord,
+  captions: {},
+});
+
+test("review: edited captions and titles are checked again; your own extra hashtags are flagged, not removed", () => {
+  const { ctx, clip, edit } = reviewed();
+  const next = reviseClip(
+    clip,
+    {
+      ...edit,
+      title: "  A much better title  ",
+      kept: true,
+      captions: { x: { text: "Up 40% since 2019!", hashtags: ["a", "#b", "c"] }, youtube: { text: "Not a chosen platform", hashtags: [] } },
+    },
+    ctx,
+  );
+  assert.equal(next.title, "A much better title");
+  assert.equal(next.kept, true);
+  assert.deepEqual(Object.keys(next.captions), ["instagram", "x"], "platforms stay as suggested");
+  assert.deepEqual(next.captions.x!.hashtags, ["a", "b", "c"]);
+  assert.deepEqual(next.captions.x!.problems, [
+    "3 hashtags; 2 is the most to use on X / Threads.",
+    "“40%” isn't in the transcript or the confirmed guest facts.",
+  ]);
+  assert.equal(next.captions.instagram!.text, "Every new tool has a price.", "untouched captions stay");
+});
+
+test("review: edits can't point a clip outside the transcript or make up its text", () => {
+  const { ctx, clip, edit } = reviewed();
+  for (const bad of [
+    { firstWord: -1 },
+    { lastWord: 10_000 },
+    { firstWord: clip.lastWord, lastWord: clip.firstWord },
+    { firstWord: 1.5 },
+  ]) {
+    const next = reviseClip(clip, { ...edit, ...bad }, ctx);
+    assert.deepEqual([next.firstWord, next.lastWord, next.start, next.end], [clip.firstWord, clip.lastWord, clip.start, clip.end]);
+  }
+  const sneaky = reviseClip(clip, { ...edit, lines: [{ speaker: "Pete M.", text: "Something never said." }] } as ClipEdit, ctx);
+  assert.deepEqual(sneaky.lines, clip.lines);
 });

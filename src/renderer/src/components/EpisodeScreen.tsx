@@ -5,10 +5,11 @@ import { formatTimestamp } from "../../../shared/transcript";
 import { useJobs } from "../useJobs";
 import { TranscriptTab } from "./ReviewScreen";
 import { ShowNotesPanel } from "./ShowNotesPanel";
+import { ClipsPanel } from "./ClipsPanel";
 
-type Tab = "transcript" | "notes";
+type Tab = "transcript" | "notes" | "clips";
 
-/** One episode: the transcript to review, and its show notes. */
+/** One episode: the transcript to review, its show notes, and its social clips. */
 export function EpisodeScreen({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const job = useJobs()?.find((j) => j.id === jobId);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -64,9 +65,19 @@ export function EpisodeScreen({ jobId, onBack }: { jobId: string; onBack: () => 
           Show notes
           {job.status === "writing" && <span className="tab-dot" aria-label="writing" />}
         </button>
+        <button role="tab" className="tab" aria-selected={tab === "clips"} onClick={() => setTab("clips")}>
+          Clips
+          {(job.social?.status === "queued" || job.social?.status === "running") && <span className="tab-dot" aria-label="picking clips" />}
+        </button>
       </div>
 
-      {tab === "transcript" ? <TranscriptTab jobId={job.id} bands={bands} /> : <ShowNotesPanel job={job} settings={settings} />}
+      {tab === "transcript" ? (
+        <TranscriptTab jobId={job.id} bands={bands} />
+      ) : tab === "notes" ? (
+        <ShowNotesPanel job={job} settings={settings} />
+      ) : (
+        <ClipsPanel job={job} settings={settings} />
+      )}
     </div>
   );
 }

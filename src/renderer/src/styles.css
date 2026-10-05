@@ -1108,3 +1108,67 @@ textarea.input {
   gap: 8px;
   margin-top: 16px;
 }
+
+/* Social clips */
+.clip-card.kept {
+  border-color: var(--ok);
+}
+.clip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.clip-title {
+  flex: 1;
+  font-weight: 600;
+}
+.clip-times {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 0;
+  font-variant-numeric: tabular-nums;
+}
+.clip-times-gap {
+  margin-left: 14px;
+}
+.clip-times .muted {
+  margin-left: 14px;
+}
+.button.nudge {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.clip-lines {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+}
+.clip-lines p {
+  margin: 4px 0;
+}
+.caption-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.caption-editor .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.caption-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.caption-head .hint {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.review-main .clip-card {
+  max-width: 860px;
+}

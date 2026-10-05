@@ -240,6 +240,57 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         socialRequest?.model === "claude-sonnet-5-5" &&
         (socialRequest?.output_config as { effort?: string } | undefined)?.effort === "medium";
       await js(`window.api.updateSettings({ social: { enabled: false, minClips: 3, minSeconds: 15, maxSeconds: 60 } })`);
+
+      // Review the clip: keep it, end it a word earlier, edit a caption; the changes are checked and saved.
+      await click(".tab", "Clips");
+      await pause(800);
+      await shot("clips.png");
+      const clipsView = await js<{ cards: number; text: string; captions: number; fullWidth: boolean }>(`({
+        cards: document.querySelectorAll(".clip-card").length,
+        text: document.querySelector(".clip-lines")?.innerText ?? "",
+        captions: document.querySelectorAll(".caption-editor").length,
+        // Caption boxes fill their editor.
+        fullWidth: [...document.querySelectorAll(".caption-editor .input")].every(
+          (el) => Math.round(el.getBoundingClientRect().width) === Math.round(el.parentElement.getBoundingClientRect().width),
+        ),
+      })`);
+      await click(".clip-card button", "Play clip");
+      await pause(400);
+      const clipPlayback = await js<{ paused: boolean; time: number; label: string }>(`({
+        paused: document.querySelector(".review-main audio").paused,
+        time: document.querySelector(".review-main audio").currentTime,
+        label: [...document.querySelectorAll(".clip-card button")].find((b) => b.textContent === "Stop")?.textContent ?? "",
+      })`);
+      await click(".clip-card button", "Stop");
+      await click(".clip-card button", "Keep");
+      await pause(200);
+      await js(`document.querySelector("button[aria-label='End one word earlier']").click()`);
+      await pause(200);
+      await js(`(() => {
+        const box = document.querySelector("textarea[aria-label='X / Threads caption']");
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(box, "Pete joins the show, in 2031.");
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      })()`);
+      await pause(1200);
+      await shot("clips-edited.png");
+      const jobId = await js<string>(`window.api.listJobs().then((j) => j[0].id)`);
+      const savedClip = await js<{ kept: boolean; lines: { text: string }[]; captions: { x?: { text: string; problems: string[] } } } | null>(
+        `window.api.getSocial(${JSON.stringify(jobId)}).then((s) => s?.clips[0] ?? null)`,
+      );
+      const clipsReview =
+        clipsView.cards === 1 &&
+        clipsView.text.includes("Pete: Thanks, glad to be here.") &&
+        clipsView.captions === 2 &&
+        clipsView.fullWidth &&
+        !clipPlayback.paused &&
+        clipPlayback.label === "Stop" &&
+        savedClip?.kept === true &&
+        savedClip.lines.at(-1)?.text === "Thanks, glad to be" &&
+        savedClip.captions.x?.text === "Pete joins the show, in 2031." &&
+        savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
+      // Back to the notes, where the next checks look.
+      await click(".tab", "Show notes");
+      await pause(500);
       await pause(500);
       const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
       const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
@@ -603,11 +654,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           modelPicker &&
           socialOk &&
           socialStep &&
+          clipsReview &&
           folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, socialStep, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, socialStep, clipsReview, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
@@ -615,6 +667,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         unknownModel,
         socialPicker,
         social,
+        clipsView,
+        clipPlayback,
+        savedClip,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,

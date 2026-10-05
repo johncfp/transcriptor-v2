@@ -9,6 +9,7 @@ import type { EpisodeDetails, SectionId, WritingResult } from "./showNotes";
 import type { ExportFormat } from "./exportDocs";
 import type { EpisodeEdits } from "./cleanup";
 import type { Transcript } from "./transcript";
+import type { ClipEdit, SocialResult } from "./clips";
 
 export interface KeyStatus {
   providerId: string;
@@ -75,6 +76,13 @@ export interface Api {
   /** Save details and queue the show notes. */
   writeNotes(id: string, details: EpisodeDetails): Promise<void>;
   getWriting(id: string): Promise<WritingResult | null>;
+  /** The episode's social clips, or null if none have been suggested. */
+  getSocial(id: string): Promise<SocialResult | null>;
+  /** Save review changes to clips (by clip id); resolves to the clips checked again. */
+  saveClips(id: string, edits: Record<string, ClipEdit>): Promise<SocialResult | null>;
+  /** Queue social clips for an episode with show notes (again, replacing the old ones). */
+  suggestClips(id: string): Promise<void>;
+  cancelClips(id: string): Promise<void>;
   /** Save a custom template's sections to a file others can import. */
   exportTemplate(sections: SectionId[]): Promise<boolean>;
   /** Save an annotated sample template file to start a custom one from. */
@@ -136,6 +144,10 @@ export const IPC = {
   getDetails: "jobs:details",
   writeNotes: "jobs:write-notes",
   getWriting: "jobs:writing",
+  getSocial: "jobs:social",
+  saveClips: "jobs:save-clips",
+  suggestClips: "jobs:suggest-clips",
+  cancelClips: "jobs:cancel-clips",
   exportTemplate: "template:export",
   importTemplate: "template:import",
   saveSampleTemplate: "template:sample",

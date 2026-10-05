@@ -254,6 +254,13 @@ export class JobQueue {
     return saved?.version === 1 ? saved : null;
   }
 
+  /** Save clips changed in review; ignored while new ones are being suggested. */
+  saveSocial(id: string, result: SocialResult): void {
+    const job = this.find(id);
+    if (!job || job.social?.status === "queued" || job.social?.status === "running") return;
+    writeJsonAtomic(join(this.episodeDir(id), "social.json"), result);
+  }
+
   /** Queue social clips for an episode with show notes (again, if it has some). */
   suggestClips(id: string): void {
     const job = this.find(id);

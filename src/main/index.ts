@@ -20,6 +20,7 @@ import { anthropicWriter } from "./writing/anthropic";
 import { writeEpisode, writerById } from "./writing";
 import { suggestClips } from "./writing/social";
 import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
+import { clipContext, reviseClip, type ClipEdit } from "../shared/clips";
 import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
@@ -521,6 +522,24 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.getDetails, (_e, id: string) => jobs.details(id));
   ipcMain.handle(IPC.writeNotes, (_e, id: string, details: EpisodeDetails) => jobs.write(id, sanitizeDetails(details)));
   ipcMain.handle(IPC.getWriting, (_e, id: string) => jobs.writing(id));
+  ipcMain.handle(IPC.getSocial, (_e, id: string) => jobs.social(id));
+  // Each changed clip is checked again here, against the transcript, before it's saved.
+  ipcMain.handle(IPC.saveClips, (_e, id: string, edits: unknown) => {
+    const social = jobs.social(id);
+    const transcript = jobs.transcript(id);
+    const reviewEdits = jobs.edits(id);
+    if (!social || !transcript || !reviewEdits || !edits || typeof edits !== "object") return social;
+    const ctx = clipContext(transcript, reviewEdits, jobs.writing(id), settings.get().show.website);
+    const changes = edits as Record<string, ClipEdit>;
+    const next = {
+      ...social,
+      clips: social.clips.map((c) => (Object.hasOwn(changes, c.id) && changes[c.id] ? reviseClip(c, changes[c.id]!, ctx) : c)),
+    };
+    jobs.saveSocial(id, next);
+    return jobs.social(id);
+  });
+  ipcMain.handle(IPC.suggestClips, (_e, id: string) => jobs.suggestClips(id));
+  ipcMain.handle(IPC.cancelClips, (_e, id: string) => jobs.cancelSocial(id));
   ipcMain.handle(IPC.exportEpisode, (_e, id: string, formats: unknown) =>
     jobs.exportNow(id, Array.isArray(formats) ? EXPORT_FORMATS.filter((f) => formats.includes(f)) : undefined),
   );

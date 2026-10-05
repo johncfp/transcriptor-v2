@@ -4,10 +4,11 @@
 // speakers and times come from the transcript. Clips that can't be found or
 // don't fit the settings are dropped; caption problems are flagged for review.
 
-import { normalize, type CleanTurn } from "./cleanup";
+import { cleanTranscript, normalize, type CleanTurn, type EpisodeEdits } from "./cleanup";
+import type { WritingResult } from "./showNotes";
 import { MAX_TITLE_CHARS, PLATFORMS, type ClipLimits, type PlatformId } from "./social";
-import type { Word } from "./transcript";
-import { normalizeUrl } from "./verify";
+import type { Transcript, Word } from "./transcript";
+import { confirmedFacts, normalizeUrl } from "./verify";
 
 // ---------------------------------------------------------------------------
 // Saved result
@@ -26,7 +27,10 @@ export interface SocialClip {
   title: string;
   /** Why the model picked it. */
   why: string;
-  /** Where to cut, in seconds, with a little room around the words. */
+  /** The clip's first and last words, as indexes into the raw transcript's words. */
+  firstWord: number;
+  lastWord: number;
+  /** Where to cut, in seconds, with a little room around the words (see clipCut). */
   start: number;
   end: number;
   /** What's said, by speaker, from the cleaned transcript. */
@@ -34,6 +38,8 @@ export interface SocialClip {
   captions: Partial<Record<PlatformId, SocialCaption>>;
   /** Title problems, e.g. too long for YouTube. */
   titleProblems: string[];
+  /** Chosen in review to be cut and exported. */
+  kept: boolean;
 }
 
 export interface SocialResult {
@@ -173,11 +179,35 @@ const urlsIn = (text: string) => [...text.matchAll(/\b(?:https?:\/\/|www\.)[^\s)
 /** "#Growth Hacking!" → "GrowthHacking"; empty when nothing usable is left. */
 export const cleanHashtag = (tag: string) => tag.replace(/^#+/, "").replace(/[^\p{L}\p{N}_]/gu, "");
 
-function checkCaption(
+/** What a caption may mention: numbers from the transcript and confirmed facts, and allowed links. */
+export interface CaptionKnown {
+  numbers: Set<string>;
+  urls: Set<string>;
+}
+
+export function captionKnown(turns: CleanTurn[], facts: string[], allowedUrls: string[]): CaptionKnown {
+  const text = turns.flatMap((t) => t.words.map((w) => w.text)).join(" ");
+  return {
+    numbers: new Set([...numbersIn(text), ...facts.flatMap(numbersIn)]),
+    urls: new Set(allowedUrls.map(normalizeUrl).filter((u): u is string => u !== null)),
+  };
+}
+
+/** A caption with its hashtags, as posted: text, a blank line, then the hashtags. */
+export const captionWithHashtags = (c: { text: string; hashtags: string[] }) =>
+  c.hashtags.length ? `${c.text}\n\n${c.hashtags.map((t) => `#${t}`).join(" ")}` : c.text;
+
+/**
+ * Check a caption. The model's extra hashtags are removed ("model"); the
+ * user's own are kept and flagged instead ("edit"), since they chose them.
+ */
+export function checkCaption(
   draft: { text: string; hashtags: string[] },
-  platform: (typeof PLATFORMS)[number],
-  known: { numbers: Set<string>; urls: Set<string> },
+  platformId: PlatformId,
+  known: CaptionKnown,
+  mode: "model" | "edit",
 ): { caption: SocialCaption; hashtagsDropped: number } {
+  const platform = PLATFORMS.find((p) => p.id === platformId)!;
   const seen = new Set<string>();
   const tags: string[] = [];
   for (const raw of draft.hashtags) {
@@ -186,12 +216,15 @@ function checkCaption(
     seen.add(tag.toLowerCase());
     tags.push(tag);
   }
-  const hashtags = tags.slice(0, platform.maxHashtags);
+  const hashtags = mode === "model" ? tags.slice(0, platform.maxHashtags) : tags;
   const text = draft.text.trim();
   const problems: string[] = [];
 
-  const length = text.length + (hashtags.length ? 2 + hashtags.map((t) => `#${t}`).join(" ").length : 0);
+  const length = captionWithHashtags({ text, hashtags }).length;
   if (length > platform.maxChars) problems.push(`${length - platform.maxChars} characters over ${platform.label}'s ${platform.maxChars} limit.`);
+  if (hashtags.length > platform.maxHashtags) {
+    problems.push(`${hashtags.length} hashtags; ${platform.maxHashtags} is the most to use on ${platform.label}.`);
+  }
   for (const n of new Set(numbersIn(text))) {
     if (!known.numbers.has(n)) problems.push(`“${n}” isn't in the transcript or the confirmed guest facts.`);
   }
@@ -201,6 +234,116 @@ function checkCaption(
   }
   return { caption: { text, hashtags, problems }, hashtagsDropped: tags.length - hashtags.length };
 }
+
+const titleProblems = (title: string) =>
+  title.length > MAX_TITLE_CHARS ? [`${title.length - MAX_TITLE_CHARS} characters over YouTube's ${MAX_TITLE_CHARS}-character title limit.`] : [];
+
+// ---------------------------------------------------------------------------
+// Where a clip is cut, and what it says
+
+/**
+ * Where to cut for the raw words `firstWord`..`lastWord`: a little room
+ * around them, without reaching into the neighbouring words of the audio and
+ * never cutting into the clip's own first or last word.
+ */
+export function clipCut(rawWords: Word[], durationSec: number, firstWord: number, lastWord: number): { start: number; end: number } {
+  const first = rawWords[firstWord]!;
+  const last = rawWords[lastWord]!;
+  const prev = rawWords[firstWord - 1];
+  const next = rawWords[lastWord + 1];
+  const start = Math.max(0, Math.min(first.start, Math.max(prev?.end ?? 0, first.start - PAD_BEFORE)));
+  const endLimit = next ? next.start : durationSec || Infinity;
+  const end = Math.max(last.end, Math.min(endLimit, last.end + PAD_AFTER));
+  return { start: round(start), end: round(end) };
+}
+
+/** What's said between two raw words, by speaker, from the cleaned transcript. */
+export function clipLines(turns: CleanTurn[], firstWord: number, lastWord: number): SocialClip["lines"] {
+  const lines: SocialClip["lines"] = [];
+  for (const turn of turns) {
+    for (const w of turn.words) {
+      if (w.index < firstWord || w.index > lastWord) continue;
+      const line = lines.at(-1);
+      if (line && line.speaker === turn.speaker) line.text += ` ${w.text}`;
+      else lines.push({ speaker: turn.speaker, text: w.text });
+    }
+  }
+  return lines;
+}
+
+/**
+ * Move a clip's start or end by one word of the cleaned transcript (removed
+ * fillers are skipped). Null when it can't move: past the episode's edges, or
+ * so the clip would have no words.
+ */
+export function nudgeClip(
+  turns: CleanTurn[],
+  clip: Pick<SocialClip, "firstWord" | "lastWord">,
+  edge: "start" | "end",
+  by: -1 | 1,
+): { firstWord: number; lastWord: number } | null {
+  const order = turns.flatMap((t) => t.words.map((w) => w.index));
+  const at = order.indexOf(edge === "start" ? clip.firstWord : clip.lastWord);
+  const target = order[at + by];
+  if (at < 0 || target === undefined) return null;
+  const next = edge === "start" ? { firstWord: target, lastWord: clip.lastWord } : { firstWord: clip.firstWord, lastWord: target };
+  return next.firstWord <= next.lastWord ? next : null;
+}
+
+/** What the transcript and notes say, for re-checking a clip after an edit. */
+export interface ClipContext {
+  turns: CleanTurn[];
+  rawWords: Word[];
+  durationSec: number;
+  known: CaptionKnown;
+}
+
+/** The parts of a clip someone can change in review. */
+export interface ClipEdit {
+  title: string;
+  kept: boolean;
+  firstWord: number;
+  lastWord: number;
+  captions: Partial<Record<PlatformId, { text: string; hashtags: string[] }>>;
+}
+
+/**
+ * Apply an edit and check the clip again. The cut and the text are worked
+ * out from the words, never taken from the edit, so they always match the
+ * transcript. Out-of-range words or unknown platforms leave those parts as
+ * they were.
+ */
+export function reviseClip(clip: SocialClip, edit: ClipEdit, ctx: ClipContext): SocialClip {
+  const n = ctx.rawWords.length;
+  const valid = (i: unknown): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < n;
+  const span =
+    valid(edit.firstWord) && valid(edit.lastWord) && edit.firstWord <= edit.lastWord
+      ? { firstWord: edit.firstWord, lastWord: edit.lastWord }
+      : { firstWord: clip.firstWord, lastWord: clip.lastWord };
+  const lines = clipLines(ctx.turns, span.firstWord, span.lastWord);
+  const captions: SocialClip["captions"] = {};
+  for (const id of Object.keys(clip.captions) as PlatformId[]) {
+    const c = edit.captions[id] ?? clip.captions[id]!;
+    const text = typeof c.text === "string" ? c.text.slice(0, 10_000) : "";
+    const hashtags = Array.isArray(c.hashtags) ? c.hashtags.filter((h): h is string => typeof h === "string").slice(0, 60) : [];
+    captions[id] = checkCaption({ text, hashtags }, id, ctx.known, "edit").caption;
+  }
+  const title = typeof edit.title === "string" ? edit.title.trim().slice(0, 300) : clip.title;
+  return {
+    ...clip,
+    ...span,
+    ...clipCut(ctx.rawWords, ctx.durationSec, span.firstWord, span.lastWord),
+    // Keep the old text if the edit left no words between the edges (it can't, but just in case).
+    lines: lines.length ? lines : clip.lines,
+    title,
+    titleProblems: titleProblems(title),
+    kept: edit.kept === true,
+    captions,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Checking the model's suggestions
 
 /**
  * Turn the model's suggestions into clips that hold up: each one found in
@@ -289,39 +432,19 @@ export function checkClips(
     kept.push({ ...found, draft });
   }
 
-  const transcriptText = words.map((w) => w.text).join(" ");
-  const known = {
-    numbers: new Set([...numbersIn(transcriptText), ...opts.facts.flatMap(numbersIn)]),
-    urls: new Set(opts.allowedUrls.map(normalizeUrl).filter((u): u is string => u !== null)),
-  };
+  const known = captionKnown(turns, opts.facts, opts.allowedUrls);
   let hashtagsDropped = 0;
 
   const clips = kept
     .sort((a, b) => a.from - b.from)
     .map(({ from, to, draft }, n): SocialClip => {
-      const span = words.slice(from, to + 1);
-      const lines: SocialClip["lines"] = [];
-      for (const w of span) {
-        const line = lines.at(-1);
-        if (line && line.speaker === w.speaker) line.text += ` ${w.text}`;
-        else lines.push({ speaker: w.speaker, text: w.text });
-      }
-      // Room around the words, without reaching into the neighbouring words of the raw
-      // audio, and never cutting into the clip's own first or last word.
-      const first = span[0]!;
-      const last = span.at(-1)!;
-      const prev = opts.rawWords[first.index - 1];
-      const next = opts.rawWords[last.index + 1];
-      const start = Math.max(0, Math.min(first.start, Math.max(prev?.end ?? 0, first.start - PAD_BEFORE)));
-      const endLimit = next ? next.start : opts.durationSec || Infinity;
-      const end = Math.max(last.end, Math.min(endLimit, last.end + PAD_AFTER));
-
+      const firstWord = words[from]!.index;
+      const lastWord = words[to]!.index;
       const captions: SocialClip["captions"] = {};
       for (const id of opts.platforms) {
-        const platform = PLATFORMS.find((p) => p.id === id)!;
         const d = draft.captions[id];
         if (!d?.text) continue;
-        const checked = checkCaption(d, platform, known);
+        const checked = checkCaption(d, id, known, "model");
         captions[id] = checked.caption;
         hashtagsDropped += checked.hashtagsDropped;
       }
@@ -330,11 +453,13 @@ export function checkClips(
         id: `clip-${n + 1}`,
         title,
         why: draft.why,
-        start: round(start),
-        end: round(end),
-        lines,
+        firstWord,
+        lastWord,
+        ...clipCut(opts.rawWords, opts.durationSec, firstWord, lastWord),
+        lines: clipLines(turns, firstWord, lastWord),
         captions,
-        titleProblems: title.length > MAX_TITLE_CHARS ? [`${title.length - MAX_TITLE_CHARS} characters over YouTube's ${MAX_TITLE_CHARS}-character title limit.`] : [],
+        titleProblems: titleProblems(title),
+        kept: false,
       };
     });
 
@@ -342,3 +467,16 @@ export function checkClips(
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
+
+/** Everything needed to re-check an episode's clips, from its transcript, review edits and notes. */
+export function clipContext(transcript: Transcript, edits: EpisodeEdits, writing: WritingResult | null, website: string): ClipContext {
+  const turns = cleanTranscript(transcript, edits);
+  const facts = confirmedFacts(writing?.research ?? null).map((f) => f.fact);
+  const links = writing?.research?.links.map((l) => l.url) ?? [];
+  return {
+    turns,
+    rawWords: transcript.words,
+    durationSec: transcript.durationSec ?? transcript.words.at(-1)?.end ?? 0,
+    known: captionKnown(turns, facts, [website, ...links].filter(Boolean)),
+  };
+}

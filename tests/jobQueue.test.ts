@@ -391,7 +391,7 @@ const CLIPS: SocialResult = {
   model: "fake",
   voice: "general",
   generatedAt: "",
-  clips: [{ id: "clip-1", title: "T", why: "", start: 0, end: 1.5, lines: [], captions: {}, titleProblems: [] }],
+  clips: [{ id: "clip-1", title: "T", why: "", firstWord: 0, lastWord: 1, start: 0, end: 1.5, lines: [], captions: {}, titleProblems: [], kept: false }],
   checks: { suggested: 1, dropped: [], hashtagsDropped: 0 },
 };
 
