@@ -288,6 +288,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         ["General", "settings-general.png"],
         ["Output", "settings-output.png"],
         ["Show notes", "settings-notes.png"],
+        ["Social", "settings-social.png"],
         ["Drive", "settings-drive.png"],
         ["API keys", "settings-keys.png"],
       ] as const) {
@@ -326,11 +327,32 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         return { hint: select.closest(".row").querySelector(".hint.error")?.textContent ?? "", selected: select.selectedOptions[0]?.textContent ?? "" };
       })()`);
       await js(`window.api.updateSettings({ writing: { model: "" } })`);
+      // Social tab: its own model (Sonnet by default, medium effort) and voice, off until turned on.
+      await click(".tab", "Social");
+      await pause(800);
+      const socialPicker = await js<{ model: string; effort: string; switchOn: boolean; voices: number; clips: string[] }>(`({
+        model: document.querySelector("select[aria-label=Model]")?.selectedOptions[0]?.textContent ?? "",
+        effort: document.querySelector("select[aria-label=Effort]")?.value ?? "",
+        switchOn: document.querySelector(".switch").checked,
+        voices: document.querySelectorAll("input[name=social-voice]").length,
+        clips: ["Fewest clips", "Most clips", "Shortest clip", "Longest clip"].map((l) => document.querySelector("input[aria-label='" + l + "']")?.value ?? ""),
+      })`);
+      const socialOk =
+        socialPicker.model === "Default (Claude Sonnet 5.5)" &&
+        socialPicker.effort === "medium" &&
+        !socialPicker.switchOn &&
+        socialPicker.voices === 4 &&
+        JSON.stringify(socialPicker.clips) === JSON.stringify(["3", "5", "15", "60"]);
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
       const modelPicker =
         JSON.stringify(modelOptions) ===
-          JSON.stringify(["Default (Claude Opus 5.5)", "Claude Opus 5.5 (claude-opus-5-5)", "Claude Opus 5 (claude-opus-5)"]) &&
+          JSON.stringify([
+            "Default (Claude Opus 5.5)",
+            "Claude Opus 5.5 (claude-opus-5-5)",
+            "Claude Sonnet 5.5 (claude-sonnet-5-5)",
+            "Claude Opus 5 (claude-opus-5)",
+          ]) &&
         JSON.stringify(effortOptions) === JSON.stringify(["Auto", "Low", "Medium", "High", "Extra high", "Max"]) &&
         draftRequest?.model === "claude-opus-5-5" &&
         unknownModel.hint.includes("doesn't list a model called “hertzog”") &&
@@ -562,16 +584,18 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           /^Transcriptor 2 v2\.0\.0/.test(version) &&
           ALL_SECTIONS.every((t) => sections.includes(t)) &&
           modelPicker &&
+          socialOk &&
           folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
         selectWidths,
         unknownModel,
+        socialPicker,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -636,7 +660,7 @@ const SMOKE_DRAFT = {
   },
 };
 
-/** Every settings section, which between them the four tabs must show. */
+/** Every settings section, which between them the tabs must show. */
 const ALL_SECTIONS = [
   "General",
   "Processing",
@@ -648,5 +672,7 @@ const ALL_SECTIONS = [
   "Show notes template",
   "API keys",
   "Show notes voice",
+  "Social clips",
+  "Social voice",
   "Watch a Drive folder",
 ];

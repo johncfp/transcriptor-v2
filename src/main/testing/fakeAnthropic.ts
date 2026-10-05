@@ -34,9 +34,10 @@ function caps(efforts: string[], adaptive = true) {
   };
 }
 
-/** The fake model list: two usable models, and one without adaptive thinking that the app should hide. */
+/** The fake model list: three usable models (Sonnet is the social clips default), and one without adaptive thinking that the app should hide. */
 export const FAKE_MODELS = [
   { type: "model", id: "claude-opus-5-5", display_name: "Claude Opus 5.5", created_at: "2026-09-01T00:00:00Z", capabilities: caps(["low", "medium", "high", "xhigh", "max"]) },
+  { type: "model", id: "claude-sonnet-5-5", display_name: "Claude Sonnet 5.5", created_at: "2026-08-01T00:00:00Z", capabilities: caps(["low", "medium", "high", "xhigh", "max"]) },
   { type: "model", id: "claude-opus-5", display_name: "Claude Opus 5", created_at: "2026-05-01T00:00:00Z", capabilities: caps(["low", "medium", "high", "xhigh", "max"]) },
   { type: "model", id: "claude-haiku-4-5-20251001", display_name: "Claude Haiku 4.5", created_at: "2025-10-01T00:00:00Z", capabilities: caps([], false) },
 ];

@@ -295,6 +295,14 @@ h3 {
   align-items: center;
   gap: 8px;
 }
+.range-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.number-input {
+  width: 72px;
+}
 .watch-warning {
   margin: 12px 0 0;
 }
@@ -893,7 +901,7 @@ textarea.input {
 }
 
 .input.select {
-  width: 200px;
+  width: 224px;
 }
 .section-list {
   list-style: none;

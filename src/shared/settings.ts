@@ -1,6 +1,7 @@
 import { EFFORTS, type Effort } from "./providers";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
 import { VOICE_IDS, type VoiceId } from "./voices";
+import type { PlatformId } from "./social";
 
 // Settings schema shared by the main process (which owns the file on disk)
 // and the renderer (which edits it over IPC). Keep this file free of Node and
@@ -59,24 +60,47 @@ export interface Settings {
   /** Where words get a low- or medium-confidence color. */
   confidence: { lowMax: number; mediumMax: number };
   show: ShowProfile;
-  writing: {
-    /** Provider id from src/shared/providers.ts (role "writing"). */
-    provider: string;
-    /** Blank = the provider's default model. */
-    model: string;
-    /** Blank = the provider's usual endpoint. Needed for Qwen outside the default region. */
-    baseUrl: string;
-    /** Effort level for providers that take one (see EFFORTS); blank = the model's own default. */
-    effort: "" | Effort;
-    /** Show-notes voice preset (src/shared/voices.ts). */
-    voice: VoiceId;
-    /** The instruction used when voice is "custom". */
-    customVoice: string;
-  };
+  writing: ModelChoice & VoiceChoice;
+  /**
+   * Social clips (src/shared/social.ts): after the show notes, a model picks
+   * moments from the transcript and writes captions; they're reviewed before
+   * the clips are cut and exported.
+   */
+  social: ModelChoice &
+    VoiceChoice & {
+      enabled: boolean;
+      /** How many clips to suggest; clamped by clipLimits. */
+      minClips: number;
+      maxClips: number;
+      /** Clip length in seconds; clamped by clipLimits. */
+      minSeconds: number;
+      maxSeconds: number;
+      /** Which platforms get a caption (see PLATFORMS). */
+      platforms: Record<PlatformId, boolean>;
+    };
   /** "full", "standard", "minimal" or "custom" (see src/shared/showNotes.ts). */
   template: string;
   /** Section ids, in order, for the "custom" template. */
   customSections: string[];
+}
+
+/** Which provider, model and effort a writing step uses. */
+export interface ModelChoice {
+  /** Provider id from src/shared/providers.ts (role "writing"). */
+  provider: string;
+  /** Blank = the step's default model for the provider. */
+  model: string;
+  /** Blank = the provider's usual endpoint. Needed for Qwen outside the default region. */
+  baseUrl: string;
+  /** Effort level for providers that take one (see EFFORTS); blank = the model's own default. */
+  effort: "" | Effort;
+}
+
+/** A voice preset (src/shared/voices.ts), or the user's own instruction. */
+export interface VoiceChoice {
+  voice: VoiceId;
+  /** The instruction used when voice is "custom". */
+  customVoice: string;
 }
 
 /** Transcript turn layouts, as in Transcriptor 1's Speaker Format menu. */
@@ -172,6 +196,22 @@ export const DEFAULT_SETTINGS: Settings = {
     signOff: "",
   },
   writing: { provider: "anthropic", model: "", baseUrl: "", effort: "", voice: "general", customVoice: "" },
+  social: {
+    // Off until turned on: it's an extra paid model call per episode.
+    enabled: false,
+    // Blank = Claude Sonnet 5.5 (SOCIAL_DEFAULT_MODELS), at medium effort.
+    provider: "anthropic",
+    model: "",
+    baseUrl: "",
+    effort: "medium",
+    voice: "general",
+    customVoice: "",
+    minClips: 3,
+    maxClips: 5,
+    minSeconds: 15,
+    maxSeconds: 60,
+    platforms: { instagram: true, x: true, linkedin: true, youtube: true },
+  },
   template: "full",
   customSections: [],
 };
