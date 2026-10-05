@@ -12,7 +12,8 @@ import {
 import { ApiKeysSection } from "./ApiKeysSection";
 import { Section } from "./Section";
 import { ShowNotesSettings, ShowNotesTemplateSection } from "./ShowNotesSettings";
-import { VoiceSection } from "./VoiceSection";
+import { SocialVoiceSection, VoiceSection } from "./VoiceSection";
+import { SocialSettings } from "./SocialSettings";
 import { BrandingSection } from "./BrandingSection";
 import { FolderWatchSection } from "./FolderWatchSection";
 import { ConfidenceBandsSection } from "./ConfidenceBandsSection";
@@ -21,6 +22,7 @@ const TABS = [
   { id: "general", label: "General" },
   { id: "output", label: "Output" },
   { id: "notes", label: "Show notes" },
+  { id: "social", label: "Social" },
   { id: "drive", label: "Drive" },
   { id: "keys", label: "API keys & voice" },
 ] as const;
@@ -306,6 +308,13 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
 
             <ShowNotesTemplateSection settings={settings} update={update} />
             <ShowNotesSettings settings={settings} update={update} />
+          </>
+        )}
+
+        {tab === "social" && (
+          <>
+            <SocialSettings settings={settings} update={update} />
+            <SocialVoiceSection settings={settings} update={update} />
           </>
         )}
 

@@ -7,7 +7,7 @@ import type { EpisodeEdits } from "../shared/cleanup";
 import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
 import { readTemplateFile, sampleTemplateFile, templateFile } from "./templateFile";
 import { cleanTranscript } from "../shared/cleanup";
-import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
+import { clipFileName, episodeDocuments, safeFileName, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
 import { printPdf } from "./pdf";
@@ -18,6 +18,10 @@ import { JobQueue } from "./jobQueue";
 import { providerById } from "../shared/providers";
 import { anthropicWriter } from "./writing/anthropic";
 import { writeEpisode, writerById } from "./writing";
+import { suggestClips } from "./writing/social";
+import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
+import { clipContext, reviseClip, type ClipEdit } from "../shared/clips";
+import { cutClips } from "./clipCutter";
 import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
@@ -40,6 +44,17 @@ import { findDriveForDesktop } from "./watch/driveFolder";
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
 if (SMOKE) app.setPath("userData", SMOKE.userData);
+
+// Windows marks a covered window as hidden and stops painting it, so smoke
+// screenshots would show an earlier screen. Chromium reads only the last
+// disable-features switch, so add to any existing list rather than replace it.
+if (SMOKE) {
+  const disabled = app.commandLine.getSwitchValue("disable-features");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    [disabled, "CalculateNativeWinOcclusion"].filter(Boolean).join(","),
+  );
+}
 
 // Windows only shows notifications for apps with an AppUserModelID, and it
 // has to match the installer's appId.
@@ -91,6 +106,19 @@ function start(): void {
     };
   };
 
+  // The same for social clips, which have their own provider and model.
+  const socialSetup = () => {
+    const s = settings.get().social;
+    const writer = writerById(s.provider) ?? anthropicWriter;
+    return {
+      writer,
+      apiKey: keys.get(writer.id),
+      model: s.model.trim() || socialDefaultModel(writer.id) || writer.defaultModel,
+      baseUrl: s.baseUrl.trim() || undefined,
+      effort: providerById(writer.id)?.effort && s.effort ? s.effort : undefined,
+    };
+  };
+
   let sleepBlocker: number | null = null;
   queue = new JobQueue({
     dataDir: userData,
@@ -116,9 +144,31 @@ function start(): void {
       });
     },
     canWrite: () => writerSetup().apiKey !== null,
-    exportEpisode: (data, formats) => {
+    suggest: (req) => {
+      const { writer, apiKey, model, baseUrl, effort } = socialSetup();
+      if (!apiKey) {
+        throw new Error(`Add your ${providerById(writer.id)?.label ?? writer.label} API key in Settings, then try again.`);
+      }
+      const { show, social } = settings.get();
+      return suggestClips({
+        transcript: req.transcript,
+        edits: req.edits,
+        writing: req.writing,
+        show: { name: show.name, hosts: show.hosts, website: show.website },
+        limits: clipLimits(social),
+        platforms: PLATFORMS.map((p) => p.id).filter((id) => social.platforms[id]),
+        voice: social.voice,
+        customVoice: social.customVoice,
+        writer,
+        call: { apiKey, model, baseUrl, effort, signal: req.signal },
+        onStage: req.onStage,
+      });
+    },
+    autoSocial: () => settings.get().social.enabled && socialSetup().apiKey !== null,
+    exportEpisode: async (data, formats, opts) => {
       const s = settings.get();
-      const { label, documents } = episodeDocuments({
+      const kept = data.social?.clips.filter((c) => c.kept) ?? [];
+      const { label, documents: all } = episodeDocuments({
         turns: cleanTranscript(data.transcript, data.edits),
         details: data.details,
         writing: data.writing,
@@ -130,10 +180,30 @@ function start(): void {
           format: s.output.speakerFormat,
           confidence: s.output.colorConfidence ? clampThresholds(s.confidence) : null,
         },
+        clips: kept,
       });
+      const documents = opts?.clipsOnly ? all.filter((d) => d.kind === "Social Clips") : all;
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       const { branding } = s.output;
+      // Kept clips' audio, cut from the episode. With clips but none kept, earlier clip files are cleared.
+      const base = safeFileName(label);
+      const clips = data.social
+        ? (
+            await cutClips(
+              data.job.filePath,
+              kept.map((c) => ({ start: c.start, end: c.end })),
+              {
+                preload: join(__dirname, "..", "preload", "cutter.js"),
+                load: (win) =>
+                  devServerUrl
+                    ? win.loadURL(new URL("cutter.html", devServerUrl).href)
+                    : win.loadFile(join(__dirname, "..", "renderer", "cutter.html")),
+              },
+            )
+          ).map((data, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data }))
+        : undefined;
       return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+        clips,
         renderPdf: printPdf,
         branding: {
           ...branding,
@@ -485,12 +555,31 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.getDetails, (_e, id: string) => jobs.details(id));
   ipcMain.handle(IPC.writeNotes, (_e, id: string, details: EpisodeDetails) => jobs.write(id, sanitizeDetails(details)));
   ipcMain.handle(IPC.getWriting, (_e, id: string) => jobs.writing(id));
+  ipcMain.handle(IPC.getSocial, (_e, id: string) => jobs.social(id));
+  // Each changed clip is checked again here, against the transcript, before it's saved.
+  ipcMain.handle(IPC.saveClips, (_e, id: string, edits: unknown) => {
+    const social = jobs.social(id);
+    const transcript = jobs.transcript(id);
+    const reviewEdits = jobs.edits(id);
+    if (!social || !transcript || !reviewEdits || !edits || typeof edits !== "object") return social;
+    const ctx = clipContext(transcript, reviewEdits, jobs.writing(id), settings.get().show.website);
+    const changes = edits as Record<string, ClipEdit>;
+    const next = {
+      ...social,
+      clips: social.clips.map((c) => (Object.hasOwn(changes, c.id) && changes[c.id] ? reviseClip(c, changes[c.id]!, ctx) : c)),
+    };
+    jobs.saveSocial(id, next);
+    return jobs.social(id);
+  });
+  ipcMain.handle(IPC.suggestClips, (_e, id: string) => jobs.suggestClips(id));
+  ipcMain.handle(IPC.cancelClips, (_e, id: string) => jobs.cancelSocial(id));
+  ipcMain.handle(IPC.exportClips, (_e, id: string) => jobs.exportClips(id));
   ipcMain.handle(IPC.exportEpisode, (_e, id: string, formats: unknown) =>
     jobs.exportNow(id, Array.isArray(formats) ? EXPORT_FORMATS.filter((f) => formats.includes(f)) : undefined),
   );
   ipcMain.handle(IPC.openFolder, async (_e, path: string) => {
     // Only folders this app exported to; never an arbitrary path from the renderer.
-    if (jobs.list().some((j) => j.exported?.folder === path)) await shell.openPath(path);
+    if (jobs.list().some((j) => j.exported?.folder === path || j.social?.exported?.folder === path)) await shell.openPath(path);
   });
   ipcMain.handle(IPC.exportTemplate, async (_e, sections: unknown) => {
     const result = await (mainWindow

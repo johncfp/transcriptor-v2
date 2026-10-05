@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileNameFor, safeFileName, type ExportDocument, type ExportFormat } from "../shared/exportDocs";
+import { CLIPS_FOLDER, fileNameFor, isClipFile, safeFileName, type ExportDocument, type ExportFormat } from "../shared/exportDocs";
 import { toPlainText } from "../shared/showNotes";
 import { buildDocx } from "./docx";
 import { coverLines, docBranding, type CoverPage, type ExportBranding } from "./brandingDoc";
@@ -21,6 +21,11 @@ export interface ExportResult {
 export interface ExportOptions {
   renderPdf?: PdfRenderer;
   branding?: ExportBranding;
+  /**
+   * Kept clips' audio, written to <folder>/Clips/ in place of the episode's
+   * earlier clips. Undefined leaves that folder alone.
+   */
+  clips?: { name: string; data: Uint8Array }[];
 }
 
 export async function writeExport(
@@ -28,9 +33,9 @@ export async function writeExport(
   label: string,
   documents: ExportDocument[],
   formats: ExportFormat[],
-  { renderPdf, branding }: ExportOptions = {},
+  { renderPdf, branding, clips }: ExportOptions = {},
 ): Promise<ExportResult> {
-  if (!formats.length) throw new Error("Choose at least one format to export.");
+  if (!formats.length && !clips?.length) throw new Error("Choose at least one format to export.");
   if (formats.includes("pdf") && !renderPdf) throw new Error("PDF export isn't available here.");
   const base = safeFileName(label);
   const folder = join(root, base);
@@ -49,6 +54,19 @@ export async function writeExport(
               ? await renderPdf!(blocksToHtml(doc.blocks, `${base} - ${doc.kind}`, brand), folder)
               : `﻿${plainCover(brand?.cover)}${toPlainText(doc.blocks)}\n`;
         writeFileSync(path, data);
+        files.push(path);
+      }
+    }
+    if (clips) {
+      const clipsFolder = join(folder, CLIPS_FOLDER);
+      mkdirSync(clipsFolder, { recursive: true });
+      // Clips un-kept since the last export shouldn't linger; only this episode's clip files are touched.
+      for (const name of readdirSync(clipsFolder)) {
+        if (isClipFile(base, name)) rmSync(join(clipsFolder, name), { force: true });
+      }
+      for (const clip of clips) {
+        const path = join(clipsFolder, clip.name);
+        writeFileSync(path, clip.data);
         files.push(path);
       }
     }

@@ -22,5 +22,14 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, "out/renderer"),
     emptyOutDir: true,
+    // The clip cutter page carries mediabunny (~560 kB); it loads only in that hidden page.
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      // The app, and the hidden page that cuts social clips (src/main/clipCutter.ts).
+      input: {
+        index: resolve(__dirname, "src/renderer/index.html"),
+        cutter: resolve(__dirname, "src/renderer/cutter.html"),
+      },
+    },
   },
 });

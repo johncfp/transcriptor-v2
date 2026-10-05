@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import type { SocialResult } from "../src/shared/clips";
 import type { Job } from "../src/shared/jobs";
 import type { Transcript } from "../src/shared/transcript";
 import { JobQueue, type JobEvent, type JobQueueDeps } from "../src/main/jobQueue";
@@ -380,4 +381,131 @@ test("a job can be skipped right before transcription, without counting as a fai
   assert.equal(job.exportRoot, "X/Transcriptor Exports");
   assert.equal(calls.length, 0, "nothing was sent for transcription");
   assert.ok(!events.includes("failed"));
+});
+
+// --- Social clips -------------------------------------------------------------
+
+const CLIPS: SocialResult = {
+  version: 1,
+  provider: "fake",
+  model: "fake",
+  voice: "general",
+  generatedAt: "",
+  clips: [{ id: "clip-1", title: "T", why: "", firstWord: 0, lastWord: 1, start: 0, end: 1.5, lines: [], captions: {}, titleProblems: [], kept: false }],
+  checks: { suggested: 1, dropped: [], hashtagsDropped: 0 },
+};
+
+/** An episode with show notes written, ready for social clips. */
+async function written(overrides: Partial<JobQueueDeps> = {}) {
+  const s = await transcribed({ write: async () => WRITTEN, ...overrides });
+  s.queue.markReviewed(s.id);
+  s.queue.write(s.id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
+  for (let i = 0; i < 4; i++) await tick();
+  return s;
+}
+
+/** A suggest call that waits until aborted. */
+const hangingSuggest: JobQueueDeps["suggest"] = (req) =>
+  new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new AbortedError("aborted"))));
+
+test("social: clips follow the first notes when switched on, and the notes stay written", async () => {
+  const seen: (string | undefined)[] = [];
+  const { queue, id, events } = await written({
+    autoSocial: () => true,
+    suggest: async (req) => {
+      seen.push(req.writing?.notes.summary);
+      req.onStage("Picking social clips");
+      return CLIPS;
+    },
+  });
+  const job = queue.list()[0]!;
+  assert.equal(job.status, "written");
+  assert.deepEqual(job.social, { status: "done", clipCount: 1 });
+  assert.deepEqual(seen, ["S"], "the step gets the notes");
+  assert.equal(queue.social(id)!.clips[0]!.id, "clip-1");
+  assert.deepEqual(events, ["transcribed", "written", "clips-ready"]);
+});
+
+test("social: switched off, nothing is queued; asking for clips queues them by hand", async () => {
+  const { queue, id } = await written({ autoSocial: () => false, suggest: async () => CLIPS });
+  assert.equal(queue.list()[0]!.social, undefined);
+  queue.suggestClips(id);
+  assert.equal(queue.list()[0]!.social?.status, "running", "starts right away when nothing else is running");
+  await tick();
+  await tick();
+  assert.equal(queue.list()[0]!.social?.status, "done");
+});
+
+test("social: a failure leaves the notes alone, and asking again retries", async () => {
+  let fail = true;
+  const { queue, id, events } = await written({
+    autoSocial: () => true,
+    suggest: async () => {
+      if (fail) throw new Error("Claude rejected the API key.");
+      return CLIPS;
+    },
+  });
+  let job = queue.list()[0]!;
+  assert.equal(job.status, "written");
+  assert.deepEqual(job.social, { status: "failed", error: "Claude rejected the API key." });
+  assert.equal(job.failedStep, undefined);
+  assert.ok(queue.writing(id), "notes still there");
+  assert.ok(events.includes("clips-failed") && !events.includes("failed"));
+
+  fail = false;
+  queue.suggestClips(id);
+  await tick();
+  await tick();
+  job = queue.list()[0]!;
+  assert.equal(job.social?.status, "done");
+});
+
+test("social: cancelling keeps the clips from before, running or queued", async () => {
+  let hang = false;
+  const { queue, id } = await written({
+    autoSocial: () => true,
+    suggest: (req) => (hang ? hangingSuggest!(req) : Promise.resolve(CLIPS)),
+  });
+  hang = true;
+  queue.suggestClips(id);
+  await tick();
+  assert.equal(queue.list()[0]!.social?.status, "running");
+  queue.remove(id);
+  assert.equal(queue.list().length, 1, "can't remove while clips are being picked");
+  queue.write(id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
+  assert.equal(queue.list()[0]!.status, "written", "or rewrite the notes under them");
+  queue.cancelSocial(id);
+  await tick();
+  assert.deepEqual(queue.list()[0]!.social, { status: "done", clipCount: 1 });
+  assert.equal(queue.social(id)!.clips.length, 1);
+});
+
+test("social: clips aren't suggested again on their own when the notes are rewritten", async () => {
+  let calls = 0;
+  const { queue, id } = await written({
+    autoSocial: () => true,
+    suggest: async () => {
+      calls++;
+      return CLIPS;
+    },
+  });
+  queue.write(id, { episodeNumber: "", title: "", sponsors: "", nextWeek: "" });
+  for (let i = 0; i < 4; i++) await tick();
+  assert.equal(queue.list()[0]!.status, "written");
+  assert.equal(calls, 1);
+});
+
+test("social: only for episodes with notes; a restart picks up interrupted clips", async () => {
+  const { queue, id } = await transcribed({ suggest: async () => CLIPS });
+  queue.suggestClips(id);
+  assert.equal(queue.list()[0]!.social, undefined, "no notes yet");
+
+  const dataDir = mkdtempSync(join(tmpdir(), "t2-queue-"));
+  const jobId = "00000000-0000-4000-8000-000000000000";
+  writeFileSync(
+    join(dataDir, "jobs.json"),
+    JSON.stringify([{ id: jobId, filePath: "x.mp3", fileName: "x.mp3", status: "written", social: { status: "running", stage: "Picking social clips" } }]),
+  );
+  const again = setup({ dataDir });
+  assert.deepEqual(again.queue.list()[0]!.social, { status: "queued", stage: "Waiting" });
 });

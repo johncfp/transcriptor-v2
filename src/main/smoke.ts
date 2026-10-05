@@ -63,6 +63,22 @@ function startFakeApi(): Promise<void> {
   );
 }
 
+/** The header of a PCM WAV file, and its length in seconds; null if it isn't one. */
+function readWavInfo(path: string): { format: number; channels: number; rate: number; bits: number; seconds: number } | null {
+  const b = readFileSync(path);
+  if (b.toString("ascii", 0, 4) !== "RIFF" || b.toString("ascii", 8, 12) !== "WAVE") return null;
+  let p = 12;
+  let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+  while (p + 8 <= b.length) {
+    const id = b.toString("ascii", p, p + 4);
+    const size = b.readUInt32LE(p + 4);
+    if (id === "fmt ") fmt = { format: b.readUInt16LE(p + 8), channels: b.readUInt16LE(p + 10), rate: b.readUInt32LE(p + 12), bits: b.readUInt16LE(p + 22) };
+    if (id === "data" && fmt) return { ...fmt, seconds: size / (fmt.rate * fmt.channels * (fmt.bits / 8)) };
+    p += 8 + size + (size & 1);
+  }
+  return null;
+}
+
 /** A valid WAV file: 9 s of silence, long enough to cover the fake words. */
 function writeWav(path: string): void {
   const samples = 16000 * 9;
@@ -95,9 +111,21 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
   win.webContents.on("console-message", (e) => {
     if (e.level === "error") consoleErrors.push(e.message);
   });
+  // Keep timers and animation frames at full speed even if the window is
+  // covered or minimised.
+  win.webContents.setBackgroundThrottling(false);
   const js = <T>(code: string): Promise<T> => win.webContents.executeJavaScript(code);
-  const shot = async (name: string) =>
+  // capturePage returns the last painted frame, so ask for a repaint and wait
+  // two animation frames for it. The timeout covers a page that has stopped
+  // running animation frames.
+  const shot = async (name: string) => {
+    win.webContents.invalidate();
+    await js(`Promise.race([
+      new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+      new Promise((r) => setTimeout(r, 500)),
+    ])`);
     writeFileSync(join(dir, name), (await win.webContents.capturePage()).toPNG());
+  };
   const click = async (selector: string, text: string) => {
     const found = await js<boolean>(`(() => {
       const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.textContent.includes(${JSON.stringify(text)}));
@@ -204,6 +232,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       // Show notes, written with the real Claude SDK against a local fake API.
       const claude = await startFakeAnthropic({
         draft: SMOKE_DRAFT,
+        social: SMOKE_CLIPS,
         research: {
           searched: ["https://pete.example/"],
           input: {
@@ -216,6 +245,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await js(`(async () => {
         await window.api.setKey("anthropic", "sk-ant-smoke");
         await window.api.updateSettings({ writing: { provider: "anthropic", model: "", baseUrl: ${JSON.stringify(claude.url)} } });
+        // Social clips follow the notes; the episode is 8 s, so allow short clips.
+        await window.api.updateSettings({ social: { enabled: true, baseUrl: ${JSON.stringify(claude.url)}, minClips: 1, minSeconds: 5, maxSeconds: 20 } });
       })()`);
       await click("button", "Write show notes");
       let notesStatus = "";
@@ -223,6 +254,93 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         await pause(150);
         notesStatus = await js<string>(`window.api.listJobs().then((j) => j[0]?.status ?? "")`);
       }
+      // Then the social clips step, with its own model (Sonnet by default) and effort.
+      let social: { status?: string; clipCount?: number; error?: string } | null = null;
+      for (let i = 0; i < 60 && social?.status !== "done" && social?.status !== "failed"; i++) {
+        await pause(150);
+        social = await js(`window.api.listJobs().then((j) => j[0]?.social ?? null)`);
+      }
+      const socialRequest = claude.requests.find((r) => r.body.stream && JSON.stringify(r.body.output_config ?? {}).includes('"clips"'))?.body;
+      const socialStep =
+        social?.status === "done" &&
+        social.clipCount === 1 &&
+        notesStatus === "written" &&
+        socialRequest?.model === "claude-sonnet-5-5" &&
+        (socialRequest?.output_config as { effort?: string } | undefined)?.effort === "medium";
+      await js(`window.api.updateSettings({ social: { enabled: false, minClips: 3, minSeconds: 15, maxSeconds: 60 } })`);
+
+      // Review the clip: keep it, end it a word earlier, edit a caption; the changes are checked and saved.
+      await click(".tab", "Clips");
+      await pause(800);
+      await shot("clips.png");
+      const clipsView = await js<{ cards: number; text: string; captions: number; fullWidth: boolean }>(`({
+        cards: document.querySelectorAll(".clip-card").length,
+        text: document.querySelector(".clip-lines")?.innerText ?? "",
+        captions: document.querySelectorAll(".caption-editor").length,
+        // Caption boxes fill their editor.
+        fullWidth: [...document.querySelectorAll(".caption-editor .input")].every(
+          (el) => Math.round(el.getBoundingClientRect().width) === Math.round(el.parentElement.getBoundingClientRect().width),
+        ),
+      })`);
+      await click(".clip-card button", "Play clip");
+      await pause(400);
+      const clipPlayback = await js<{ paused: boolean; time: number; label: string }>(`({
+        paused: document.querySelector(".review-main audio").paused,
+        time: document.querySelector(".review-main audio").currentTime,
+        label: [...document.querySelectorAll(".clip-card button")].find((b) => b.textContent === "Stop")?.textContent ?? "",
+      })`);
+      await click(".clip-card button", "Stop");
+      await click(".clip-card button", "Keep");
+      await pause(200);
+      await js(`document.querySelector("button[aria-label='End one word earlier']").click()`);
+      await pause(200);
+      await js(`(() => {
+        const box = document.querySelector("textarea[aria-label='X / Threads caption']");
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(box, "Pete joins the show, in 2031.");
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      })()`);
+      await pause(1200);
+      await shot("clips-edited.png");
+      const jobId = await js<string>(`window.api.listJobs().then((j) => j[0].id)`);
+      const savedClip = await js<{ kept: boolean; lines: { text: string }[]; captions: { x?: { text: string; problems: string[] } } } | null>(
+        `window.api.getSocial(${JSON.stringify(jobId)}).then((s) => s?.clips[0] ?? null)`,
+      );
+      const clipsReview =
+        clipsView.cards === 1 &&
+        clipsView.text.includes("Pete: Thanks, glad to be here.") &&
+        clipsView.captions === 2 &&
+        clipsView.fullWidth &&
+        !clipPlayback.paused &&
+        clipPlayback.label === "Stop" &&
+        savedClip?.kept === true &&
+        savedClip.lines.at(-1)?.text === "Thanks, glad to be" &&
+        savedClip.captions.x?.text === "Pete joins the show, in 2031." &&
+        savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
+
+      // Export the kept clip: its WAV, cut by the hidden mediabunny page, and the Social Clips document.
+      await click("button", "Export 1 kept clip");
+      let clipsExport: { folder: string; files: string[] } | null = null;
+      for (let i = 0; i < 80 && !clipsExport; i++) {
+        await pause(150);
+        clipsExport = await js(`window.api.listJobs().then((j) => j[0]?.social?.exported ?? null)`);
+      }
+      const clipsExportError = await js<string>(`window.api.listJobs().then((j) => j[0]?.social?.exportError ?? "")`);
+      await shot("clips-exported.png");
+      const wavPath = clipsExport?.files.find((f) => f.endsWith(".wav"));
+      const clipWav = wavPath ? readWavInfo(wavPath) : null;
+      const clipsExported =
+        !!wavPath &&
+        /[\\/]Clips[\\/]Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome\.wav$/.test(wavPath) &&
+        clipWav !== null &&
+        clipWav.format === 1 &&
+        clipWav.rate === 16000 &&
+        // 0–7.5 s, sample-exact.
+        clipWav.seconds === 7.5 &&
+        clipsExport!.files.some((f) => /Social Clips\.docx$/.test(f));
+
+      // Back to the notes, where the next checks look.
+      await click(".tab", "Show notes");
+      await pause(500);
       await pause(500);
       const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
       const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
@@ -240,9 +358,13 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const pdfExport = await js<{ folder: string; files: string[] }>(
         `window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["pdf"]))`,
       );
+      // With a clip kept, the episode's export includes the Social Clips document and the clip's audio.
+      const pdfFiles = pdfExport.files.filter((f) => f.endsWith(".pdf"));
       const pdfOk =
-        pdfExport.files.length === 3 &&
-        pdfExport.files.every((f) => f.endsWith(".pdf") && readFileSync(f).subarray(0, 5).toString() === "%PDF-") &&
+        pdfFiles.length === 4 &&
+        pdfFiles.some((f) => f.endsWith("Social Clips.pdf")) &&
+        pdfExport.files.filter((f) => f.endsWith(".wav")).length === 1 &&
+        pdfFiles.every((f) => readFileSync(f).subarray(0, 5).toString() === "%PDF-") &&
         !readdirSync(pdfExport.folder).some((f) => f.startsWith(".t2-print"));
       // Branding: the app icon as the logo, then a Word and PDF export with a cover, header and footer.
       const logo = importLogo(app.getPath("userData"), join(__dirname, "..", "icon.png"));
@@ -254,7 +376,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       );
       const brandedDocx = unzipSync(readFileSync(branded.files.find((f) => f.endsWith("Show Notes.docx"))!));
       const brandingOk =
-        branded.files.length === 6 &&
+        branded.files.length === 4 * 2 + 1 &&
         !!brandedDocx["word/header1.xml"] &&
         !!brandedDocx["word/footer1.xml"] &&
         !!brandedDocx["word/media/logo.png"] &&
@@ -288,6 +410,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         ["General", "settings-general.png"],
         ["Output", "settings-output.png"],
         ["Show notes", "settings-notes.png"],
+        ["Social", "settings-social.png"],
         ["Drive", "settings-drive.png"],
         ["API keys", "settings-keys.png"],
       ] as const) {
@@ -326,11 +449,32 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         return { hint: select.closest(".row").querySelector(".hint.error")?.textContent ?? "", selected: select.selectedOptions[0]?.textContent ?? "" };
       })()`);
       await js(`window.api.updateSettings({ writing: { model: "" } })`);
+      // Social tab: its own model (Sonnet by default, medium effort) and voice, off until turned on.
+      await click(".tab", "Social");
+      await pause(800);
+      const socialPicker = await js<{ model: string; effort: string; switchOn: boolean; voices: number; clips: string[] }>(`({
+        model: document.querySelector("select[aria-label=Model]")?.selectedOptions[0]?.textContent ?? "",
+        effort: document.querySelector("select[aria-label=Effort]")?.value ?? "",
+        switchOn: document.querySelector(".switch").checked,
+        voices: document.querySelectorAll("input[name=social-voice]").length,
+        clips: ["Fewest clips", "Most clips", "Shortest clip", "Longest clip"].map((l) => document.querySelector("input[aria-label='" + l + "']")?.value ?? ""),
+      })`);
+      const socialOk =
+        socialPicker.model === "Default (Claude Sonnet 5.5)" &&
+        socialPicker.effort === "medium" &&
+        !socialPicker.switchOn &&
+        socialPicker.voices === 4 &&
+        JSON.stringify(socialPicker.clips) === JSON.stringify(["3", "5", "15", "60"]);
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
       const modelPicker =
         JSON.stringify(modelOptions) ===
-          JSON.stringify(["Default (Claude Opus 5.5)", "Claude Opus 5.5 (claude-opus-5-5)", "Claude Opus 5 (claude-opus-5)"]) &&
+          JSON.stringify([
+            "Default (Claude Opus 5.5)",
+            "Claude Opus 5.5 (claude-opus-5-5)",
+            "Claude Sonnet 5.5 (claude-sonnet-5-5)",
+            "Claude Opus 5 (claude-opus-5)",
+          ]) &&
         JSON.stringify(effortOptions) === JSON.stringify(["Auto", "Low", "Medium", "High", "Extra high", "Max"]) &&
         draftRequest?.model === "claude-opus-5-5" &&
         unknownModel.hint.includes("doesn't list a model called “hertzog”") &&
@@ -562,16 +706,28 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           /^Transcriptor 2 v2\.0\.0/.test(version) &&
           ALL_SECTIONS.every((t) => sections.includes(t)) &&
           modelPicker &&
+          socialOk &&
+          socialStep &&
+          clipsReview &&
+          clipsExported &&
           folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, socialStep, clipsReview, clipsExported, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
         selectWidths,
         unknownModel,
+        socialPicker,
+        social,
+        clipsView,
+        clipPlayback,
+        savedClip,
+        clipsExport,
+        clipsExportError,
+        clipWav,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -636,7 +792,23 @@ const SMOKE_DRAFT = {
   },
 };
 
-/** Every settings section, which between them the four tabs must show. */
+/**
+ * One clip across both speakers, quoting the transcript as reviewed: the
+ * fillers ("Um," "uh,") are cleaned out and review removed "really".
+ */
+const SMOKE_CLIPS = {
+  clips: [
+    {
+      title: "A warm welcome",
+      why: "Short and friendly.",
+      first_words: "Hey, I'm Nigel. Welcome to",
+      last_words: "Thanks, glad to be here.",
+      captions: { instagram: { text: "Pete joins the show.", hashtags: ["podcast"] }, x: { text: "Pete joins the show.", hashtags: [] } },
+    },
+  ],
+};
+
+/** Every settings section, which between them the tabs must show. */
 const ALL_SECTIONS = [
   "General",
   "Processing",
@@ -648,5 +820,7 @@ const ALL_SECTIONS = [
   "Show notes template",
   "API keys",
   "Show notes voice",
+  "Social clips",
+  "Social voice",
   "Watch a Drive folder",
 ];

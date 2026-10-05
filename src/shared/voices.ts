@@ -37,6 +37,32 @@ export function voicePrompt(voice: VoiceId, custom: string): string {
   return text || VOICES.general.prompt;
 }
 
+/**
+ * The same presets for social captions. Added after the social rules the same
+ * way: a voice changes how a caption reads, never what it may claim.
+ */
+export const SOCIAL_VOICES: Record<Exclude<VoiceId, "custom">, { description: string; prompt: string }> = {
+  general: {
+    description: "Warm and clear, for any listener.",
+    prompt: `Write captions for a general audience in a warm, clear, conversational voice. Open with the most interesting idea in the clip, in plain words, so someone scrolling past wants to hear it. Avoid jargon; keep a specialist term only if the guest uses it and it matters.`,
+  },
+  industry: {
+    description: "For people who work in the field.",
+    prompt: `Write captions for people who work in the show's field. Use the field's terms the way the guests use them, without explaining basics. Open with the specific insight, method or number in the clip, and keep the tone professional and direct.`,
+  },
+  seo: {
+    description: "Written to be found in each platform's search.",
+    prompt: `Write captions that are easy to find in each platform's search. Put the guest's name and the clip's main topic near the start, use the phrases a listener would search for, taken from the conversation itself, and choose hashtags from those phrases. Never repeat keywords unnaturally or add topics the clip doesn't cover.`,
+  },
+};
+
+/** The caption instruction for a voice; an empty custom one falls back to General. */
+export function socialVoicePrompt(voice: VoiceId, custom: string): string {
+  if (voice !== "custom") return SOCIAL_VOICES[voice].prompt;
+  const text = custom.trim().slice(0, CUSTOM_VOICE_MAX);
+  return text || SOCIAL_VOICES.general.prompt;
+}
+
 export type VoiceId = keyof typeof VOICES;
 export const VOICE_IDS = Object.keys(VOICES) as VoiceId[];
 export const isVoiceId = (s: string): s is VoiceId => s in VOICES;

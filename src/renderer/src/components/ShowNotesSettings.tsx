@@ -1,238 +1,32 @@
-import { useEffect, useState } from "react";
-import { EFFORTS, EFFORT_LABELS, PROVIDERS, providerById, type Effort, type ModelOption } from "../../../shared/providers";
+import { useState } from "react";
 import type { Settings, SettingsPatch } from "../../../shared/settings";
 import { SECTIONS, SECTION_IDS, TEMPLATES, templateSections, type SectionId } from "../../../shared/showNotes";
+import { ModelPicker } from "./ModelPicker";
 import { Section } from "./Section";
 
 const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
-/** "Other…" in the model list: type a model name instead (not for Claude, whose list is complete). */
-const OTHER = ":other";
-
-type ModelList = { state: "loading" } | { state: "ready"; models: ModelOption[] } | { state: "error"; message: string };
-
 /** Which provider, model and effort level write the notes. */
 export function ShowNotesSettings({ settings, update }: { settings: Settings; update: (p: SettingsPatch) => void }) {
   const { writing } = settings;
-  const provider = providerById(writing.provider);
-  const defaultModel = provider?.defaultModel ?? "";
-  const [model, setModel] = useState(writing.model);
-  const [baseUrl, setBaseUrl] = useState(writing.baseUrl);
-  const [typing, setTyping] = useState(false);
-  const [list, setList] = useState<ModelList>({ state: "loading" });
-  const [reload, setReload] = useState(0);
-  const [problem, setProblem] = useState("");
-  useEffect(() => setModel(writing.model), [writing.model]);
-  useEffect(() => setBaseUrl(writing.baseUrl), [writing.baseUrl]);
-
-  // The provider's live model list, so new models show up without an app update.
-  useEffect(() => {
-    let live = true;
-    setList({ state: "loading" });
-    window.api.listModels(writing.provider).then(
-      (models) => live && setList({ state: "ready", models }),
-      (err) => live && setList({ state: "error", message: cleanError(err) }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [writing.provider, reload]);
-
-  const all = list.state === "ready" ? list.models : [];
-  const models = all.filter((m) => m.usable);
-  const listed = (id: string) => models.some((m) => m.id === id);
-  const current = writing.model || defaultModel;
-  // Levels the chosen model takes, when its provider says; otherwise all of them.
-  const efforts: readonly Effort[] = all.find((m) => m.id === current)?.efforts ?? EFFORTS;
-  const showList = list.state === "ready" && models.length > 0 && !typing;
-  // Claude lists every model the key can use, so there's nothing else to type.
-  const canType = writing.provider !== "anthropic";
-
-  /** Why a model name can't be used, or "" if it can (or the list couldn't be loaded to check). */
-  const whyNot = (id: string): string => {
-    if (!id || list.state !== "ready") return "";
-    const found = all.find((m) => m.id === id);
-    if (!found) return `${provider?.label ?? "The provider"} doesn't list a model called “${id}”.`;
-    if (!found.usable && writing.provider === "anthropic") {
-      return `${found.label} can't write show notes: it doesn't have the thinking and structured output they need.`;
-    }
-    return "";
-  };
-  const savedProblem = whyNot(writing.model);
-  const commitTyped = () => {
-    const next = model.trim();
-    if (next === writing.model) return;
-    const why = whyNot(next);
-    setProblem(why);
-    if (why) return;
-    chooseModel(next);
-    setTyping(false);
-  };
-
-  const chooseModel = (next: string) => {
-    const nextEfforts = models.find((m) => m.id === (next || defaultModel))?.efforts;
-    // A level the new model doesn't take goes back to Auto.
-    const effort = writing.effort && nextEfforts && !nextEfforts.includes(writing.effort) ? "" : writing.effort;
-    update({ writing: { ...writing, model: next, effort } });
-  };
-
   return (
     <Section
       className="col-left"
       title="Show notes"
       intro="Written from the reviewed transcript. Guest details are checked with a web search, and quotes are checked word for word against the transcript."
     >
-      <div className="row">
-        <div className="row-label">
-          <span>Writing provider</span>
-          <span className="hint">Add its key on the API keys tab.</span>
-        </div>
-        <select
-          className="input select"
-          value={writing.provider}
-          onChange={(e) => {
-            setTyping(false);
-            setProblem("");
-            update({ writing: { ...writing, provider: e.target.value, model: "", baseUrl: "", effort: "" } });
-          }}
-        >
-          {PROVIDERS.filter((p) => p.role === "writing").map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="row">
-        <div className="row-label">
-          <span>Model</span>
-          <span className={`hint${list.state === "error" || problem || savedProblem ? " error" : ""}`}>
-            {problem || savedProblem
-              ? `${problem || savedProblem} Choose one from the list${canType ? " or check the name" : ""}.`
-              : list.state === "loading"
-              ? `Loading ${provider?.label ?? ""}'s models…`
-              : list.state === "error"
-                ? `${list.message} You can still type a model name.`
-                : showList
-                  ? `Listed live from ${provider?.label ?? "the provider"}, so new models appear here.`
-                  : "Type the model's name, as the provider writes it. Blank uses the default."}
-          </span>
-        </div>
-        <div className="row-control model-control">
-          {showList ? (
-            <select
-              className="input select"
-              aria-label="Model"
-              value={writing.model === "" ? "" : listed(writing.model) ? writing.model : `custom:${writing.model}`}
-              onChange={(e) => {
-                setProblem("");
-                if (e.target.value === OTHER) setTyping(true);
-                else chooseModel(e.target.value.replace(/^custom:/, ""));
-              }}
-            >
-              <option value="">
-                Default ({models.find((m) => m.id === defaultModel)?.label ?? defaultModel})
-              </option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label === m.id ? m.id : `${m.label} (${m.id})`}
-                </option>
-              ))}
-              {writing.model && !listed(writing.model) && (
-                <option value={`custom:${writing.model}`}>
-                  {writing.model}
-                  {savedProblem ? " (not available)" : ""}
-                </option>
-              )}
-              {canType && <option value={OTHER}>Other…</option>}
-            </select>
-          ) : (
-            <input
-              className="input"
-              aria-label="Model"
-              value={model}
-              placeholder={defaultModel}
-              // Nothing to check a typed name against until the list has loaded (or failed to).
-              disabled={list.state === "loading"}
-              onChange={(e) => {
-                setModel(e.target.value);
-                setProblem("");
-              }}
-              onBlur={commitTyped}
-              onKeyDown={(e) => e.key === "Enter" && commitTyped()}
-            />
-          )}
-          {typing && models.length > 0 ? (
-            <button
-              className="button ghost"
-              onClick={() => {
-                // Keep any "doesn't list" message: the typed name wasn't saved.
-                setTyping(false);
-                setModel(writing.model);
-              }}
-            >
-              Show list
-            </button>
-          ) : list.state === "error" ? (
-            <button className="button ghost" onClick={() => setReload((n) => n + 1)}>
-              Try again
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {provider?.effort && (
-        <div className="row">
-          <div className="row-label">
-            <span>Effort</span>
-            <span className="hint">
-              How much the model thinks before writing. Higher is more thorough but slower and costs more. Auto uses the
-              model's own default.
-            </span>
-          </div>
-          <div className="row-control">
-            <select
-              className="input select"
-              aria-label="Effort"
-              value={writing.effort}
-              onChange={(e) => update({ writing: { ...writing, effort: e.target.value as "" | Effort } })}
-            >
-              <option value="">Auto</option>
-              {EFFORTS.filter((e) => efforts.includes(e) || e === writing.effort).map((e) => (
-                <option key={e} value={e}>
-                  {EFFORT_LABELS[e]}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-      {(writing.provider === "qwen" || writing.provider === "moonshot") && (
-        <div className="row">
-          <div className="row-label">
-            <span>API address</span>
-            <span className="hint">
-              {writing.provider === "qwen"
-                ? "Qwen's address depends on your Alibaba Cloud region and workspace. Blank uses the international endpoint."
-                : "Blank uses Kimi's standard endpoint."}
-            </span>
-          </div>
-          <input
-            className="input"
-            value={baseUrl}
-            placeholder="https://…/v1"
-            onChange={(e) => setBaseUrl(e.target.value)}
-            onBlur={() => baseUrl !== writing.baseUrl && update({ writing: { ...writing, baseUrl: baseUrl.trim() } })}
-          />
-        </div>
-      )}
+      <ModelPicker
+        value={writing}
+        onChange={(next) => update({ writing: { ...writing, ...next } })}
+        purpose="write show notes"
+      />
       {(writing.provider === "qwen" || writing.provider === "moonshot") && (
         <p className="hint warn">
           This provider doesn't return the pages its web search used, so guest details it finds can't be confirmed and
           are left out of the notes. Claude or GPT can confirm them.
         </p>
       )}
-
     </Section>
   );
 }

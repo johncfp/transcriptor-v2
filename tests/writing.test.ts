@@ -359,7 +359,7 @@ test("model list: Claude's usable models with their effort levels; a bad key is 
     const models = await listModels("anthropic", "k", fake.url);
     assert.deepEqual(
       models.filter((m) => m.usable).map((m) => m.id),
-      ["claude-opus-5-5", "claude-opus-5"],
+      ["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5"],
       "newest first; Haiku 4.5 (no adaptive thinking) isn't usable",
     );
     assert.equal(models.find((m) => m.id.startsWith("claude-haiku"))?.usable, false, "but it is listed, so a typed name can be checked");

@@ -2,7 +2,7 @@
 
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
-file (Claude by default) → DOCX/TXT export. Runs from the tray on Windows and
+file (Claude by default) → optional social clips → DOCX/TXT export. Runs from the tray on Windows and
 macOS. Currently **2.0.0-beta.4**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
@@ -34,15 +34,18 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
 ## Layout
 
 - `src/main`: Electron main process. `index.ts` (window, tray, IPC), `jobQueue.ts`
-  (persistent queue: transcribe → review → write → export), `transcribe/`
-  (ElevenLabs, streamed multipart), `writing/` (Claude via the official SDK;
-  GPT/Kimi/Qwen over HTTP), `docx.ts`, `exporter.ts`, `media.ts` (t2-media://
+  (persistent queue: transcribe → review → write → export; social clips run
+  after the notes as `job.social`), `transcribe/` (ElevenLabs, streamed
+  multipart), `writing/` (Claude via the official SDK; GPT/Kimi/Qwen over
+  HTTP; `social.ts` suggests clips), `clipCutter.ts` (cuts kept clips to WAV
+  in a hidden sandboxed page, `src/renderer/cutter.html`, running mediabunny;
+  it reads the audio through IPC), `docx.ts`, `exporter.ts`, `media.ts` (t2-media://
   audio for playback), `updater.ts`, `watch/` (`folderWatcher.ts` watches a Drive for Desktop folder: Settings >
   Drive; the Google Drive API watcher is built but
   switched off: see README), `smoke.ts`.
 - `src/shared`: pure logic used by both sides: settings schema, cleanup,
   speaker suggestions, show-notes model and templates, verification of AI output
-  (`verify.ts`), export documents, voices, confidence.
+  (`verify.ts`; `clips.ts` for social clips), export documents, voices, confidence.
 - `src/renderer`: React UI. `src/preload`: the `window.api` bridge.
 - User data lives in Electron's userData: settings.json, keys.json (encrypted
   with safeStorage), jobs.json, episodes/<id>/.
@@ -57,6 +60,12 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   timestamps are snapped to turns, and guest facts and links are kept only if
   their URL was in the web search results. Keep these checks when changing
   the writing step; voices are appended after the rules, never before.
+  Social clips follow the same rule: the model gives only a clip's first and
+  last words, and `checkClips`/`reviseClip` take the text and times from the
+  transcript, including after edits in review.
+- **Third-party notices.** mediabunny (MPL-2.0) is bundled unmodified; the
+  build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
+  Add an entry there for any new bundled code whose license asks for one.
 - Settings are edited as a draft and saved with the Save button; new fields
   need a default in `DEFAULT_SETTINGS` and pass through `mergeSettings`.
 - Before writing Claude API code, check current model IDs and parameters
@@ -88,3 +97,11 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   parsing the XML parts instead.
 - The Google Drive MCP connector can't upload large files or edit Docs, only
   create, rename, move and trash them.
+- Don't cut clips with mediabunny's `Conversion` `trim`: in 1.61.1, trims that
+  don't land on a sample can leave an empty decoded block and its PCM encoder
+  throws "frameOffset out of range" (65 of 150 random clips on a real M4A).
+  The cutter decodes with `AudioSampleSink` and cuts with `ClipAssembler`
+  (`src/shared/wav.ts`), which is sample-exact.
+- The cutter's hidden window closes after each export; the app stays open only
+  because the main window is hidden, not closed. A script that drives
+  `cutClips` on its own needs a `window-all-closed` listener.

@@ -51,6 +51,25 @@ export interface Job {
   watchedPath?: string;
   /** Why the last export failed (the notes themselves are fine). */
   exportError?: string;
+  /**
+   * Social clips, a step after the show notes. Tracked apart from `status`,
+   * so the episode stays "written" whatever happens here.
+   */
+  social?: SocialState;
+}
+
+export interface SocialState {
+  /** "done" means clips are saved (social.json), possibly none. */
+  status: "queued" | "running" | "done" | "failed";
+  /** Human-readable step while running. */
+  stage?: string;
+  error?: string;
+  /** How many clips were kept, once done. */
+  clipCount?: number;
+  /** The last export of just the kept clips (from the Clips tab). */
+  exported?: { at: string; folder: string; files: string[] };
+  /** Why the last clips export failed. */
+  exportError?: string;
 }
 
 /** Statuses where the job is done moving and can be removed or retried. */
