@@ -45,6 +45,17 @@ import { findDriveForDesktop } from "./watch/driveFolder";
 // before anything reads it.
 if (SMOKE) app.setPath("userData", SMOKE.userData);
 
+// Windows marks a covered window as hidden and stops painting it, so smoke
+// screenshots would show an earlier screen. Chromium reads only the last
+// disable-features switch, so add to any existing list rather than replace it.
+if (SMOKE) {
+  const disabled = app.commandLine.getSwitchValue("disable-features");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    [disabled, "CalculateNativeWinOcclusion"].filter(Boolean).join(","),
+  );
+}
+
 // Windows only shows notifications for apps with an AppUserModelID, and it
 // has to match the installer's appId.
 if (process.platform === "win32") app.setAppUserModelId("io.transcriptor.app2");
