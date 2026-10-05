@@ -5,7 +5,7 @@ transcript, show notes, and a reference file for reusing the episode's content
 later. It runs in the background from the system tray on Windows and macOS.
 
 Transcriptor 2 is a clean rebuild, separate from Transcriptor 1. Both can be
-installed at the same time. Current release: **2.0.0-beta.4**. To install it,
+installed at the same time. Current release: **2.0.0-beta.5**. To install it,
 see [INSTALL.md](INSTALL.md).
 
 ## How it works
@@ -72,10 +72,21 @@ Built in milestones:
 | M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
 | M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
-| M6 | Social clips: suggested clips and captions, review, WAV export | In progress |
+| M6 | Social clips: suggested clips and captions, review, WAV export | Done |
+| M7 | Video clips: MP4 with the clip's audio and captions highlighted word by word, for Reels, TikTok and Shorts | **Next**: feasibility test |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.
+
+**Next for development and testing: video clip feasibility.** Before any
+video work is planned, a test of whether the app can make MP4 video itself,
+the way it now cuts audio (no ffmpeg): H.264 encoding with the browser's own
+WebCodecs in Electron on Windows (including the "N" editions, which may lack
+an H.264 encoder) and macOS, how fast a 60-second 1080×1920 clip renders, and
+file sizes. The answer decides whether video clips go ahead as M7 and how.
+Open questions for then: which shapes (9:16 only, or also 1:1 and 16:9),
+caption style (word-by-word highlight or scrolling lines), and the look
+(background, logo, waveform, speaker names).
 
 ## Watching a Google Drive folder (Drive for Desktop)
 
