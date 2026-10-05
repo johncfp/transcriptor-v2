@@ -97,3 +97,11 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   parsing the XML parts instead.
 - The Google Drive MCP connector can't upload large files or edit Docs, only
   create, rename, move and trash them.
+- Don't cut clips with mediabunny's `Conversion` `trim`: in 1.61.1, trims that
+  don't land on a sample can leave an empty decoded block and its PCM encoder
+  throws "frameOffset out of range" (65 of 150 random clips on a real M4A).
+  The cutter decodes with `AudioSampleSink` and cuts with `ClipAssembler`
+  (`src/shared/wav.ts`), which is sample-exact.
+- The cutter's hidden window closes after each export; the app stays open only
+  because the main window is hidden, not closed. A script that drives
+  `cutClips` on its own needs a `window-all-closed` listener.

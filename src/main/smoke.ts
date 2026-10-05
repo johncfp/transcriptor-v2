@@ -334,9 +334,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipWav !== null &&
         clipWav.format === 1 &&
         clipWav.rate === 16000 &&
-        // 0–7.5 s; mediabunny ends on a whole 1024-sample block, so up to 64 ms more at 16 kHz.
-        clipWav.seconds >= 7.5 &&
-        clipWav.seconds < 7.5 + 0.065 &&
+        // 0–7.5 s, sample-exact.
+        clipWav.seconds === 7.5 &&
         clipsExport!.files.some((f) => /Social Clips\.docx$/.test(f));
 
       // Back to the notes, where the next checks look.
