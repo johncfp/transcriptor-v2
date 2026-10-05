@@ -6,10 +6,13 @@ import type { AddressInfo } from "node:net";
  * the smoke test to run the real SDK code paths without a key or network.
  * Non-streaming requests get a guest-research reply (a web search result
  * plus a record_guest_research tool call); streaming requests get `draft`
- * back as the JSON text of the reply.
+ * back as the JSON text of the reply, or `social` when the request asks for
+ * social clips.
  */
 export interface FakeAnthropicOptions {
   draft: unknown;
+  /** The reply to a social clips request (its schema has `clips`). */
+  social?: unknown;
   research?: {
     searched: string[];
     input: { identified: boolean; facts: { fact: string; source_urls: string[] }[]; links: { label: string; url: string }[] };
@@ -94,7 +97,11 @@ export function startFakeAnthropic(opts: FakeAnthropicOptions): Promise<FakeAnth
         res.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }));
         return;
       }
-      if (body.stream) return sse(res, JSON.stringify(opts.draft));
+      if (body.stream) {
+        const schema = (body.output_config as { format?: { schema?: { properties?: Record<string, unknown> } } } | undefined)?.format?.schema;
+        const wantsClips = Boolean(schema?.properties?.clips);
+        return sse(res, JSON.stringify(wantsClips ? (opts.social ?? { clips: [] }) : opts.draft));
+      }
 
       const research = opts.research ?? { searched: [], input: { identified: false, facts: [], links: [] } };
       res.writeHead(200, { "Content-Type": "application/json" });

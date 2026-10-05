@@ -5,13 +5,49 @@ import { providerById } from "./providers";
 // come from the transcript, never the model; clips are reviewed before they're
 // cut (as WAV) and exported.
 
-/** Platforms a caption can be written for. */
+/**
+ * Platforms a caption can be written for. `maxChars` is the platform's limit
+ * for the caption with its hashtags (the smaller one where two share an
+ * entry: Instagram over TikTok, X over Threads); `maxHashtags` is what the
+ * app keeps. `guide` tells the model what to write.
+ */
 export const PLATFORMS = [
-  { id: "instagram", label: "Instagram / TikTok", hint: "Short hook plus hashtags." },
-  { id: "x", label: "X / Threads", hint: "One short post." },
-  { id: "linkedin", label: "LinkedIn", hint: "Longer, professional post." },
-  { id: "youtube", label: "YouTube Shorts", hint: "Title plus description." },
+  {
+    id: "instagram",
+    label: "Instagram / TikTok",
+    hint: "Short hook plus hashtags.",
+    maxChars: 2200,
+    maxHashtags: 5,
+    guide: "1 to 3 short sentences that open with a hook; up to 5 hashtags.",
+  },
+  {
+    id: "x",
+    label: "X / Threads",
+    hint: "One short post.",
+    maxChars: 280,
+    maxHashtags: 2,
+    guide: "one post, under 240 characters including hashtags; at most 2 hashtags.",
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    hint: "Longer, professional post.",
+    maxChars: 3000,
+    maxHashtags: 5,
+    guide: "3 to 6 sentences in a professional tone, ending with the takeaway or a question for readers; up to 3 hashtags.",
+  },
+  {
+    id: "youtube",
+    label: "YouTube Shorts",
+    hint: "Title plus description.",
+    maxChars: 5000,
+    maxHashtags: 5,
+    guide: "a 1 to 2 sentence description (the clip's title is the Short's title); up to 3 hashtags.",
+  },
 ] as const;
+
+/** Longest clip title kept without a warning (YouTube's title limit). */
+export const MAX_TITLE_CHARS = 100;
 
 export type PlatformId = (typeof PLATFORMS)[number]["id"];
 

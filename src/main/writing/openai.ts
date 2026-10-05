@@ -9,7 +9,7 @@
 import { providerById } from "../../shared/providers";
 import type { RawResearch } from "../../shared/verify";
 import { AbortedError } from "../transcribe/multipart";
-import { JSON_INSTRUCTION, RESEARCH_TOOL, WRITING_SCHEMA } from "./prompts";
+import { jsonInstruction, NOTES_FORMAT, RESEARCH_TOOL } from "./prompts";
 import { ProviderError, type ProviderCall, type WritingProvider } from "./types";
 
 const RESEARCH_JSON_INSTRUCTION = `When you're done searching, reply with a single JSON object and nothing else, matching this JSON schema:\n${JSON.stringify(RESEARCH_TOOL.input_schema)}`;
@@ -113,7 +113,7 @@ export const openaiWriter: WritingProvider = {
     return { ...parsed, searchedUrls: urls };
   },
 
-  async draft(call, prompt) {
+  async draft(call, prompt, format = NOTES_FORMAT) {
     const data = await post(
       "GPT",
       `${trimSlash(call.baseUrl ?? "https://api.openai.com/v1")}/responses`,
@@ -122,7 +122,7 @@ export const openaiWriter: WritingProvider = {
         model: call.model,
         instructions: prompt.system,
         input: prompt.user,
-        text: { format: { type: "json_schema", name: "show_notes", schema: WRITING_SCHEMA, strict: true } },
+        text: { format: { type: "json_schema", name: format.name, schema: format.schema, strict: true } },
         ...(call.effort ? { reasoning: { effort: call.effort } } : {}),
       },
       call.signal,
@@ -181,11 +181,11 @@ export const kimiWriter: WritingProvider = {
     throw new ProviderError("Kimi didn't finish the guest lookup.");
   },
 
-  async draft(call, prompt) {
+  async draft(call, prompt, format = NOTES_FORMAT) {
     const { message } = await chat("Kimi", call, KIMI_BASE, {
       model: call.model,
       messages: [
-        { role: "system", content: `${prompt.system}\n\n${JSON_INSTRUCTION}` },
+        { role: "system", content: `${prompt.system}\n\n${jsonInstruction(format.schema)}` },
         { role: "user", content: prompt.user },
       ],
       response_format: { type: "json_object" },
@@ -214,11 +214,11 @@ export const qwenWriter: WritingProvider = {
     return { ...parsed, searchedUrls: null };
   },
 
-  async draft(call, prompt) {
+  async draft(call, prompt, format = NOTES_FORMAT) {
     const { message } = await chat("Qwen", call, QWEN_BASE, {
       model: call.model,
       messages: [
-        { role: "system", content: `${prompt.system}\n\n${JSON_INSTRUCTION}` },
+        { role: "system", content: `${prompt.system}\n\n${jsonInstruction(format.schema)}` },
         { role: "user", content: prompt.user },
       ],
       response_format: { type: "json_object" },

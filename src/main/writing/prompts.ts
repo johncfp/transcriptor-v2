@@ -2,6 +2,7 @@
 // rules here; src/shared/verify.ts checks them afterwards.
 
 import type { SourcedFact } from "../../shared/showNotes";
+import type { JsonFormat } from "./types";
 import { voicePrompt, type VoiceId } from "../../shared/voices";
 
 export const RESEARCH_SYSTEM = `You confirm facts about podcast guests so their show notes are accurate.
@@ -188,5 +189,8 @@ Voice (how the notes should read; the rules above still apply):
 ${voicePrompt(voice, customVoice)}`;
 }
 
+export const NOTES_FORMAT: JsonFormat = { name: "show_notes", schema: WRITING_SCHEMA, what: "show notes" };
+
 /** For providers without schema enforcement: the shape, spelled out in the prompt. */
-export const JSON_INSTRUCTION = `Reply with a single JSON object and nothing else, matching this JSON schema:\n${JSON.stringify(WRITING_SCHEMA)}`;
+export const jsonInstruction = (schema: object) =>
+  `Reply with a single JSON object and nothing else, matching this JSON schema:\n${JSON.stringify(schema)}`;

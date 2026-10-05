@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { defaultEdits, type CleanupOptions, type EpisodeEdits } from "../shared/cleanup";
 import { formatBytes, isAudioFile, SETTLED, type AddFilesResult, type Job, type JobSource } from "../shared/jobs";
 import { providerById } from "../shared/providers";
+import type { SocialResult } from "../shared/clips";
 import { EMPTY_DETAILS, episodeNumberFromFileName, type EpisodeDetails, type WritingResult } from "../shared/showNotes";
 import { suggestSpeakers } from "../shared/speakerNames";
 import type { Transcript } from "../shared/transcript";
@@ -17,6 +18,15 @@ export interface WriteRequest {
   transcript: Transcript;
   edits: EpisodeEdits;
   details: EpisodeDetails;
+  signal: AbortSignal;
+  onStage: (stage: string) => void;
+}
+
+export interface SuggestRequest {
+  transcript: Transcript;
+  edits: EpisodeEdits;
+  /** The episode's show notes, if written. */
+  writing: WritingResult | null;
   signal: AbortSignal;
   onStage: (stage: string) => void;
 }
@@ -47,6 +57,10 @@ export interface JobQueueDeps {
   exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[]) => Promise<ExportResult>;
   /** Export as soon as show notes are written. */
   autoExport: () => boolean;
+  /** Suggests social clips with the configured provider; throws a readable error if it can't. */
+  suggest?: (req: SuggestRequest) => Promise<SocialResult>;
+  /** True when social clips are switched on and their provider has a key, so they follow the notes. */
+  autoSocial?: () => boolean;
   /** Every change, including progress ticks. */
   onChange?: (jobs: Job[]) => void;
   /** A job reached a state the user should hear about. */
@@ -64,10 +78,14 @@ export type JobEvent =
   | { type: "awaiting-approval"; job: Job }
   | { type: "transcribed"; job: Job; needsReview: boolean }
   | { type: "written"; job: Job }
-  | { type: "failed"; job: Job };
+  | { type: "failed"; job: Job }
+  | { type: "clips-ready"; job: Job }
+  | { type: "clips-failed"; job: Job };
 
 /** Statuses that have work waiting for the runner. */
 const WAITING = new Set<Job["status"]>(["queued", "writing"]);
+
+type Step = "transcription" | "writing" | "social";
 
 /**
  * Episodes moving through transcription and show-note writing. Runs one
@@ -78,7 +96,7 @@ const WAITING = new Set<Job["status"]>(["queued", "writing"]);
 export class JobQueue {
   private jobs: Job[];
   private readonly path: string;
-  private running: { id: string; abort: AbortController } | null = null;
+  private running: { id: string; step: Step; abort: AbortController } | null = null;
   private lastProgressEmit = 0;
 
   constructor(private readonly deps: JobQueueDeps) {
@@ -94,6 +112,8 @@ export class JobQueue {
       if (job.status === "writing") job.stage = "Waiting";
       // alpha.1 had a single "transcribed" status.
       if ((job.status as string) === "transcribed") job.status = "needs-review";
+      // Social clips that were being suggested start over.
+      if (job.social?.status === "running") job.social = { status: "queued", stage: "Waiting" };
     }
     this.save();
     queueMicrotask(() => this.pump());
@@ -171,7 +191,7 @@ export class JobQueue {
   /** Removes the job and its saved files. The original audio file is never touched. */
   remove(id: string): void {
     const job = this.find(id);
-    if (!job) return;
+    if (!job || this.running?.id === id) return;
     if (!SETTLED.has(job.status) && job.status !== "awaiting-approval" && job.status !== "queued") return;
     this.jobs = this.jobs.filter((j) => j.id !== id);
     rmSync(this.episodeDir(id), { recursive: true, force: true });
@@ -220,10 +240,40 @@ export class JobQueue {
     const job = this.find(id);
     if (!job || !this.transcript(id)) return;
     if (job.status === "writing" || job.status === "needs-review") return;
+    // Not while clips are being picked from the current notes.
+    if (job.social?.status === "running") return;
     writeJsonAtomic(join(this.episodeDir(id), "details.json"), details);
     Object.assign(job, { status: "writing", stage: "Waiting", error: undefined, failedStep: undefined });
     this.changed();
     this.pump();
+  }
+
+  /** The episode's suggested social clips, if any. */
+  social(id: string): SocialResult | null {
+    const saved = this.readEpisodeFile<SocialResult>(id, "social.json");
+    return saved?.version === 1 ? saved : null;
+  }
+
+  /** Queue social clips for an episode with show notes (again, if it has some). */
+  suggestClips(id: string): void {
+    const job = this.find(id);
+    if (!job || job.status !== "written" || !this.deps.suggest) return;
+    if (job.social?.status === "queued" || job.social?.status === "running") return;
+    job.social = { status: "queued", stage: "Waiting" };
+    this.changed();
+    this.pump();
+  }
+
+  /** Stop suggesting clips; any clips from before stay. */
+  cancelSocial(id: string): void {
+    const job = this.find(id);
+    if (!job?.social || (job.social.status !== "queued" && job.social.status !== "running")) return;
+    if (this.running?.id === id && this.running.step === "social") {
+      this.running.abort.abort(); // the runner settles the state
+      return;
+    }
+    job.social = this.socialAfterStop(id);
+    this.changed();
   }
 
   /**
@@ -283,25 +333,38 @@ export class JobQueue {
     return null;
   }
 
+  /** The next job with work waiting: transcription and notes first, then social clips. */
+  private nextJob(): Job | undefined {
+    return this.jobs.find((j) => WAITING.has(j.status)) ?? this.jobs.find((j) => j.social?.status === "queued");
+  }
+
   /** Start the next waiting job if nothing is running. */
   private pump(): void {
     if (this.running) return;
-    const next = this.jobs.find((j) => WAITING.has(j.status));
+    const next = this.nextJob();
     if (!next) return;
     void this.run(next);
   }
 
   private async run(job: Job): Promise<void> {
     const abort = new AbortController();
-    this.running = { id: job.id, abort };
+    const step: Step = job.status === "writing" ? "writing" : job.status === "queued" ? "transcription" : "social";
+    this.running = { id: job.id, step, abort };
     this.deps.onBusyChange?.(true);
-    const step = job.status === "writing" ? "writing" : "transcription";
 
     try {
       if (step === "transcription") await this.transcribe(job, abort.signal);
-      else await this.writeNotes(job, abort.signal);
+      else if (step === "writing") await this.writeNotes(job, abort.signal);
+      else await this.runSocial(job, abort.signal);
     } catch (err) {
-      if (err instanceof SkippedError) {
+      if (step === "social") {
+        // The notes are untouched either way; only the social state changes.
+        if (err instanceof AbortedError || abort.signal.aborted) job.social = this.socialAfterStop(job.id);
+        else {
+          job.social = { status: "failed", error: err instanceof Error ? err.message : String(err) };
+          this.deps.onEvent?.({ type: "clips-failed", job });
+        }
+      } else if (err instanceof SkippedError) {
         Object.assign(job, { status: "cancelled", stage: undefined, progress: undefined, error: err.message });
       } else if (err instanceof AbortedError || abort.signal.aborted) {
         if (step === "writing") Object.assign(job, { status: this.afterWritingStops(job.id), stage: undefined });
@@ -320,7 +383,7 @@ export class JobQueue {
       this.running = null;
       this.changed();
       // Stays busy if more work is waiting, so there's no idle flicker between jobs.
-      if (!this.jobs.some((j) => WAITING.has(j.status))) this.deps.onBusyChange?.(false);
+      if (!this.nextJob()) this.deps.onBusyChange?.(false);
       this.pump();
     }
   }
@@ -403,7 +466,40 @@ export class JobQueue {
         // Recorded on the job as exportError; the notes themselves are done.
       }
     }
+    // Clips follow the first notes; after that they're suggested again only when asked.
+    if (this.deps.suggest && this.deps.autoSocial?.() && !job.social && !this.social(job.id)) {
+      job.social = { status: "queued", stage: "Waiting" };
+    }
     this.deps.onEvent?.({ type: "written", job });
+  }
+
+  private async runSocial(job: Job, signal: AbortSignal): Promise<void> {
+    job.social = { status: "running", stage: "Starting" };
+    this.changed();
+    const transcript = this.transcript(job.id);
+    const edits = this.edits(job.id);
+    if (!transcript || !edits) throw new Error("This episode's transcript is missing.");
+    if (!this.deps.suggest) throw new Error("Social clips aren't available.");
+
+    const result = await this.deps.suggest({
+      transcript,
+      edits,
+      writing: this.writing(job.id),
+      signal,
+      onStage: (stage) => {
+        if (job.social) job.social.stage = stage;
+        this.changed();
+      },
+    });
+    writeJsonAtomic(join(this.episodeDir(job.id), "social.json"), result);
+    job.social = { status: "done", clipCount: result.clips.length };
+    this.deps.onEvent?.({ type: "clips-ready", job });
+  }
+
+  /** Where social clips go when stopped: back to the saved clips if there are some. */
+  private socialAfterStop(id: string): Job["social"] {
+    const saved = this.social(id);
+    return saved ? { status: "done", clipCount: saved.clips.length } : undefined;
   }
 
   /** Where an episode goes when writing is cancelled: back to its notes if it has some. */

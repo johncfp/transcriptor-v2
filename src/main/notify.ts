@@ -32,9 +32,19 @@ export function notifyJobEvent(
       title: job.failedStep === "writing" ? "Show notes failed" : "Transcription failed",
       body: `${job.fileName}: ${job.error ?? "Something went wrong."}`,
     },
+    "clips-ready": {
+      title: "Social clips ready",
+      body: job.social?.clipCount
+        ? `${job.social.clipCount} ${job.social.clipCount === 1 ? "clip" : "clips"} for ${job.fileName} ready to review.`
+        : `No clips for ${job.fileName} held up against the transcript. You can ask for new ones.`,
+    },
+    "clips-failed": {
+      title: "Social clips failed",
+      body: `${job.fileName}: ${job.social?.error ?? "Something went wrong."} The show notes are fine.`,
+    },
   }[event.type];
 
-  const n = new Notification({ ...content, silent: event.type === "transcribed" });
+  const n = new Notification({ ...content, silent: event.type === "transcribed" || event.type === "clips-ready" });
   n.on("click", () => opts.onClick(job.id));
   n.show();
 }

@@ -204,6 +204,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       // Show notes, written with the real Claude SDK against a local fake API.
       const claude = await startFakeAnthropic({
         draft: SMOKE_DRAFT,
+        social: SMOKE_CLIPS,
         research: {
           searched: ["https://pete.example/"],
           input: {
@@ -216,6 +217,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await js(`(async () => {
         await window.api.setKey("anthropic", "sk-ant-smoke");
         await window.api.updateSettings({ writing: { provider: "anthropic", model: "", baseUrl: ${JSON.stringify(claude.url)} } });
+        // Social clips follow the notes; the episode is 8 s, so allow short clips.
+        await window.api.updateSettings({ social: { enabled: true, baseUrl: ${JSON.stringify(claude.url)}, minClips: 1, minSeconds: 5, maxSeconds: 20 } });
       })()`);
       await click("button", "Write show notes");
       let notesStatus = "";
@@ -223,6 +226,20 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         await pause(150);
         notesStatus = await js<string>(`window.api.listJobs().then((j) => j[0]?.status ?? "")`);
       }
+      // Then the social clips step, with its own model (Sonnet by default) and effort.
+      let social: { status?: string; clipCount?: number; error?: string } | null = null;
+      for (let i = 0; i < 60 && social?.status !== "done" && social?.status !== "failed"; i++) {
+        await pause(150);
+        social = await js(`window.api.listJobs().then((j) => j[0]?.social ?? null)`);
+      }
+      const socialRequest = claude.requests.find((r) => r.body.stream && JSON.stringify(r.body.output_config ?? {}).includes('"clips"'))?.body;
+      const socialStep =
+        social?.status === "done" &&
+        social.clipCount === 1 &&
+        notesStatus === "written" &&
+        socialRequest?.model === "claude-sonnet-5-5" &&
+        (socialRequest?.output_config as { effort?: string } | undefined)?.effort === "medium";
+      await js(`window.api.updateSettings({ social: { enabled: false, minClips: 3, minSeconds: 15, maxSeconds: 60 } })`);
       await pause(500);
       const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
       const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
@@ -585,17 +602,19 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           ALL_SECTIONS.every((t) => sections.includes(t)) &&
           modelPicker &&
           socialOk &&
+          socialStep &&
           folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, socialStep, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
         selectWidths,
         unknownModel,
         socialPicker,
+        social,
         heading: probe.heading,
         intake: probe.intake,
         keyRoundTrip,
@@ -658,6 +677,22 @@ const SMOKE_DRAFT = {
     quotes: [{ text: "Thanks, glad to be here." }],
     frameworks: [],
   },
+};
+
+/**
+ * One clip across both speakers, quoting the transcript as reviewed: the
+ * fillers ("Um," "uh,") are cleaned out and review removed "really".
+ */
+const SMOKE_CLIPS = {
+  clips: [
+    {
+      title: "A warm welcome",
+      why: "Short and friendly.",
+      first_words: "Hey, I'm Nigel. Welcome to",
+      last_words: "Thanks, glad to be here.",
+      captions: { instagram: { text: "Pete joins the show.", hashtags: ["podcast"] }, x: { text: "Pete joins the show.", hashtags: [] } },
+    },
+  ],
 };
 
 /** Every settings section, which between them the tabs must show. */

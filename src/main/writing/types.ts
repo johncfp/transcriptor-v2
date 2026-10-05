@@ -11,6 +11,15 @@ export interface ProviderCall {
   signal?: AbortSignal;
 }
 
+/** The JSON a draft call should return. */
+export interface JsonFormat {
+  /** Schema name, for providers that want one. */
+  name: string;
+  schema: Record<string, unknown>;
+  /** What's being written, for error messages: "Claude declined to write <what>." */
+  what: string;
+}
+
 export interface WritingProvider {
   /** A provider id from src/shared/providers.ts. */
   id: string;
@@ -18,8 +27,11 @@ export interface WritingProvider {
   defaultModel: string;
   /** Look up the guest with the provider's web search. */
   research(call: ProviderCall, prompt: { system: string; user: string }): Promise<RawResearch>;
-  /** Write the draft; returns parsed JSON (checked by coerceDraft/checkDraft afterwards). */
-  draft(call: ProviderCall, prompt: { system: string; user: string }): Promise<unknown>;
+  /**
+   * Write a draft; returns parsed JSON, checked afterwards (coerceDraft/checkDraft
+   * for show notes, coerceClips/checkClips for social clips). Defaults to show notes.
+   */
+  draft(call: ProviderCall, prompt: { system: string; user: string }, format?: JsonFormat): Promise<unknown>;
 }
 
 /** An error with a message meant for the person using the app. */

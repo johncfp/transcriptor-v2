@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { providerById } from "../../shared/providers";
 import type { RawResearch } from "../../shared/verify";
 import { AbortedError } from "../transcribe/multipart";
-import { RESEARCH_TOOL, WRITING_SCHEMA } from "./prompts";
+import { NOTES_FORMAT, RESEARCH_TOOL } from "./prompts";
 import { ProviderError, type ProviderCall, type WritingProvider } from "./types";
 
 type BetaMessage = Anthropic.Beta.BetaMessage;
@@ -12,7 +12,7 @@ type BetaMessageParam = Anthropic.Beta.BetaMessageParam;
  * Models that get server-side refusal fallbacks: if the model declines, the
  * API re-runs the same request on a fallback model inside the same call.
  */
-const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"]);
+const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"]);
 
 function client(call: ProviderCall): Anthropic {
   return new Anthropic({ apiKey: call.apiKey, baseURL: call.baseUrl, maxRetries: 2 });
@@ -43,9 +43,9 @@ function explain(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
-function checkStop(message: BetaMessage): void {
+function checkStop(message: BetaMessage, what: string): void {
   if (message.stop_reason === "refusal") {
-    throw new ProviderError("Claude declined to write this episode's notes.");
+    throw new ProviderError(`Claude declined to write ${what} for this episode.`);
   }
   if (message.stop_reason === "max_tokens") {
     throw new ProviderError("Claude ran out of room before finishing. Try again, or use a shorter episode.");
@@ -114,7 +114,7 @@ export const anthropicWriter: WritingProvider = {
     throw new ProviderError("Claude didn't finish the guest lookup.");
   },
 
-  async draft(call, prompt) {
+  async draft(call, prompt, format = NOTES_FORMAT) {
     let message: BetaMessage;
     try {
       // Streamed: a long transcript plus thinking can take a while, and
@@ -128,7 +128,7 @@ export const anthropicWriter: WritingProvider = {
             system: prompt.system,
             messages: [{ role: "user", content: prompt.user }],
             output_config: {
-              format: { type: "json_schema", schema: WRITING_SCHEMA },
+              format: { type: "json_schema", schema: format.schema },
               ...(call.effort ? { effort: call.effort } : {}),
             },
             ...fallbackParams(call.model),
@@ -139,12 +139,12 @@ export const anthropicWriter: WritingProvider = {
     } catch (err) {
       throw explain(err);
     }
-    checkStop(message);
+    checkStop(message, format.what);
     const text = message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
     try {
       return JSON.parse(text);
     } catch {
-      throw new ProviderError("Claude's reply couldn't be read as show notes. Try again.");
+      throw new ProviderError(`Claude's reply couldn't be read as ${format.what}. Try again.`);
     }
   },
 };

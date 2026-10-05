@@ -18,6 +18,8 @@ import { JobQueue } from "./jobQueue";
 import { providerById } from "../shared/providers";
 import { anthropicWriter } from "./writing/anthropic";
 import { writeEpisode, writerById } from "./writing";
+import { suggestClips } from "./writing/social";
+import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
 import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
@@ -91,6 +93,19 @@ function start(): void {
     };
   };
 
+  // The same for social clips, which have their own provider and model.
+  const socialSetup = () => {
+    const s = settings.get().social;
+    const writer = writerById(s.provider) ?? anthropicWriter;
+    return {
+      writer,
+      apiKey: keys.get(writer.id),
+      model: s.model.trim() || socialDefaultModel(writer.id) || writer.defaultModel,
+      baseUrl: s.baseUrl.trim() || undefined,
+      effort: providerById(writer.id)?.effort && s.effort ? s.effort : undefined,
+    };
+  };
+
   let sleepBlocker: number | null = null;
   queue = new JobQueue({
     dataDir: userData,
@@ -116,6 +131,27 @@ function start(): void {
       });
     },
     canWrite: () => writerSetup().apiKey !== null,
+    suggest: (req) => {
+      const { writer, apiKey, model, baseUrl, effort } = socialSetup();
+      if (!apiKey) {
+        throw new Error(`Add your ${providerById(writer.id)?.label ?? writer.label} API key in Settings, then try again.`);
+      }
+      const { show, social } = settings.get();
+      return suggestClips({
+        transcript: req.transcript,
+        edits: req.edits,
+        writing: req.writing,
+        show: { name: show.name, hosts: show.hosts, website: show.website },
+        limits: clipLimits(social),
+        platforms: PLATFORMS.map((p) => p.id).filter((id) => social.platforms[id]),
+        voice: social.voice,
+        customVoice: social.customVoice,
+        writer,
+        call: { apiKey, model, baseUrl, effort, signal: req.signal },
+        onStage: req.onStage,
+      });
+    },
+    autoSocial: () => settings.get().social.enabled && socialSetup().apiKey !== null,
     exportEpisode: (data, formats) => {
       const s = settings.get();
       const { label, documents } = episodeDocuments({
