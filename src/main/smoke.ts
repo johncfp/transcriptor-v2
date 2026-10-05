@@ -95,9 +95,21 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
   win.webContents.on("console-message", (e) => {
     if (e.level === "error") consoleErrors.push(e.message);
   });
+  // Keep timers and animation frames at full speed even if the window is
+  // covered or minimised.
+  win.webContents.setBackgroundThrottling(false);
   const js = <T>(code: string): Promise<T> => win.webContents.executeJavaScript(code);
-  const shot = async (name: string) =>
+  // capturePage returns the last painted frame, so ask for a repaint and wait
+  // two animation frames for it. The timeout covers a page that has stopped
+  // running animation frames.
+  const shot = async (name: string) => {
+    win.webContents.invalidate();
+    await js(`Promise.race([
+      new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+      new Promise((r) => setTimeout(r, 500)),
+    ])`);
     writeFileSync(join(dir, name), (await win.webContents.capturePage()).toPNG());
+  };
   const click = async (selector: string, text: string) => {
     const found = await js<boolean>(`(() => {
       const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.textContent.includes(${JSON.stringify(text)}));
