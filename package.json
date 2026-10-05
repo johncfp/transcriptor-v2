@@ -50,6 +50,12 @@
       "!out/**/*.map"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "out/THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      }
+    ],
     "mac": {
       "target": [
         {
@@ -100,6 +106,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
+    "mediabunny": "1.61.1",
     "png2icons": "^2.0.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

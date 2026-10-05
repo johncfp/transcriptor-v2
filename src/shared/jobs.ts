@@ -66,6 +66,10 @@ export interface SocialState {
   error?: string;
   /** How many clips were kept, once done. */
   clipCount?: number;
+  /** The last export of just the kept clips (from the Clips tab). */
+  exported?: { at: string; folder: string; files: string[] };
+  /** Why the last clips export failed. */
+  exportError?: string;
 }
 
 /** Statuses where the job is done moving and can be removed or retried. */

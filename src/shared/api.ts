@@ -83,6 +83,8 @@ export interface Api {
   /** Queue social clips for an episode with show notes (again, replacing the old ones). */
   suggestClips(id: string): Promise<void>;
   cancelClips(id: string): Promise<void>;
+  /** Export the kept clips' audio and their document; rejects with a readable message on failure. */
+  exportClips(id: string): Promise<{ folder: string; files: string[] }>;
   /** Save a custom template's sections to a file others can import. */
   exportTemplate(sections: SectionId[]): Promise<boolean>;
   /** Save an annotated sample template file to start a custom one from. */
@@ -148,6 +150,7 @@ export const IPC = {
   saveClips: "jobs:save-clips",
   suggestClips: "jobs:suggest-clips",
   cancelClips: "jobs:cancel-clips",
+  exportClips: "jobs:export-clips",
   exportTemplate: "template:export",
   importTemplate: "template:import",
   saveSampleTemplate: "template:sample",

@@ -7,7 +7,7 @@ import type { EpisodeEdits } from "../shared/cleanup";
 import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
 import { readTemplateFile, sampleTemplateFile, templateFile } from "./templateFile";
 import { cleanTranscript } from "../shared/cleanup";
-import { episodeDocuments, type ExportFormat } from "../shared/exportDocs";
+import { clipFileName, episodeDocuments, safeFileName, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
 import { printPdf } from "./pdf";
@@ -21,6 +21,7 @@ import { writeEpisode, writerById } from "./writing";
 import { suggestClips } from "./writing/social";
 import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
 import { clipContext, reviseClip, type ClipEdit } from "../shared/clips";
+import { cutClips } from "./clipCutter";
 import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
@@ -153,9 +154,10 @@ function start(): void {
       });
     },
     autoSocial: () => settings.get().social.enabled && socialSetup().apiKey !== null,
-    exportEpisode: (data, formats) => {
+    exportEpisode: async (data, formats, opts) => {
       const s = settings.get();
-      const { label, documents } = episodeDocuments({
+      const kept = data.social?.clips.filter((c) => c.kept) ?? [];
+      const { label, documents: all } = episodeDocuments({
         turns: cleanTranscript(data.transcript, data.edits),
         details: data.details,
         writing: data.writing,
@@ -167,10 +169,30 @@ function start(): void {
           format: s.output.speakerFormat,
           confidence: s.output.colorConfidence ? clampThresholds(s.confidence) : null,
         },
+        clips: kept,
       });
+      const documents = opts?.clipsOnly ? all.filter((d) => d.kind === "Social Clips") : all;
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       const { branding } = s.output;
+      // Kept clips' audio, cut from the episode. With clips but none kept, earlier clip files are cleared.
+      const base = safeFileName(label);
+      const clips = data.social
+        ? (
+            await cutClips(
+              data.job.filePath,
+              kept.map((c) => ({ start: c.start, end: c.end })),
+              {
+                preload: join(__dirname, "..", "preload", "cutter.js"),
+                load: (win) =>
+                  devServerUrl
+                    ? win.loadURL(new URL("cutter.html", devServerUrl).href)
+                    : win.loadFile(join(__dirname, "..", "renderer", "cutter.html")),
+              },
+            )
+          ).map((data, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data }))
+        : undefined;
       return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+        clips,
         renderPdf: printPdf,
         branding: {
           ...branding,
@@ -540,12 +562,13 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   });
   ipcMain.handle(IPC.suggestClips, (_e, id: string) => jobs.suggestClips(id));
   ipcMain.handle(IPC.cancelClips, (_e, id: string) => jobs.cancelSocial(id));
+  ipcMain.handle(IPC.exportClips, (_e, id: string) => jobs.exportClips(id));
   ipcMain.handle(IPC.exportEpisode, (_e, id: string, formats: unknown) =>
     jobs.exportNow(id, Array.isArray(formats) ? EXPORT_FORMATS.filter((f) => formats.includes(f)) : undefined),
   );
   ipcMain.handle(IPC.openFolder, async (_e, path: string) => {
     // Only folders this app exported to; never an arbitrary path from the renderer.
-    if (jobs.list().some((j) => j.exported?.folder === path)) await shell.openPath(path);
+    if (jobs.list().some((j) => j.exported?.folder === path || j.social?.exported?.folder === path)) await shell.openPath(path);
   });
   ipcMain.handle(IPC.exportTemplate, async (_e, sections: unknown) => {
     const result = await (mainWindow

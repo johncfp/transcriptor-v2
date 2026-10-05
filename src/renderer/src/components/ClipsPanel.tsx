@@ -62,18 +62,18 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
   }, [job.id, settings.show.website]);
 
   // Save edits shortly after typing stops, and before leaving.
-  const flush = () => {
+  const flush = (): Promise<void> => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     const edits = pending.current;
     pending.current = {};
-    if (!Object.keys(edits).length) return;
-    window.api.saveClips(job.id, edits).then(
+    if (!Object.keys(edits).length) return Promise.resolve();
+    return window.api.saveClips(job.id, edits).then(
       () => setSaveError(""),
       () => setSaveError("Changes couldn't be saved. Try again."),
     );
   };
-  useEffect(() => flush, []);
+  useEffect(() => () => void flush(), []);
 
   const update = (clip: SocialClip, change: Partial<ClipEdit>) => {
     if (!ctx || !result) return;
@@ -82,7 +82,7 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
     setResult({ ...result, clips: result.clips.map((c) => (c.id === clip.id ? next : c)) });
     pending.current[clip.id] = edit;
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(flush, 500);
+    timer.current = setTimeout(() => void flush(), 500);
     // Hear a trimmed edge straight away.
     if (playing?.id === clip.id && (change.firstWord !== undefined || change.lastWord !== undefined)) play(next);
   };
@@ -114,8 +114,7 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
 
   const suggest = () => {
     if (result?.clips.length && !confirm("Suggest new clips? This replaces the current clips and any changes you made to them.")) return;
-    flush();
-    void window.api.suggestClips(job.id);
+    void flush().then(() => window.api.suggestClips(job.id));
   };
 
   const clips = result?.clips ?? [];
@@ -155,6 +154,9 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
             {!settings.social.enabled && " Social clips are switched off there, so new episodes don't get them automatically."}
           </p>
         </Section>
+        {result && result.clips.length > 0 && (
+          <ClipsExport job={job} keptCount={keptCount} folder={job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"} beforeExport={flush} />
+        )}
         {result && <ClipChecks result={result} keptCount={keptCount} />}
       </aside>
 
@@ -193,6 +195,60 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
         )}
       </div>
     </div>
+  );
+}
+
+const cleanError = (err: unknown) =>
+  String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+
+/** Export the kept clips: each as a WAV, plus a Social Clips document with their captions. */
+function ClipsExport(props: { job: Job; keptCount: number; folder: string; beforeExport: () => Promise<void> }) {
+  const { job, keptCount } = props;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const exported = job.social?.exported;
+  useEffect(() => setError(job.social?.exportError ?? ""), [job.social?.exportError]);
+
+  return (
+    <Section title="Export clips">
+      <p className="hint">
+        Each kept clip as a WAV file in a Clips folder, plus a Social Clips document with their captions, in your usual
+        formats. Saved to {props.folder}, in the episode's folder. Exporting the episode includes them too.
+      </p>
+      <div className="notes-actions">
+        <button
+          className="button primary"
+          disabled={!keptCount || busy}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              // The latest edits first, so the export has them.
+              await props.beforeExport();
+              await window.api.exportClips(job.id);
+            } catch (err) {
+              setError(cleanError(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Cutting clips…" : keptCount ? `Export ${keptCount} kept clip${keptCount === 1 ? "" : "s"}` : "Export kept clips"}
+        </button>
+        {exported && (
+          <button className="button" onClick={() => void window.api.openFolder(exported.folder)}>
+            Open folder
+          </button>
+        )}
+      </div>
+      {!keptCount && <p className="hint">Keep at least one clip to export.</p>}
+      {error && <p className="hint error">{error}</p>}
+      {exported && !error && (
+        <p className="hint">
+          Exported {exported.files.length} file{exported.files.length === 1 ? "" : "s"} on {new Date(exported.at).toLocaleString()}.
+        </p>
+      )}
+    </Section>
   );
 }
 

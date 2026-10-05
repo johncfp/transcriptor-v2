@@ -38,6 +38,8 @@ export interface EpisodeExportData {
   edits: EpisodeEdits;
   details: EpisodeDetails;
   writing: WritingResult | null;
+  /** Social clips, if suggested; the kept ones are exported. */
+  social: SocialResult | null;
 }
 
 export interface JobQueueDeps {
@@ -53,8 +55,11 @@ export interface JobQueueDeps {
   write: (req: WriteRequest) => Promise<WritingResult>;
   /** True when a writing provider has a key, so notes can be written without asking. */
   canWrite: () => boolean;
-  /** Write the episode's documents to disk; `formats` overrides the Settings default. */
-  exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[]) => Promise<ExportResult>;
+  /**
+   * Write the episode's documents to disk; `formats` overrides the Settings
+   * default. `clipsOnly` writes just the kept clips and their document.
+   */
+  exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[], opts?: { clipsOnly?: boolean }) => Promise<ExportResult>;
   /** Export as soon as show notes are written. */
   autoExport: () => boolean;
   /** Suggests social clips with the configured provider; throws a readable error if it can't. */
@@ -294,11 +299,41 @@ export class JobQueue {
     const details = this.details(id);
     if (!job || !transcript || !edits || !details) throw new Error("This episode hasn't been transcribed yet.");
     try {
-      const result = await this.deps.exportEpisode({ job, transcript, edits, details, writing: this.writing(id) }, formats);
+      const result = await this.deps.exportEpisode(
+        { job, transcript, edits, details, writing: this.writing(id), social: this.social(id) },
+        formats,
+      );
       Object.assign(job, { exported: { at: new Date().toISOString(), ...result }, exportError: undefined });
       return result;
     } catch (err) {
       job.exportError = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      this.changed();
+    }
+  }
+
+  /**
+   * Export just the kept clips: their audio and the Social Clips document.
+   * Recorded on the job's social state as well as returned.
+   */
+  async exportClips(id: string): Promise<ExportResult> {
+    const job = this.find(id);
+    const transcript = this.transcript(id);
+    const edits = this.edits(id);
+    const details = this.details(id);
+    const social = this.social(id);
+    if (!job?.social || !transcript || !edits || !details || !social) throw new Error("This episode has no clips yet.");
+    if (!social.clips.some((c) => c.kept)) throw new Error("Keep at least one clip to export.");
+    const state = job.social;
+    try {
+      const result = await this.deps.exportEpisode({ job, transcript, edits, details, writing: this.writing(id), social }, undefined, {
+        clipsOnly: true,
+      });
+      Object.assign(state, { exported: { at: new Date().toISOString(), ...result }, exportError: undefined });
+      return result;
+    } catch (err) {
+      state.exportError = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
       this.changed();

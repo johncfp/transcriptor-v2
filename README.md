@@ -38,6 +38,18 @@ see [INSTALL.md](INSTALL.md).
    episode's Export card. The Word files use real heading and list styles, so
    they convert cleanly to Google Docs. PDF is also available, and Word and
    PDF can have a cover page, a logo, and header and footer text.
+6. **Social clips** (optional, Settings › Social): after the show notes, a
+   model of its own (Claude Sonnet 5.5 at medium effort by default) picks
+   short moments for social media and writes a caption for each platform
+   (Instagram/TikTok, X/Threads, LinkedIn, YouTube Shorts) in a voice of its
+   own. The model only names each clip's first and last words; the clip's
+   text, speakers and times come from the transcript, and clips that can't be
+   found or don't fit the length settings are dropped. Captions over a
+   platform's limit, or with numbers or links that aren't in the transcript,
+   confirmed guest facts or show website, are flagged. On the episode's Clips
+   tab you play, trim (a word at a time), edit and keep clips; kept clips are
+   exported as WAV files in a Clips folder, with a Social Clips document of
+   their captions.
 
 Also: watching a Google Drive folder through Drive for Desktop (below), a
 live model list with an effort level for Claude and GPT, light and dark
@@ -60,6 +72,7 @@ Built in milestones:
 | M3 | AI writing: show-notes templates, reference file, guest lookup | Done |
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
 | M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
+| M6 | Social clips: suggested clips and captions, review, WAV export | In progress |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.

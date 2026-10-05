@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { strFromU8, unzipSync } from "fflate";
-import { buildTranscriptDoc, episodeLabel, safeFileName } from "../src/shared/exportDocs";
+import { buildTranscriptDoc, clipFileName, episodeDocuments, episodeLabel, isClipFile, safeFileName } from "../src/shared/exportDocs";
+import type { SocialClip } from "../src/shared/clips";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "../src/shared/confidence";
 import { DEFAULT_SETTINGS, mergeSettings, type SpeakerFormat } from "../src/shared/settings";
 import { EMPTY_DETAILS, toPlainText, type Block } from "../src/shared/showNotes";
@@ -255,4 +256,79 @@ test("settings: the logo can only name an imported logo file", () => {
   assert.equal(merged("../../keys.json"), "");
   assert.equal(merged("C:\\logo.png"), "");
   assert.equal(merged(""), "");
+});
+
+// --- Social clips -------------------------------------------------------------
+
+const CLIP: SocialClip = {
+  id: "clip-1",
+  title: 'Tools versus "reasons"?',
+  why: "",
+  firstWord: 0,
+  lastWord: 9,
+  start: 75.25,
+  end: 102.5,
+  lines: [
+    { speaker: "Pete M.", text: "If a tool saves me an hour but costs me the reason I started, that's not a win." },
+    { speaker: "Nigel T.", text: "Love that." },
+  ],
+  captions: {
+    instagram: { text: "Every new tool has a price.", hashtags: ["focus", "tools"], problems: [] },
+    x: { text: "Short.", hashtags: [], problems: [] },
+  },
+  titleProblems: [],
+  kept: true,
+};
+
+test("social clips document: each kept clip's times, audio file, words and captions", () => {
+  const show = { name: "The Test Show", website: "", email: "", signOff: "" };
+  const { documents } = episodeDocuments({
+    turns: [],
+    details: { ...EMPTY_DETAILS, episodeNumber: "386" },
+    writing: null,
+    fileName: "ep.mp3",
+    show,
+    sections: [],
+    transcript: { timestamps: true, format: "stacked", confidence: null },
+    clips: [CLIP],
+  });
+  assert.deepEqual(
+    documents.map((d) => d.kind),
+    ["Transcript", "Social Clips"],
+  );
+  const text = toPlainText(documents[1]!.blocks);
+  assert.match(text, /Clip 1: Tools versus "reasons"\?/);
+  assert.match(text, /01:15\.2 to 01:42\.5 \(27\.3 s\)\. Audio: Clips\/Episode 386 - Clip 1 - Tools versus reasons\.wav/);
+  assert.match(text, /that's not a win\./);
+  assert.match(text, /Instagram \/ TikTok\s+Every new tool has a price\.\s+#focus #tools/);
+  assert.ok(text.indexOf("Instagram") < text.indexOf("X / Threads"));
+  assert.equal(
+    episodeDocuments({ turns: [], details: EMPTY_DETAILS, writing: null, fileName: "ep.mp3", show, sections: [], transcript: { timestamps: true, format: "stacked", confidence: null }, clips: [] }).documents.length,
+    1,
+    "no clips, no document",
+  );
+});
+
+test("clip audio goes in a Clips folder and replaces the episode's earlier clips, nothing else", async () => {
+  const root = mkdtempSync(join(tmpdir(), "t2-export-"));
+  const base = "Episode 386";
+  const folder = join(root, base, "Clips");
+  const first = await writeExport(root, base, [], [], {
+    clips: [
+      { name: clipFileName(base, 1, "One"), data: new Uint8Array([1]) },
+      { name: clipFileName(base, 2, "Two"), data: new Uint8Array([2]) },
+    ],
+  });
+  assert.equal(first.files.length, 2);
+  writeFileSync(join(folder, "my own edit.wav"), "keep me");
+  writeFileSync(join(folder, `${base} - Clip 1 - notes.txt`), "keep me too");
+
+  await writeExport(root, base, [], [], { clips: [{ name: clipFileName(base, 1, "Only one now"), data: new Uint8Array([3]) }] });
+  assert.deepEqual(readdirSync(folder).sort(), [`${base} - Clip 1 - Only one now.wav`, `${base} - Clip 1 - notes.txt`, "my own edit.wav"]);
+  assert.ok(isClipFile(base, `${base} - Clip 12 - X.WAV`));
+  assert.ok(!isClipFile(base, `Episode 3860 - Clip 1 - X.wav`));
+
+  // Documents only: the Clips folder is left as it was.
+  await writeExport(root, base, [{ kind: "Transcript", blocks: [] }], ["txt"]);
+  assert.equal(readdirSync(folder).length, 3);
 });
