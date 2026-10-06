@@ -14,6 +14,7 @@ import { audioUrl, type Job } from "../../../shared/jobs";
 import { EFFORT_LABELS, providerById, type Effort } from "../../../shared/providers";
 import type { Settings } from "../../../shared/settings";
 import { PLATFORMS, socialDefaultModel, type PlatformId } from "../../../shared/social";
+import { SHAPES } from "../../../shared/video";
 import { formatTimestamp } from "../../../shared/transcript";
 import { isVoiceId, VOICES } from "../../../shared/voices";
 import { Section } from "./Section";
@@ -170,7 +171,13 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
           />
         )}
         {result && result.clips.length > 0 && (
-          <ClipsExport job={job} keptCount={keptCount} folder={job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"} beforeExport={flush} />
+          <ClipsExport
+            job={job}
+            keptCount={keptCount}
+            folder={job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"}
+            video={settings.video}
+            beforeExport={flush}
+          />
         )}
         {result && <ClipChecks result={result} keptCount={keptCount} />}
       </aside>
@@ -219,18 +226,26 @@ const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
 /** Export the kept clips: each as a WAV, plus a Social Clips document with their captions. */
-function ClipsExport(props: { job: Job; keptCount: number; folder: string; beforeExport: () => Promise<void> }) {
-  const { job, keptCount } = props;
+/** Export the kept clips: each as a WAV (and, with video clips on, an MP4 per shape), plus a Social Clips document. */
+function ClipsExport(props: { job: Job; keptCount: number; folder: string; video: Settings["video"]; beforeExport: () => Promise<void> }) {
+  const { job, keptCount, video } = props;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const exported = job.social?.exported;
+  const progress = job.social?.exporting;
   useEffect(() => setError(job.social?.exportError ?? ""), [job.social?.exportError]);
+  const shapes = SHAPES.filter((s) => video.shapes[s.id]);
+  const withVideo = video.enabled && shapes.length > 0;
+  const percent = progress && progress.total ? Math.floor((progress.done / progress.total) * 100) : 0;
 
   return (
     <Section title="Export clips">
       <p className="hint">
-        Each kept clip as a WAV file in a Clips folder, plus a Social Clips document with their captions, in your usual
-        formats. Saved to {props.folder}, in the episode's folder. Exporting the episode includes them too.
+        {withVideo
+          ? `Each kept clip as a WAV file and as video (${shapes.map((s) => s.label).join(", ")}), in a Clips folder, `
+          : "Each kept clip as a WAV file in a Clips folder, "}
+        plus a Social Clips document with their captions, in your usual formats. Saved to {props.folder}, in the episode's folder.
+        {!withVideo && " For videos, turn on Make video clips in Settings › Social."}
       </p>
       <div className="notes-actions">
         <button
@@ -250,17 +265,30 @@ function ClipsExport(props: { job: Job; keptCount: number; folder: string; befor
             }
           }}
         >
-          {busy ? "Cutting clips…" : keptCount ? `Export ${keptCount} kept clip${keptCount === 1 ? "" : "s"}` : "Export kept clips"}
+          {busy ? (progress ? "Making videos…" : "Cutting clips…") : keptCount ? `Export ${keptCount} kept clip${keptCount === 1 ? "" : "s"}` : "Export kept clips"}
         </button>
-        {exported && (
+        {busy && (
+          <button className="button ghost" onClick={() => void window.api.cancelClipsExport(job.id)}>
+            Cancel
+          </button>
+        )}
+        {exported && !busy && (
           <button className="button" onClick={() => void window.api.openFolder(exported.folder)}>
             Open folder
           </button>
         )}
       </div>
+      {busy && progress && (
+        <>
+          <div className="progress" role="progressbar" aria-label="Video progress" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+            <div className="progress-bar" style={{ width: `${percent}%` }} />
+          </div>
+          <p className="hint">{percent}% of the videos made.</p>
+        </>
+      )}
       {!keptCount && <p className="hint">Keep at least one clip to export.</p>}
       {error && <p className="hint error">{error}</p>}
-      {exported && !error && (
+      {exported && !error && !busy && (
         <p className="hint">
           Exported {exported.files.length} file{exported.files.length === 1 ? "" : "s"} on {new Date(exported.at).toLocaleString()}.
         </p>

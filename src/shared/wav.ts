@@ -61,10 +61,16 @@ export class ClipAssembler {
     return this.rate > 0 && this.filled * this.channels >= this.pcm.length;
   }
 
-  /** The clip as a WAV file; shorter than asked if the audio ended first. */
-  toWav(): Uint8Array {
+  /** The clip's samples (interleaved, 16-bit); shorter than asked if the audio ended first. */
+  toPcm(): { pcm: Int16Array; sampleRate: number; channels: number } {
     if (!this.rate || !this.filled) throw new Error("No audio was found for this clip.");
-    return wavFile(this.pcm.subarray(0, this.filled * this.channels), this.rate, this.channels);
+    return { pcm: this.pcm.subarray(0, this.filled * this.channels), sampleRate: this.rate, channels: this.channels };
+  }
+
+  /** The clip as a WAV file. */
+  toWav(): Uint8Array {
+    const { pcm, sampleRate, channels } = this.toPcm();
+    return wavFile(pcm, sampleRate, channels);
   }
 }
 

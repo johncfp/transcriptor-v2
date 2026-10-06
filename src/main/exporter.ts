@@ -22,10 +22,16 @@ export interface ExportOptions {
   renderPdf?: PdfRenderer;
   branding?: ExportBranding;
   /**
-   * Kept clips' audio, written to <folder>/Clips/ in place of the episode's
-   * earlier clips. Undefined leaves that folder alone.
+   * Kept clips' audio and videos, written to <folder>/Clips/ in place of the
+   * episode's earlier clip files. Undefined leaves that folder alone.
    */
   clips?: { name: string; data: Uint8Array }[];
+  /**
+   * Which of the episode's earlier clip files `clips` replaces: the kept clips'
+   * own export replaces audio and video; the episode's export, which makes no
+   * videos, only the audio, so videos made from the Clips tab stay.
+   */
+  replaceClips?: ("wav" | "mp4")[];
 }
 
 export async function writeExport(
@@ -33,7 +39,7 @@ export async function writeExport(
   label: string,
   documents: ExportDocument[],
   formats: ExportFormat[],
-  { renderPdf, branding, clips }: ExportOptions = {},
+  { renderPdf, branding, clips, replaceClips = ["wav", "mp4"] }: ExportOptions = {},
 ): Promise<ExportResult> {
   if (!formats.length && !clips?.length) throw new Error("Choose at least one format to export.");
   if (formats.includes("pdf") && !renderPdf) throw new Error("PDF export isn't available here.");
@@ -62,7 +68,8 @@ export async function writeExport(
       mkdirSync(clipsFolder, { recursive: true });
       // Clips un-kept since the last export shouldn't linger; only this episode's clip files are touched.
       for (const name of readdirSync(clipsFolder)) {
-        if (isClipFile(base, name)) rmSync(join(clipsFolder, name), { force: true });
+        const kind = name.split(".").pop()!.toLowerCase() as "wav" | "mp4";
+        if (isClipFile(base, name) && replaceClips.includes(kind)) rmSync(join(clipsFolder, name), { force: true });
       }
       for (const clip of clips) {
         const path = join(clipsFolder, clip.name);

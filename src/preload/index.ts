@@ -47,6 +47,7 @@ const api: Api = {
   cancelClips: (id) => ipcRenderer.invoke(IPC.cancelClips, id),
   exportClips: (id) => ipcRenderer.invoke(IPC.exportClips, id),
   clipLevels: (id, start, end) => ipcRenderer.invoke(IPC.clipLevels, id, start, end),
+  cancelClipsExport: (id) => ipcRenderer.invoke(IPC.cancelClipsExport, id),
   exportTemplate: (sections) => ipcRenderer.invoke(IPC.exportTemplate, sections),
   importTemplate: () => ipcRenderer.invoke(IPC.importTemplate),
   saveSampleTemplate: () => ipcRenderer.invoke(IPC.saveSampleTemplate),

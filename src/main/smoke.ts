@@ -63,6 +63,35 @@ function startFakeApi(): Promise<void> {
   );
 }
 
+/** What an MP4 holds: its brand box, track count, video/audio codecs present, and length (from mvhd). */
+function mp4Info(path: string): { ftyp: boolean; tracks: number; video: boolean; audio: boolean; seconds: number } {
+  const b = readFileSync(path);
+  const info = { ftyp: b.toString("ascii", 4, 8) === "ftyp", tracks: 0, video: false, audio: false, seconds: 0 };
+  // Walk the boxes, going into the containers that hold tracks and sample descriptions.
+  const walk = (from: number, to: number) => {
+    let p = from;
+    while (p + 8 <= to) {
+      const size = b.readUInt32BE(p);
+      const type = b.toString("ascii", p + 4, p + 8);
+      if (size < 8 || p + size > to) return;
+      if (type === "trak") info.tracks++;
+      if (type === "avc1") info.video = true;
+      if (type === "mp4a") info.audio = true;
+      if (type === "mvhd") {
+        const v1 = b[p + 8] === 1;
+        const scale = b.readUInt32BE(p + (v1 ? 28 : 20));
+        const duration = v1 ? Number(b.readBigUInt64BE(p + 32)) : b.readUInt32BE(p + 24);
+        info.seconds = duration / scale;
+      }
+      if (["moov", "trak", "mdia", "minf", "stbl"].includes(type)) walk(p + 8, p + size);
+      if (type === "stsd") walk(p + 16, p + size);
+      p += size;
+    }
+  };
+  walk(0, b.length);
+  return info;
+}
+
 /** The header of a PCM WAV file, and its length in seconds; null if it isn't one. */
 function readWavInfo(path: string): { format: number; channels: number; rate: number; bits: number; seconds: number } | null {
   const b = readFileSync(path);
@@ -105,7 +134,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
     writeFileSync(join(dir, "report.json"), JSON.stringify(report, null, 2));
     app.exit(report.ok ? 0 : 1);
   };
-  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 45_000);
+  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 90_000);
   // Renderer errors go in the report, so a failed run says why.
   const consoleErrors: string[] = [];
   win.webContents.on("console-message", (e) => {
@@ -362,12 +391,19 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         savedClip.captions.x?.text === "Pete joins the show, in 2031." &&
         savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
 
-      // Export the kept clip: its WAV, cut by the hidden mediabunny page, and the Social Clips document.
+      // Export the kept clip: its WAV, cut by the hidden mediabunny page, the Social Clips document,
+      // and with video clips on, an MP4 per chosen shape (vertical and square here).
+      await js(`window.api.updateSettings({ video: { enabled: true, shapes: { vertical: true, square: true, wide: false } } })`);
       await click("button", "Export 1 kept clip");
       let clipsExport: { folder: string; files: string[] } | null = null;
-      for (let i = 0; i < 80 && !clipsExport; i++) {
+      let videoProgress: { done: number; total: number } | null = null;
+      for (let i = 0; i < 400 && !clipsExport; i++) {
         await pause(150);
-        clipsExport = await js(`window.api.listJobs().then((j) => j[0]?.social?.exported ?? null)`);
+        const social = await js<{ exported?: { folder: string; files: string[] }; exporting?: { done: number; total: number } } | null>(
+          `window.api.listJobs().then((j) => j[0]?.social ?? null)`,
+        );
+        if (social?.exporting) videoProgress = social.exporting;
+        clipsExport = social?.exported ?? null;
       }
       const clipsExportError = await js<string>(`window.api.listJobs().then((j) => j[0]?.social?.exportError ?? "")`);
       await shot("clips-exported.png");
@@ -382,6 +418,32 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         // 0–7.5 s, sample-exact.
         clipWav.seconds === 7.5 &&
         clipsExport!.files.some((f) => /Social Clips\.docx$/.test(f));
+
+      // The videos: an MP4 per shape, 7.5 s long, with H.264 video and AAC audio (resampled from 16 kHz).
+      const videoPaths = clipsExport?.files.filter((f) => f.endsWith(".mp4")) ?? [];
+      const videos = videoPaths.map((f) => ({ name: f.split(/[\\/]/).pop(), ...mp4Info(f) }));
+      const clipVideos =
+        videos.length === 2 &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical).mp4") &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square).mp4") &&
+        videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 7.5) < 0.1) &&
+        videoProgress?.total === 2 * Math.ceil(7.5 * 30);
+
+      // Cancelling an export stops it, says so, and leaves the earlier files alone.
+      await click("button", "Export 1 kept clip");
+      for (let i = 0; i < 100; i++) {
+        await pause(50);
+        if (await js<boolean>(`window.api.listJobs().then((j) => !!j[0]?.social?.exporting)`)) break;
+      }
+      await click("button", "Cancel");
+      let cancelError = "";
+      for (let i = 0; i < 100 && !cancelError; i++) {
+        await pause(100);
+        cancelError = await js<string>(`window.api.listJobs().then((j) => j[0]?.social?.exportError ?? "")`);
+      }
+      await shot("clips-export-cancelled.png");
+      const exportCancel = cancelError === "Export cancelled." && videoPaths.every((f) => existsSync(f));
+      await js(`window.api.updateSettings({ video: { enabled: false } })`);
 
       // Back to the notes, where the next checks look.
       await click(".tab", "Show notes");
@@ -797,11 +859,13 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           socialStep &&
           clipsReview &&
           clipsExported &&
+          clipVideos &&
+          exportCancel &&
           folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, clipVideos, exportCancel, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
@@ -816,6 +880,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         savedClip,
         clipsExport,
         clipsExportError,
+        videos,
+        videoProgress,
+        cancelError,
         clipWav,
         heading: probe.heading,
         intake: probe.intake,

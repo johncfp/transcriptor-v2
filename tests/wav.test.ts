@@ -94,3 +94,12 @@ test("reading a WAV back: samples, rate and channels; anything else is null", ()
   new DataView(float.buffer).setUint16(20, 3, true); // IEEE float, not 16-bit PCM
   assert.equal(readWav(float), null);
 });
+
+test("the assembled clip's samples, as well as its WAV", () => {
+  const clip = new ClipAssembler(0, 1);
+  clip.add(0, RATE, [Float32Array.from({ length: RATE }, (_, i) => value(i))]);
+  const { pcm, sampleRate, channels } = clip.toPcm();
+  assert.deepEqual([pcm.length, sampleRate, channels], [RATE, RATE, 1]);
+  assert.equal(pcm[123], int16(value(123)));
+  assert.deepEqual([...readWav(clip.toWav())!.pcm.subarray(0, 5)], [...pcm.subarray(0, 5)]);
+});

@@ -28,7 +28,7 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
     <Section
       className="col-right-tall"
       title="Video clips"
-      intro="Kept clips as MP4 videos: the clip's audio with its captions, in the shapes you choose. Exported next to the WAV files. To see how a clip will look, play it on its episode's Clips tab."
+      intro="Kept clips as MP4 videos: the clip's audio with its captions, in the shapes you choose. Made when you export kept clips on an episode's Clips tab, next to the WAV files; play a clip there to preview it."
     >
       <label className="row toggle-row">
         <div className="row-label">

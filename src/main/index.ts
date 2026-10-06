@@ -7,12 +7,12 @@ import type { EpisodeEdits } from "../shared/cleanup";
 import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
 import { readTemplateFile, sampleTemplateFile, templateFile } from "./templateFile";
 import { cleanTranscript } from "../shared/cleanup";
-import { clipFileName, episodeDocuments, safeFileName, type ExportFormat } from "../shared/exportDocs";
+import { clipFileName, clipVideoName, episodeDocuments, safeFileName, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
 import { printPdf } from "./pdf";
 import { importLogo, loadLogo, logoPreview, pruneLogos } from "./logo";
-import { backgroundPreview, importBackground, pruneBackgrounds } from "./background";
+import { backgroundPath, backgroundPreview, importBackground, pruneBackgrounds } from "./background";
 import { clampThresholds } from "../shared/confidence";
 import type { SettingsPatch, StartWindow } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
@@ -23,7 +23,7 @@ import { suggestClips } from "./writing/social";
 import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
 import { clipContext, reviseClip, type ClipEdit } from "../shared/clips";
 import { cutClips, type CutterOptions } from "./clipCutter";
-import { audioLevels } from "../shared/video";
+import { audioLevels, clipCaptionWords, SHAPES } from "../shared/video";
 import { readWav } from "../shared/wav";
 import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
@@ -179,8 +179,9 @@ function start(): void {
     exportEpisode: async (data, formats, opts) => {
       const s = settings.get();
       const kept = data.social?.clips.filter((c) => c.kept) ?? [];
+      const turns = cleanTranscript(data.transcript, data.edits);
       const { label, documents: all } = episodeDocuments({
-        turns: cleanTranscript(data.transcript, data.edits),
+        turns,
         details: data.details,
         writing: data.writing,
         fileName: data.job.fileName,
@@ -197,18 +198,41 @@ function start(): void {
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       const { branding } = s.output;
       // Kept clips' audio, cut from the episode. With clips but none kept, earlier clip files are cleared.
+      // Exporting the kept clips (Clips tab) also makes their videos, when video clips are on.
       const base = safeFileName(label);
-      const clips = data.social
-        ? (
-            await cutClips(
-              data.job.filePath,
-              kept.map((c) => ({ start: c.start, end: c.end })),
-              CUTTER,
-            )
-          ).map((data, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data }))
+      const shapes = SHAPES.map((sh) => sh.id).filter((id) => s.video.shapes[id]);
+      const withVideo = opts?.clipsOnly && s.video.enabled && shapes.length > 0 && kept.length > 0;
+      const background = s.video.backgroundType === "image" && s.video.backgroundImage ? backgroundPath(userData, s.video.backgroundImage) : null;
+      const cut = data.social
+        ? await cutClips(
+            data.job.filePath,
+            kept.map((c) => ({ start: c.start, end: c.end })),
+            CUTTER,
+            {
+              signal: opts?.signal,
+              onProgress: opts?.onProgress,
+              video: withVideo
+                ? {
+                    style: s.video,
+                    showName: s.show.name,
+                    logo: s.video.showLogo && branding.logo ? (loadLogo(userData, branding.logo)?.png ?? null) : null,
+                    background: background ? readFileSync(background) : null,
+                    clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes })),
+                  }
+                : undefined,
+            },
+          )
+        : null;
+      const clips = cut
+        ? [
+            ...cut.wavs.map((wav, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data: wav })),
+            ...cut.videos.flatMap((perShape, i) => perShape.map((mp4, j) => ({ name: clipVideoName(base, i + 1, kept[i]!.title, shapes[j]!), data: mp4 }))),
+          ]
         : undefined;
       return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
         clips,
+        // The episode's own export makes no videos, so it leaves those from the Clips tab in place.
+        replaceClips: opts?.clipsOnly ? ["wav", "mp4"] : ["wav"],
         renderPdf: printPdf,
         branding: {
           ...branding,
@@ -614,6 +638,7 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.suggestClips, (_e, id: string) => jobs.suggestClips(id));
   ipcMain.handle(IPC.cancelClips, (_e, id: string) => jobs.cancelSocial(id));
   ipcMain.handle(IPC.exportClips, (_e, id: string) => jobs.exportClips(id));
+  ipcMain.handle(IPC.cancelClipsExport, (_e, id: string) => jobs.cancelClipsExport(id));
   // The waveform for a clip's video preview: cut the clip and measure its loudness per frame.
   const levelsCache = new Map<string, number[]>();
   ipcMain.handle(IPC.clipLevels, async (_e, id: string, start: unknown, end: unknown) => {
@@ -624,7 +649,7 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
     const key = `${id}:${from}:${to}`;
     const cached = levelsCache.get(key);
     if (cached) return cached;
-    const [wav] = await cutClips(path, [{ start: from, end: to }], CUTTER);
+    const [wav] = (await cutClips(path, [{ start: from, end: to }], CUTTER)).wavs;
     const parsed = wav ? readWav(wav) : null;
     const levels = parsed ? audioLevels(parsed.pcm, parsed.channels, parsed.sampleRate) : [];
     if (levelsCache.size > 50) levelsCache.delete(levelsCache.keys().next().value!);
