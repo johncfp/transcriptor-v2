@@ -49,8 +49,8 @@ export class ClipAssembler {
     for (let c = 0; c < this.channels; c++) {
       const data = channelData[c]!;
       for (let k = first; k < last; k++) {
-        const v = Math.max(-1, Math.min(1, data[k]!));
-        this.pcm[(at + k - this.from) * this.channels + c] = Math.round(v < 0 ? v * 32768 : v * 32767);
+        // The inverse of decoding 16-bit audio (s / 32768), so 16-bit sources come back bit for bit.
+        this.pcm[(at + k - this.from) * this.channels + c] = Math.max(-32768, Math.min(32767, Math.round(data[k]! * 32768)));
       }
     }
     if (last > first) this.filled = Math.max(this.filled, at + last - this.from);

@@ -6,7 +6,7 @@ const RATE = 44100;
 /** Sample n of a test signal: a ramp that wraps, so every position is recognisable. */
 const value = (n: number) => ((n % 20000) - 10000) / 32768;
 /** As the WAV stores it. */
-const int16 = (v: number) => Math.round(v < 0 ? v * 32768 : v * 32767) + 0; // + 0 turns -0 into 0
+const int16 = (v: number) => Math.max(-32768, Math.min(32767, Math.round(v * 32768))) + 0; // + 0 turns -0 into 0
 
 /** Decoded blocks of `size` frames covering [0, totalFrames), with timestamps off by up to `jitter` seconds. */
 function* blocks(totalFrames: number, size = 1024, channels = 1, jitter = 0) {
@@ -63,6 +63,17 @@ test("empty blocks are skipped; audio that ends early gives a shorter clip; noth
   assert.equal(samples(clip.toWav()).values.length, RATE);
   assert.throws(() => new ClipAssembler(5, 6).toWav(), /No audio was found/);
   assert.throws(() => new ClipAssembler(6, 5), /end after it starts/);
+});
+
+test("16-bit audio decoded as s / 32768 comes back bit for bit, every value; out-of-range floats are clamped", () => {
+  const all = Float32Array.from({ length: 65536 }, (_, i) => (i - 32768) / 32768);
+  const clip = new ClipAssembler(0, 65536 / RATE);
+  clip.add(0, RATE, [all]);
+  const { pcm } = clip.toPcm();
+  assert.ok(pcm.every((v, i) => v === i - 32768));
+  const loud = new ClipAssembler(0, 2 / RATE);
+  loud.add(0, RATE, [Float32Array.from([1.5, -1.5])]);
+  assert.deepEqual([...loud.toPcm().pcm], [32767, -32768]);
 });
 
 test("a format change partway through is an error, not a garbled clip", () => {
