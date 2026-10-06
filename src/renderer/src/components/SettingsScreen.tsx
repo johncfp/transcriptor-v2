@@ -14,6 +14,7 @@ import { Section } from "./Section";
 import { ShowNotesSettings, ShowNotesTemplateSection } from "./ShowNotesSettings";
 import { SocialVoiceSection, VoiceSection } from "./VoiceSection";
 import { SocialSettings } from "./SocialSettings";
+import { VideoSettings } from "./VideoSettings";
 import { BrandingSection } from "./BrandingSection";
 import { FolderWatchSection } from "./FolderWatchSection";
 import { ConfidenceBandsSection } from "./ConfidenceBandsSection";
@@ -314,6 +315,7 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
         {tab === "social" && (
           <>
             <SocialSettings settings={settings} update={update} />
+            <VideoSettings settings={settings} update={update} />
             <SocialVoiceSection settings={settings} update={update} />
           </>
         )}

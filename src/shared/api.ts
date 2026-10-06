@@ -51,6 +51,10 @@ export interface Api {
   pickLogo(): Promise<{ name: string; preview: string } | null>;
   /** A small data: URL preview of an imported logo, or null if it's gone. */
   logoPreview(name: string): Promise<string | null>;
+  /** Pick an image and copy it in as the video background; null if cancelled. */
+  pickBackground(): Promise<{ name: string; preview: string } | null>;
+  /** A data: URL of an imported video background, for previews; null if it's gone. */
+  backgroundPreview(name: string): Promise<string | null>;
 
   listKeys(): Promise<KeyStatus[]>;
   setKey(providerId: string, key: string): Promise<KeyStatus[]>;
@@ -129,6 +133,8 @@ export const IPC = {
   listModels: "writing:list-models",
   pickLogo: "branding:pick-logo",
   logoPreview: "branding:logo-preview",
+  pickBackground: "branding:pick-background",
+  backgroundPreview: "branding:background-preview",
   listKeys: "keys:list",
   setKey: "keys:set",
   deleteKey: "keys:delete",

@@ -32,22 +32,41 @@ copyFileSync(join(root, "build/icon.ico"), join(root, "out/icon.ico"));
 await Promise.all(targets.map((t) => build({ ...common, ...t })));
 
 // Notices for third-party code built into the app whose license asks for one.
-// mediabunny (MPL-2.0) is used unmodified; its source is public, and the
-// license text comes from the installed copy so the version always matches.
-const mediabunny = JSON.parse(readFileSync(join(root, "node_modules/mediabunny/package.json"), "utf8"));
+// Each license text comes from the installed copy, so the version always
+// matches. mediabunny (MPL-2.0) is used unmodified and its source is public;
+// the caption fonts are under the SIL Open Font License, which asks that the
+// license go with them.
+const pkg = (name) => JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8"));
+const license = (name) => readFileSync(join(root, "node_modules", name, "LICENSE"), "utf8");
+const rule = "=".repeat(72);
+const mediabunny = pkg("mediabunny");
+const fonts = [
+  ["@fontsource/inter", "Inter", "https://github.com/rsms/inter"],
+  ["@fontsource/atkinson-hyperlegible-next", "Atkinson Hyperlegible Next", "https://github.com/googlefonts/atkinson-hyperlegible-next"],
+  ["@fontsource/lexend", "Lexend", "https://github.com/googlefonts/lexend"],
+];
 writeFileSync(
   join(root, "out/THIRD_PARTY_NOTICES.txt"),
   [
     "Third-party software in Transcriptor 2",
     "",
     `mediabunny ${mediabunny.version}`,
-    "Cuts social clips out of episode audio. Used unmodified.",
+    "Cuts social clips out of episode audio and makes video clips. Used unmodified.",
     "License: Mozilla Public License 2.0 (full text below).",
     "Source code: https://github.com/Vanilagy/mediabunny",
     `and on npm: https://www.npmjs.com/package/mediabunny/v/${mediabunny.version}`,
     "",
-    "=".repeat(72),
+    ...fonts.flatMap(([name, label, source]) => [
+      `${label} font (${name} ${pkg(name).version})`,
+      "Used for video clip captions. License: SIL Open Font License 1.1 (full text below).",
+      `Source: ${source}`,
+      "",
+    ]),
+    rule,
     "",
-    readFileSync(join(root, "node_modules/mediabunny/LICENSE"), "utf8"),
+    "mediabunny",
+    "",
+    license("mediabunny"),
+    ...fonts.flatMap(([name, label]) => [rule, "", `${label} font`, "", license(name)]),
   ].join("\n"),
 );

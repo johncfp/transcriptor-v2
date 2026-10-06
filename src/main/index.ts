@@ -12,6 +12,7 @@ import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
 import { printPdf } from "./pdf";
 import { importLogo, loadLogo, logoPreview, pruneLogos } from "./logo";
+import { backgroundPreview, importBackground, pruneBackgrounds } from "./background";
 import { clampThresholds } from "../shared/confidence";
 import type { SettingsPatch } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
@@ -83,6 +84,7 @@ function start(): void {
   const keys = new KeyStore(userData);
   // Logo copies left behind by drafts that weren't saved.
   pruneLogos(userData, settings.get().output.branding.logo);
+  pruneBackgrounds(userData, settings.get().video.backgroundImage);
 
   applyLoginItem(settings.get().general.startAtLogin);
   applyTheme(settings.get().general.theme);
@@ -513,6 +515,20 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   });
   ipcMain.handle(IPC.logoPreview, (_e, name: unknown) =>
     typeof name === "string" ? logoPreview(app.getPath("userData"), name) : null,
+  );
+  ipcMain.handle(IPC.pickBackground, async () => {
+    const result = await showOpenDialog({
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    const path = result.filePaths[0];
+    if (result.canceled || !path) return null;
+    const userData = app.getPath("userData");
+    const name = importBackground(userData, path);
+    return { name, preview: backgroundPreview(userData, name) ?? "" };
+  });
+  ipcMain.handle(IPC.backgroundPreview, (_e, name: unknown) =>
+    typeof name === "string" ? backgroundPreview(app.getPath("userData"), name) : null,
   );
   ipcMain.handle(IPC.pickFolder, async () => {
     const result = await showOpenDialog({ properties: ["openDirectory", "createDirectory"] });

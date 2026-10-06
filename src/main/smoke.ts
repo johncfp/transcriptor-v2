@@ -465,6 +465,58 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         !socialPicker.switchOn &&
         socialPicker.voices === 4 &&
         JSON.stringify(socialPicker.clips) === JSON.stringify(["3", "5", "15", "60"]);
+
+      // Video clips settings: the preview is drawn (in the bundled font) and redraws per shape.
+      const previewInfo = () =>
+        js<{ width: number; height: number; colors: number; font: boolean; captionsTwoCol: boolean; enabled: boolean }>(`(() => {
+          const c = document.querySelector("canvas[aria-label='Video preview']");
+          const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          const colors = new Set();
+          for (let i = 0; i < data.length; i += 4 * 97) colors.add(data[i] + "," + data[i + 1] + "," + data[i + 2]);
+          const checks = [...document.querySelectorAll(".checks.two-col")][0];
+          const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
+          return {
+            width: c.width,
+            height: c.height,
+            colors: colors.size,
+            font: document.fonts.check('700 40px "T2 Inter"'),
+            captionsTwoCol: !!checks && getComputedStyle(checks).gridTemplateColumns.split(" ").length === 2,
+            enabled: video.querySelector(".switch").checked,
+          };
+        })()`);
+      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Video clips").scrollIntoView()`);
+      await pause(800);
+      const previewVertical = await previewInfo();
+      await shot("settings-video.png");
+      // The preview frames themselves, at their drawn size.
+      const savePreview = async (name: string) =>
+        writeFileSync(
+          join(dir, name),
+          Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+        );
+      await savePreview("video-preview-vertical.png");
+      await click("[aria-label='Preview shape'] .segment", "Wide 16:9");
+      await pause(600);
+      const previewWide = await previewInfo();
+      await click("[aria-label='Caption style'] .segment", "Scrolling lines");
+      await pause(600);
+      await shot("settings-video-wide-scroll.png");
+      await savePreview("video-preview-wide-scroll.png");
+      const previewScroll = await previewInfo();
+      const videoSettings =
+        previewVertical.width === 540 &&
+        previewVertical.height === 960 &&
+        previewVertical.colors > 20 &&
+        previewVertical.font &&
+        previewVertical.captionsTwoCol &&
+        !previewVertical.enabled &&
+        previewWide.width === 960 &&
+        previewWide.height === 540 &&
+        previewWide.colors > 20 &&
+        previewScroll.colors > 20;
+      // Leave the scrolling style as a draft, not saved.
+      await click("button", "Discard");
+      await pause(300);
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
       const modelPicker =
@@ -562,6 +614,18 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         return { profile: box("Show profile"), notes: box("Show notes") };
       })()`);
       await shot("settings-notes-wide.png");
+      // Social tab, two columns: Video clips on the right of Social clips.
+      await click(".tab", "Social");
+      await pause(500);
+      const socialLayout = await js<{ clips: number; video: number; voice: number; gap: number }>(`(() => {
+        const box = (t) => [...document.querySelectorAll(".settings-grid > .section")].find((s) => s.querySelector("h2").textContent === t).getBoundingClientRect();
+        // Social voice sits right under Social clips, not pushed down by the tall Video section.
+        return { clips: Math.round(box("Social clips").left), video: Math.round(box("Video clips").left), voice: Math.round(box("Social voice").left), gap: Math.round(box("Social voice").top - box("Social clips").bottom) };
+      })()`);
+      await shot("settings-social-wide.png");
+      const socialColumns =
+        pageWidth < 1400 ||
+        (socialLayout.video > socialLayout.clips && socialLayout.voice === socialLayout.clips && Math.abs(socialLayout.gap - 18) <= 2);
       const notesStacked =
         pageWidth < 1400 ||
         (notesLayout.profile[0] === notesLayout.notes[0] && Math.abs(notesLayout.notes[1]! - notesLayout.profile[2]! - 18) <= 2);
@@ -697,6 +761,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // Two columns need ~1400px; skip on a screen too small for that.
           (pageWidth < 1400 || settingsColumns === 2) &&
           notesStacked &&
+          socialColumns &&
+          videoSettings &&
           themes &&
           saveFlow &&
           customVoice &&
@@ -714,7 +780,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, socialStep, clipsReview, clipsExported, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
@@ -747,6 +813,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         windowIcon,
         settingsColumns,
         notesLayout,
+        socialLayout,
+        preview: { previewVertical, previewWide, previewScroll },
         pageWidth,
         saveFlow: { dirtyShown, promptShown, stayed, discarded, savedOk },
         stageColor,
@@ -822,5 +890,6 @@ const ALL_SECTIONS = [
   "Show notes voice",
   "Social clips",
   "Social voice",
+  "Video clips",
   "Watch a Drive folder",
 ];
