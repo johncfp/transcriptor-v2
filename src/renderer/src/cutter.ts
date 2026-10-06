@@ -143,8 +143,11 @@ async function renderOne(
   // Hardware where the computer has it, Chromium's own encoder where it doesn't.
   const frames = new CanvasSource(canvas, { codec: "avc", quality: QUALITY_HIGH, keyFrameInterval: 2, hardwareAcceleration: "no-preference" });
   // AAC encoders take 44.1 or 48 kHz; other rates (16 kHz recordings, say) are resampled for the video.
-  const resample = pcm.sampleRate === 44100 || pcm.sampleRate === 48000 ? {} : { transform: { sampleRate: 48000 } };
+  const native = pcm.sampleRate === 44100 || pcm.sampleRate === 48000;
+  const resample = native ? {} : { transform: { sampleRate: 48000 } };
   const sound = new AudioSampleSource({ codec: "aac", quality: QUALITY_HIGH, ...resample });
+  // The sound goes in early by the encoder's priming, which the MP4 then marks as not to be played.
+  const early = (await aacDelay(native ? pcm.sampleRate : 48000, pcm.channels)) / (native ? pcm.sampleRate : 48000);
   output.addVideoTrack(frames, { frameRate: VIDEO_FPS });
   output.addAudioTrack(sound);
   await output.start();
@@ -159,7 +162,7 @@ async function renderOne(
       const a = Math.round(t * pcm.sampleRate) * pcm.channels;
       const b = Math.min(pcm.pcm.length, a + perSecond);
       if (b > a) {
-        await sound.add(new AudioSample({ data: pcm.pcm.slice(a, b), format: "s16", numberOfChannels: pcm.channels, sampleRate: pcm.sampleRate, timestamp: t }));
+        await sound.add(new AudioSample({ data: pcm.pcm.slice(a, b), format: "s16", numberOfChannels: pcm.channels, sampleRate: pcm.sampleRate, timestamp: t - early }));
       }
     }
     drawFrame(ctx, scene, t);
@@ -172,6 +175,80 @@ async function renderOne(
   await output.finalize();
   window.cutter.progress(jobId, progress);
   return new Uint8Array(output.target.buffer!);
+}
+
+const delays = new Map<string, Promise<number>>();
+
+/**
+ * Frames of silence this computer's AAC encoder puts before the sound it's
+ * given: macOS's adds its 2112 frames of priming, Windows' none. Without
+ * allowing for it the sound plays that much late (48 ms at 44.1 kHz).
+ * Measured once per format by encoding a burst of noise and finding it again
+ * in the decoded result.
+ */
+function aacDelay(sampleRate: number, channels: number): Promise<number> {
+  const key = `${sampleRate}/${channels}`;
+  let delay = delays.get(key);
+  if (!delay) delays.set(key, (delay = measureAacDelay(sampleRate, channels)));
+  return delay;
+}
+
+async function measureAacDelay(sampleRate: number, channels: number): Promise<number> {
+  const frames = sampleRate;
+  const at = Math.round(sampleRate / 4);
+  const W = 1024;
+  const burst = new Float32Array(frames);
+  let seed = 1;
+  for (let i = 0; i < W; i++) {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    burst[at + i] = (seed / 2147483648 - 0.5) * 1.2 * Math.sin((Math.PI * i) / W);
+  }
+  const planar = new Float32Array(frames * channels);
+  for (let c = 0; c < channels; c++) planar.set(burst, c * frames);
+
+  let failure: unknown = null;
+  const chunks: EncodedAudioChunk[] = [];
+  let config: AudioDecoderConfig | undefined;
+  const encoder = new AudioEncoder({
+    output: (chunk, meta) => {
+      chunks.push(chunk);
+      config ??= meta?.decoderConfig;
+    },
+    error: (e) => (failure = e),
+  });
+  encoder.configure({ codec: "mp4a.40.2", sampleRate, numberOfChannels: channels, bitrate: 128000 });
+  encoder.encode(new AudioData({ format: "f32-planar", sampleRate, numberOfFrames: frames, numberOfChannels: channels, timestamp: 0, data: planar }));
+  await encoder.flush();
+  encoder.close();
+
+  const heard = new Float32Array(frames + 8192);
+  let pos = 0;
+  const decoder = new AudioDecoder({
+    output: (data) => {
+      const n = Math.min(data.numberOfFrames, heard.length - pos);
+      if (n > 0) {
+        const left = new Float32Array(data.numberOfFrames);
+        data.copyTo(left, { planeIndex: 0, format: "f32-planar" });
+        heard.set(left.subarray(0, n), pos);
+      }
+      pos += data.numberOfFrames;
+      data.close();
+    },
+    error: (e) => (failure = e),
+  });
+  decoder.configure(config ?? { codec: "mp4a.40.2", sampleRate, numberOfChannels: channels });
+  for (const chunk of chunks) decoder.decode(chunk);
+  await decoder.flush();
+  decoder.close();
+  if (failure) throw failure;
+
+  let best = 0, bestScore = -Infinity;
+  for (let lag = 0; lag <= 4096; lag++) {
+    let s = 0;
+    for (let i = 0; i < W; i++) s += burst[at + i]! * heard[at + lag + i]!;
+    if (s > bestScore) [best, bestScore] = [lag, s];
+  }
+  return best;
 }
 
 window.cutter.onJob(async (job) => {
