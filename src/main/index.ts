@@ -7,13 +7,14 @@ import type { EpisodeEdits } from "../shared/cleanup";
 import { EMPTY_DETAILS, type EpisodeDetails } from "../shared/showNotes";
 import { readTemplateFile, sampleTemplateFile, templateFile } from "./templateFile";
 import { cleanTranscript } from "../shared/cleanup";
-import { clipFileName, episodeDocuments, safeFileName, type ExportFormat } from "../shared/exportDocs";
+import { clipFileName, clipVideoName, episodeDocuments, safeFileName, type ExportFormat } from "../shared/exportDocs";
 import { templateSections } from "../shared/showNotes";
 import { writeExport } from "./exporter";
 import { printPdf } from "./pdf";
 import { importLogo, loadLogo, logoPreview, pruneLogos } from "./logo";
+import { backgroundPath, backgroundPreview, importBackground, pruneBackgrounds } from "./background";
 import { clampThresholds } from "../shared/confidence";
-import type { SettingsPatch } from "../shared/settings";
+import type { SettingsPatch, StartWindow } from "../shared/settings";
 import { JobQueue } from "./jobQueue";
 import { providerById } from "../shared/providers";
 import { anthropicWriter } from "./writing/anthropic";
@@ -21,7 +22,9 @@ import { writeEpisode, writerById } from "./writing";
 import { suggestClips } from "./writing/social";
 import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
 import { clipContext, reviseClip, type ClipEdit } from "../shared/clips";
-import { cutClips } from "./clipCutter";
+import { cutClips, type CutterOptions } from "./clipCutter";
+import { audioLevels, clipCaptionWords, SHAPES } from "../shared/video";
+import { readWav } from "../shared/wav";
 import { listModels } from "./writing/models";
 import { KeyStore } from "./keyStore";
 import { handleMedia, registerMediaScheme } from "./media";
@@ -63,6 +66,13 @@ if (process.platform === "win32") app.setAppUserModelId("io.transcriptor.app2");
 registerMediaScheme();
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+
+/** The hidden page that cuts clips (src/main/clipCutter.ts): the dev server's copy or the built one. */
+const CUTTER: CutterOptions = {
+  preload: join(__dirname, "..", "preload", "cutter.js"),
+  load: (win) =>
+    devServerUrl ? win.loadURL(new URL("cutter.html", devServerUrl).href) : win.loadFile(join(__dirname, "..", "renderer", "cutter.html")),
+};
 const WINDOW_TITLE = "Transcriptor 2 — just transcribe";
 
 let mainWindow: BrowserWindow | null = null;
@@ -83,6 +93,7 @@ function start(): void {
   const keys = new KeyStore(userData);
   // Logo copies left behind by drafts that weren't saved.
   pruneLogos(userData, settings.get().output.branding.logo);
+  pruneBackgrounds(userData, settings.get().video.backgroundImage);
 
   applyLoginItem(settings.get().general.startAtLogin);
   applyTheme(settings.get().general.theme);
@@ -168,8 +179,9 @@ function start(): void {
     exportEpisode: async (data, formats, opts) => {
       const s = settings.get();
       const kept = data.social?.clips.filter((c) => c.kept) ?? [];
+      const turns = cleanTranscript(data.transcript, data.edits);
       const { label, documents: all } = episodeDocuments({
-        turns: cleanTranscript(data.transcript, data.edits),
+        turns,
         details: data.details,
         writing: data.writing,
         fileName: data.job.fileName,
@@ -186,24 +198,41 @@ function start(): void {
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       const { branding } = s.output;
       // Kept clips' audio, cut from the episode. With clips but none kept, earlier clip files are cleared.
+      // Exporting the kept clips (Clips tab) also makes their videos, when video clips are on.
       const base = safeFileName(label);
-      const clips = data.social
-        ? (
-            await cutClips(
-              data.job.filePath,
-              kept.map((c) => ({ start: c.start, end: c.end })),
-              {
-                preload: join(__dirname, "..", "preload", "cutter.js"),
-                load: (win) =>
-                  devServerUrl
-                    ? win.loadURL(new URL("cutter.html", devServerUrl).href)
-                    : win.loadFile(join(__dirname, "..", "renderer", "cutter.html")),
-              },
-            )
-          ).map((data, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data }))
+      const shapes = SHAPES.map((sh) => sh.id).filter((id) => s.video.shapes[id]);
+      const withVideo = opts?.clipsOnly && s.video.enabled && shapes.length > 0 && kept.length > 0;
+      const background = s.video.backgroundType === "image" && s.video.backgroundImage ? backgroundPath(userData, s.video.backgroundImage) : null;
+      const cut = data.social
+        ? await cutClips(
+            data.job.filePath,
+            kept.map((c) => ({ start: c.start, end: c.end })),
+            CUTTER,
+            {
+              signal: opts?.signal,
+              onProgress: opts?.onProgress,
+              video: withVideo
+                ? {
+                    style: s.video,
+                    showName: s.show.name,
+                    logo: s.video.showLogo && branding.logo ? (loadLogo(userData, branding.logo)?.png ?? null) : null,
+                    background: background ? readFileSync(background) : null,
+                    clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes })),
+                  }
+                : undefined,
+            },
+          )
+        : null;
+      const clips = cut
+        ? [
+            ...cut.wavs.map((wav, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data: wav })),
+            ...cut.videos.flatMap((perShape, i) => perShape.map((mp4, j) => ({ name: clipVideoName(base, i + 1, kept[i]!.title, shapes[j]!), data: mp4 }))),
+          ]
         : undefined;
       return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
         clips,
+        // The episode's own export makes no videos, so it leaves those from the Clips tab in place.
+        replaceClips: opts?.clipsOnly ? ["wav", "mp4"] : ["wav"],
         renderPdf: printPdf,
         branding: {
           ...branding,
@@ -344,7 +373,8 @@ function start(): void {
   if (process.platform === "darwin" && !app.isPackaged) app.dock?.setIcon(join(__dirname, "..", "icon.png"));
 
   mainWindow = createWindow(settings);
-  if (!launchedHidden()) mainWindow.once("ready-to-show", () => mainWindow?.show());
+  startWindow = settings.get().general.startWindow;
+  if (!launchedHidden()) mainWindow.once("ready-to-show", () => showWindow());
   if (SMOKE) runSmokeTest(mainWindow, { checkForUpdate: () => updater.check() });
 
   app.on("activate", showWindow); // macOS dock click
@@ -369,6 +399,17 @@ function createWindow(settings: SettingsStore): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
     },
+  });
+
+  // F11 toggles full screen; Esc also leaves it (and still reaches the page).
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    if (input.key === "F11") {
+      event.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+    } else if (input.key === "Escape" && win.isFullScreen()) {
+      win.setFullScreen(false);
+    }
   });
 
   // The renderer is a local app; nothing inside it should open other pages.
@@ -408,9 +449,18 @@ function createWindow(settings: SettingsStore): BrowserWindow {
   return win;
 }
 
+/** How the window opens the first time it's shown this run (Settings › General); cleared once applied. */
+let startWindow: StartWindow | null = null;
+
 function showWindow(): void {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  // The smoke test sizes its own window.
+  if (startWindow && !SMOKE) {
+    if (startWindow === "maximized") mainWindow.maximize();
+    if (startWindow === "fullscreen") mainWindow.setFullScreen(true);
+  }
+  startWindow = null;
   mainWindow.show();
   mainWindow.focus();
 }
@@ -514,6 +564,20 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.logoPreview, (_e, name: unknown) =>
     typeof name === "string" ? logoPreview(app.getPath("userData"), name) : null,
   );
+  ipcMain.handle(IPC.pickBackground, async () => {
+    const result = await showOpenDialog({
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    const path = result.filePaths[0];
+    if (result.canceled || !path) return null;
+    const userData = app.getPath("userData");
+    const name = importBackground(userData, path);
+    return { name, preview: backgroundPreview(userData, name) ?? "" };
+  });
+  ipcMain.handle(IPC.backgroundPreview, (_e, name: unknown) =>
+    typeof name === "string" ? backgroundPreview(app.getPath("userData"), name) : null,
+  );
   ipcMain.handle(IPC.pickFolder, async () => {
     const result = await showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
     return result.canceled ? null : (result.filePaths[0] ?? null);
@@ -574,6 +638,24 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.suggestClips, (_e, id: string) => jobs.suggestClips(id));
   ipcMain.handle(IPC.cancelClips, (_e, id: string) => jobs.cancelSocial(id));
   ipcMain.handle(IPC.exportClips, (_e, id: string) => jobs.exportClips(id));
+  ipcMain.handle(IPC.cancelClipsExport, (_e, id: string) => jobs.cancelClipsExport(id));
+  // The waveform for a clip's video preview: cut the clip and measure its loudness per frame.
+  const levelsCache = new Map<string, number[]>();
+  ipcMain.handle(IPC.clipLevels, async (_e, id: string, start: unknown, end: unknown) => {
+    const path = jobs.audioPath(id);
+    const from = Number(start);
+    const to = Number(end);
+    if (!path || !Number.isFinite(from) || !Number.isFinite(to) || from < 0 || to <= from || to - from > 600) return [];
+    const key = `${id}:${from}:${to}`;
+    const cached = levelsCache.get(key);
+    if (cached) return cached;
+    const [wav] = (await cutClips(path, [{ start: from, end: to }], CUTTER)).wavs;
+    const parsed = wav ? readWav(wav) : null;
+    const levels = parsed ? audioLevels(parsed.pcm, parsed.channels, parsed.sampleRate) : [];
+    if (levelsCache.size > 50) levelsCache.delete(levelsCache.keys().next().value!);
+    levelsCache.set(key, levels);
+    return levels;
+  });
   ipcMain.handle(IPC.exportEpisode, (_e, id: string, formats: unknown) =>
     jobs.exportNow(id, Array.isArray(formats) ? EXPORT_FORMATS.filter((f) => formats.includes(f)) : undefined),
   );

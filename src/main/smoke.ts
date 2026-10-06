@@ -63,6 +63,35 @@ function startFakeApi(): Promise<void> {
   );
 }
 
+/** What an MP4 holds: its brand box, track count, video/audio codecs present, and length (from mvhd). */
+function mp4Info(path: string): { ftyp: boolean; tracks: number; video: boolean; audio: boolean; seconds: number } {
+  const b = readFileSync(path);
+  const info = { ftyp: b.toString("ascii", 4, 8) === "ftyp", tracks: 0, video: false, audio: false, seconds: 0 };
+  // Walk the boxes, going into the containers that hold tracks and sample descriptions.
+  const walk = (from: number, to: number) => {
+    let p = from;
+    while (p + 8 <= to) {
+      const size = b.readUInt32BE(p);
+      const type = b.toString("ascii", p + 4, p + 8);
+      if (size < 8 || p + size > to) return;
+      if (type === "trak") info.tracks++;
+      if (type === "avc1") info.video = true;
+      if (type === "mp4a") info.audio = true;
+      if (type === "mvhd") {
+        const v1 = b[p + 8] === 1;
+        const scale = b.readUInt32BE(p + (v1 ? 28 : 20));
+        const duration = v1 ? Number(b.readBigUInt64BE(p + 32)) : b.readUInt32BE(p + 24);
+        info.seconds = duration / scale;
+      }
+      if (["moov", "trak", "mdia", "minf", "stbl"].includes(type)) walk(p + 8, p + size);
+      if (type === "stsd") walk(p + 16, p + size);
+      p += size;
+    }
+  };
+  walk(0, b.length);
+  return info;
+}
+
 /** The header of a PCM WAV file, and its length in seconds; null if it isn't one. */
 function readWavInfo(path: string): { format: number; channels: number; rate: number; bits: number; seconds: number } | null {
   const b = readFileSync(path);
@@ -105,7 +134,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
     writeFileSync(join(dir, "report.json"), JSON.stringify(report, null, 2));
     app.exit(report.ok ? 0 : 1);
   };
-  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 45_000);
+  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 90_000);
   // Renderer errors go in the report, so a failed run says why.
   const consoleErrors: string[] = [];
   win.webContents.on("console-message", (e) => {
@@ -273,6 +302,19 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await click(".tab", "Clips");
       await pause(800);
       await shot("clips.png");
+      // Cards open collapsed (title, buttons, why) and fill the column; "Show more" opens the rest.
+      const clipsCollapsed = await js<{ why: boolean; captions: number; times: number; fill: boolean }>(`(() => {
+        const card = document.querySelector(".clip-card");
+        const main = document.querySelector(".review-main");
+        return {
+          why: card.innerText.includes("Why: Short and friendly."),
+          captions: card.querySelectorAll(".caption-editor").length,
+          times: card.querySelectorAll(".clip-times").length,
+          fill: card.getBoundingClientRect().width >= main.clientWidth - 24,
+        };
+      })()`);
+      await click(".clip-card button", "Show more");
+      await pause(300);
       const clipsView = await js<{ cards: number; text: string; captions: number; fullWidth: boolean }>(`({
         cards: document.querySelectorAll(".clip-card").length,
         text: document.querySelector(".clip-lines")?.innerText ?? "",
@@ -282,8 +324,30 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           (el) => Math.round(el.getBoundingClientRect().width) === Math.round(el.parentElement.getBoundingClientRect().width),
         ),
       })`);
+      // Video preview of the clip: drawn, with the clip's waveform levels from the main process,
+      // and moving with the audio while it plays.
+      const previewHash = () =>
+        js<string>(`(() => {
+          const c = document.querySelector("canvas[aria-label='Clip video preview']");
+          if (!c) return "";
+          const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          let h = 0;
+          for (let i = 0; i < d.length; i += 4 * 53) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
+          return c.width + "x" + c.height + ":" + h;
+        })()`);
+      await pause(1200);
+      const clipPreviewStill = await previewHash();
+      const clipPreviewFont = await js<boolean>(`document.fonts.check('700 40px "T2 Inter"')`);
+      const clipLevels = await js<number[]>(`window.api.listJobs().then((j) => window.api.getSocial(j[0].id).then((s) => window.api.clipLevels(j[0].id, s.clips[0].start, s.clips[0].end)))`);
+      writeFileSync(
+        join(dir, "clip-preview.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
       await click(".clip-card button", "Play clip");
       await pause(400);
+      const clipPreviewEarly = await previewHash();
+      await pause(1500);
+      const clipPreviewLater = await previewHash();
       const clipPlayback = await js<{ paused: boolean; time: number; label: string }>(`({
         paused: document.querySelector(".review-main audio").paused,
         time: document.querySelector(".review-main audio").currentTime,
@@ -310,6 +374,16 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipsView.text.includes("Pete: Thanks, glad to be here.") &&
         clipsView.captions === 2 &&
         clipsView.fullWidth &&
+        clipsCollapsed.why &&
+        clipsCollapsed.captions === 0 &&
+        clipsCollapsed.times === 0 &&
+        clipsCollapsed.fill &&
+        clipPreviewStill.startsWith("540x960:") &&
+        clipPreviewFont &&
+        // One per frame of the clip as it is here, 0–7.9 s (it's trimmed to 7.5 s further down).
+        clipLevels.length === Math.ceil(7.9 * 30) &&
+        clipPreviewEarly !== clipPreviewStill &&
+        clipPreviewLater !== clipPreviewEarly &&
         !clipPlayback.paused &&
         clipPlayback.label === "Stop" &&
         savedClip?.kept === true &&
@@ -317,12 +391,19 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         savedClip.captions.x?.text === "Pete joins the show, in 2031." &&
         savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
 
-      // Export the kept clip: its WAV, cut by the hidden mediabunny page, and the Social Clips document.
+      // Export the kept clip: its WAV, cut by the hidden mediabunny page, the Social Clips document,
+      // and with video clips on, an MP4 per chosen shape (vertical and square here).
+      await js(`window.api.updateSettings({ video: { enabled: true, shapes: { vertical: true, square: true, wide: false } } })`);
       await click("button", "Export 1 kept clip");
       let clipsExport: { folder: string; files: string[] } | null = null;
-      for (let i = 0; i < 80 && !clipsExport; i++) {
+      let videoProgress: { done: number; total: number } | null = null;
+      for (let i = 0; i < 400 && !clipsExport; i++) {
         await pause(150);
-        clipsExport = await js(`window.api.listJobs().then((j) => j[0]?.social?.exported ?? null)`);
+        const social = await js<{ exported?: { folder: string; files: string[] }; exporting?: { done: number; total: number } } | null>(
+          `window.api.listJobs().then((j) => j[0]?.social ?? null)`,
+        );
+        if (social?.exporting) videoProgress = social.exporting;
+        clipsExport = social?.exported ?? null;
       }
       const clipsExportError = await js<string>(`window.api.listJobs().then((j) => j[0]?.social?.exportError ?? "")`);
       await shot("clips-exported.png");
@@ -338,11 +419,39 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipWav.seconds === 7.5 &&
         clipsExport!.files.some((f) => /Social Clips\.docx$/.test(f));
 
+      // The videos: an MP4 per shape, 7.5 s long, with H.264 video and AAC audio (resampled from 16 kHz).
+      const videoPaths = clipsExport?.files.filter((f) => f.endsWith(".mp4")) ?? [];
+      const videos = videoPaths.map((f) => ({ name: f.split(/[\\/]/).pop(), ...mp4Info(f) }));
+      const clipVideos =
+        videos.length === 2 &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical).mp4") &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square).mp4") &&
+        videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 7.5) < 0.1) &&
+        videoProgress?.total === 2 * Math.ceil(7.5 * 30);
+
+      // Cancelling an export stops it, says so, and leaves the earlier files alone.
+      await click("button", "Export 1 kept clip");
+      for (let i = 0; i < 100; i++) {
+        await pause(50);
+        if (await js<boolean>(`window.api.listJobs().then((j) => !!j[0]?.social?.exporting)`)) break;
+      }
+      await click("button", "Cancel");
+      let cancelError = "";
+      for (let i = 0; i < 100 && !cancelError; i++) {
+        await pause(100);
+        cancelError = await js<string>(`window.api.listJobs().then((j) => j[0]?.social?.exportError ?? "")`);
+      }
+      await shot("clips-export-cancelled.png");
+      const exportCancel = cancelError === "Export cancelled." && videoPaths.every((f) => existsSync(f));
+      await js(`window.api.updateSettings({ video: { enabled: false } })`);
+
       // Back to the notes, where the next checks look.
       await click(".tab", "Show notes");
       await pause(500);
       await pause(500);
       const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
+      // The notes fill the width of their column, like the clips.
+      const docFills = await js<boolean>(`document.querySelector(".doc").getBoundingClientRect().width >= document.querySelector(".review-main").clientWidth - 24`);
       const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
       await shot("notes.png");
       // Auto-export ran when the notes finished (DOCX is the default format).
@@ -465,6 +574,31 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         !socialPicker.switchOn &&
         socialPicker.voices === 4 &&
         JSON.stringify(socialPicker.clips) === JSON.stringify(["3", "5", "15", "60"]);
+
+      // Video clips settings: the controls, off by default, with the platforms in two columns.
+      // (The preview is on each clip's Clips tab; it's checked there.)
+      await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Video clips").scrollIntoView()`);
+      await pause(500);
+      await shot("settings-video.png");
+      const videoControls = await js<{ shapes: number; fonts: string[]; styles: string[]; enabled: boolean; captionsTwoCol: boolean; preview: number }>(`(() => {
+        const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
+        const checks = document.querySelector(".checks.two-col");
+        return {
+          shapes: video.querySelectorAll(".checks input[type=checkbox]").length,
+          fonts: [...video.querySelectorAll("select[aria-label=Font] option")].map((o) => o.textContent),
+          styles: [...video.querySelectorAll("[aria-label='Caption style'] .segment")].map((b) => b.textContent),
+          enabled: video.querySelector(".switch").checked,
+          captionsTwoCol: !!checks && getComputedStyle(checks).gridTemplateColumns.split(" ").length === 2,
+          preview: video.querySelectorAll("canvas").length,
+        };
+      })()`);
+      const videoSettings =
+        videoControls.shapes === 3 &&
+        JSON.stringify(videoControls.fonts) === JSON.stringify(["Inter", "Atkinson Hyperlegible Next", "Lexend"]) &&
+        JSON.stringify(videoControls.styles) === JSON.stringify(["Word by word", "Scrolling lines"]) &&
+        !videoControls.enabled &&
+        videoControls.captionsTwoCol &&
+        videoControls.preview === 0;
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
       const modelPicker =
@@ -562,6 +696,18 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         return { profile: box("Show profile"), notes: box("Show notes") };
       })()`);
       await shot("settings-notes-wide.png");
+      // Social tab, two columns: Video clips on the right of Social clips.
+      await click(".tab", "Social");
+      await pause(500);
+      const socialLayout = await js<{ clips: number; video: number; voice: number; gap: number }>(`(() => {
+        const box = (t) => [...document.querySelectorAll(".settings-grid > .section")].find((s) => s.querySelector("h2").textContent === t).getBoundingClientRect();
+        // Social voice sits right under Social clips, not pushed down by the tall Video section.
+        return { clips: Math.round(box("Social clips").left), video: Math.round(box("Video clips").left), voice: Math.round(box("Social voice").left), gap: Math.round(box("Social voice").top - box("Social clips").bottom) };
+      })()`);
+      await shot("settings-social-wide.png");
+      const socialColumns =
+        pageWidth < 1400 ||
+        (socialLayout.video > socialLayout.clips && socialLayout.voice === socialLayout.clips && Math.abs(socialLayout.gap - 18) <= 2);
       const notesStacked =
         pageWidth < 1400 ||
         (notesLayout.profile[0] === notesLayout.notes[0] && Math.abs(notesLayout.notes[1]! - notesLayout.profile[2]! - 18) <= 2);
@@ -697,6 +843,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // Two columns need ~1400px; skip on a screen too small for that.
           (pageWidth < 1400 || settingsColumns === 2) &&
           notesStacked &&
+          socialColumns &&
+          videoSettings &&
+          docFills &&
           themes &&
           saveFlow &&
           customVoice &&
@@ -710,11 +859,13 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           socialStep &&
           clipsReview &&
           clipsExported &&
+          clipVideos &&
+          exportCancel &&
           folderWatchOk &&
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, socialStep, clipsReview, clipsExported, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, clipVideos, exportCancel, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
@@ -724,9 +875,14 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         social,
         clipsView,
         clipPlayback,
+        clipsCollapsed,
+        clipPreview: { still: clipPreviewStill, early: clipPreviewEarly, later: clipPreviewLater, levels: clipLevels.length },
         savedClip,
         clipsExport,
         clipsExportError,
+        videos,
+        videoProgress,
+        cancelError,
         clipWav,
         heading: probe.heading,
         intake: probe.intake,
@@ -747,6 +903,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         windowIcon,
         settingsColumns,
         notesLayout,
+        socialLayout,
+        videoControls,
         pageWidth,
         saveFlow: { dirtyShown, promptShown, stayed, discarded, savedOk },
         stageColor,
@@ -822,5 +980,6 @@ const ALL_SECTIONS = [
   "Show notes voice",
   "Social clips",
   "Social voice",
+  "Video clips",
   "Watch a Drive folder",
 ];

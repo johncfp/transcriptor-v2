@@ -12,6 +12,7 @@ export function SocialSettings({ settings, update }: { settings: Settings; updat
 
   return (
     <Section
+      className="col-left"
       title="Social clips"
       intro="After the show notes, a model picks short moments from the transcript and writes a caption for each platform. You review the clips before they're cut as WAV files and exported. The clip text and times come from the transcript, never the model."
     >
@@ -63,7 +64,7 @@ export function SocialSettings({ settings, update }: { settings: Settings; updat
             {noPlatform ? "Choose at least one platform, or the clips get no captions." : "Each clip gets a caption for every platform chosen."}
           </span>
         </div>
-        <div className="checks">
+        <div className="checks two-col">
           {PLATFORMS.map((p) => (
             <label key={p.id} className="check" title={p.hint}>
               <input

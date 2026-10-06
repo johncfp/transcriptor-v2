@@ -57,9 +57,14 @@ export interface JobQueueDeps {
   canWrite: () => boolean;
   /**
    * Write the episode's documents to disk; `formats` overrides the Settings
-   * default. `clipsOnly` writes just the kept clips and their document.
+   * default. `clipsOnly` writes just the kept clips (with their videos, when
+   * video clips are on) and their document, reporting progress on the videos.
    */
-  exportEpisode: (data: EpisodeExportData, formats?: ExportFormat[], opts?: { clipsOnly?: boolean }) => Promise<ExportResult>;
+  exportEpisode: (
+    data: EpisodeExportData,
+    formats?: ExportFormat[],
+    opts?: { clipsOnly?: boolean; onProgress?: (p: { done: number; total: number }) => void; signal?: AbortSignal },
+  ) => Promise<ExportResult>;
   /** Export as soon as show notes are written. */
   autoExport: () => boolean;
   /** Suggests social clips with the configured provider; throws a readable error if it can't. */
@@ -102,6 +107,8 @@ export class JobQueue {
   private jobs: Job[];
   private readonly path: string;
   private running: { id: string; step: Step; abort: AbortController } | null = null;
+  /** Clip exports in progress, by job id, so they can be cancelled. */
+  private readonly clipExports = new Map<string, AbortController>();
   private lastProgressEmit = 0;
 
   constructor(private readonly deps: JobQueueDeps) {
@@ -325,19 +332,35 @@ export class JobQueue {
     const social = this.social(id);
     if (!job?.social || !transcript || !edits || !details || !social) throw new Error("This episode has no clips yet.");
     if (!social.clips.some((c) => c.kept)) throw new Error("Keep at least one clip to export.");
+    if (this.clipExports.has(id)) throw new Error("These clips are already being exported.");
     const state = job.social;
+    const abort = new AbortController();
+    this.clipExports.set(id, abort);
+    Object.assign(state, { exportError: undefined });
     try {
       const result = await this.deps.exportEpisode({ job, transcript, edits, details, writing: this.writing(id), social }, undefined, {
         clipsOnly: true,
+        signal: abort.signal,
+        onProgress: (p) => {
+          state.exporting = p;
+          this.progressed();
+        },
       });
       Object.assign(state, { exported: { at: new Date().toISOString(), ...result }, exportError: undefined });
       return result;
     } catch (err) {
-      state.exportError = err instanceof Error ? err.message : String(err);
+      state.exportError = err instanceof AbortedError ? "Export cancelled." : err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
+      this.clipExports.delete(id);
+      delete state.exporting;
       this.changed();
     }
+  }
+
+  /** Stop exporting an episode's clips (the videos can take a while); nothing half-made is kept. */
+  cancelClipsExport(id: string): void {
+    this.clipExports.get(id)?.abort();
   }
 
   /** The audio file behind a job, for playback in review. */

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ClipAssembler, wavFile } from "../src/shared/wav";
+import { ClipAssembler, readWav, wavFile } from "../src/shared/wav";
 
 const RATE = 44100;
 /** Sample n of a test signal: a ramp that wraps, so every position is recognisable. */
 const value = (n: number) => ((n % 20000) - 10000) / 32768;
 /** As the WAV stores it. */
-const int16 = (v: number) => Math.round(v < 0 ? v * 32768 : v * 32767) + 0; // + 0 turns -0 into 0
+const int16 = (v: number) => Math.max(-32768, Math.min(32767, Math.round(v * 32768))) + 0; // + 0 turns -0 into 0
 
 /** Decoded blocks of `size` frames covering [0, totalFrames), with timestamps off by up to `jitter` seconds. */
 function* blocks(totalFrames: number, size = 1024, channels = 1, jitter = 0) {
@@ -65,6 +65,17 @@ test("empty blocks are skipped; audio that ends early gives a shorter clip; noth
   assert.throws(() => new ClipAssembler(6, 5), /end after it starts/);
 });
 
+test("16-bit audio decoded as s / 32768 comes back bit for bit, every value; out-of-range floats are clamped", () => {
+  const all = Float32Array.from({ length: 65536 }, (_, i) => (i - 32768) / 32768);
+  const clip = new ClipAssembler(0, 65536 / RATE);
+  clip.add(0, RATE, [all]);
+  const { pcm } = clip.toPcm();
+  assert.ok(pcm.every((v, i) => v === i - 32768));
+  const loud = new ClipAssembler(0, 2 / RATE);
+  loud.add(0, RATE, [Float32Array.from([1.5, -1.5])]);
+  assert.deepEqual([...loud.toPcm().pcm], [32767, -32768]);
+});
+
 test("a format change partway through is an error, not a garbled clip", () => {
   const clip = new ClipAssembler(0, 1);
   clip.add(0, RATE, [new Float32Array(1024)]);
@@ -82,4 +93,24 @@ test("WAV header: RIFF/WAVE, PCM, rate, channels, 16-bit, sizes", () => {
     [36 + 8, 1, 2, 16000, 64000, 4, 16, 8],
   );
   assert.deepEqual([view.getInt16(44, true), view.getInt16(50, true)], [1, -32768]);
+});
+
+test("reading a WAV back: samples, rate and channels; anything else is null", () => {
+  const wav = wavFile(Int16Array.from([1, -2, 3, -4]), 22050, 2);
+  const back = readWav(wav)!;
+  assert.deepEqual([...back.pcm], [1, -2, 3, -4]);
+  assert.deepEqual([back.sampleRate, back.channels], [22050, 2]);
+  assert.equal(readWav(new Uint8Array(10)), null);
+  const float = wav.slice();
+  new DataView(float.buffer).setUint16(20, 3, true); // IEEE float, not 16-bit PCM
+  assert.equal(readWav(float), null);
+});
+
+test("the assembled clip's samples, as well as its WAV", () => {
+  const clip = new ClipAssembler(0, 1);
+  clip.add(0, RATE, [Float32Array.from({ length: RATE }, (_, i) => value(i))]);
+  const { pcm, sampleRate, channels } = clip.toPcm();
+  assert.deepEqual([pcm.length, sampleRate, channels], [RATE, RATE, 1]);
+  assert.equal(pcm[123], int16(value(123)));
+  assert.deepEqual([...readWav(clip.toWav())!.pcm.subarray(0, 5)], [...pcm.subarray(0, 5)]);
 });

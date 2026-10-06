@@ -687,9 +687,6 @@ a {
 .review-side .section {
   margin-bottom: 14px;
 }
-.review-main .transcript {
-  max-width: 860px;
-}
 @media (max-width: 1080px) {
   .content.full {
     overflow-y: auto;
@@ -826,7 +823,6 @@ textarea.input {
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
-  max-width: 860px;
 }
 .checks-list {
   margin: 6px 0;
@@ -841,7 +837,6 @@ textarea.input {
 }
 
 .doc {
-  max-width: 860px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -949,6 +944,11 @@ textarea.input {
  * the left, the (tall) template sits on the right. One column keeps the
  * source order: profile, template, provider.
  */
+/* With a tall right-hand section spanning two rows, the extra height goes to
+   the second row, so the left column's first two sections sit together. */
+.settings-grid:has(> .col-right-tall) {
+  grid-template-rows: auto 1fr;
+}
 @container (min-width: 1218px) {
   .settings-grid > .col-left {
     grid-column: 1;
@@ -1169,6 +1169,59 @@ textarea.input {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
-.review-main .clip-card {
-  max-width: 860px;
+.clip-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.clip-more .button {
+  padding-left: 0;
+}
+.clip-details {
+  margin-top: 6px;
+}
+
+/* Two columns of checkboxes (Social › Captions for). */
+.checks.two-col {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 6px 18px;
+}
+
+/* Video clips */
+.background-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.video-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 12px;
+}
+.video-canvas {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  max-width: 100%;
+}
+.video-canvas.vertical {
+  width: 270px;
+}
+.video-canvas.square {
+  width: 360px;
+}
+.video-canvas.wide {
+  width: 100%;
+  max-width: 480px;
+}
+.clip-card.selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.video-canvas.clip-preview {
+  display: block;
+  margin-top: 10px;
 }

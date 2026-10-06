@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { strFromU8, unzipSync } from "fflate";
-import { buildTranscriptDoc, clipFileName, episodeDocuments, episodeLabel, isClipFile, safeFileName } from "../src/shared/exportDocs";
+import { buildTranscriptDoc, clipFileName, clipVideoName, episodeDocuments, episodeLabel, isClipFile, safeFileName } from "../src/shared/exportDocs";
 import type { SocialClip } from "../src/shared/clips";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "../src/shared/confidence";
 import { DEFAULT_SETTINGS, mergeSettings, type SpeakerFormat } from "../src/shared/settings";
@@ -331,4 +331,42 @@ test("clip audio goes in a Clips folder and replaces the episode's earlier clips
   // Documents only: the Clips folder is left as it was.
   await writeExport(root, base, [{ kind: "Transcript", blocks: [] }], ["txt"]);
   assert.equal(readdirSync(folder).length, 3);
+});
+
+test("clip videos are named by clip and shape, and a new export replaces them along with the WAVs", async () => {
+  const base = "Episode 386";
+  assert.equal(clipVideoName(base, 2, 'Tools: "reasons"?', "vertical"), "Episode 386 - Clip 2 - Tools reasons (vertical).mp4");
+  assert.ok(isClipFile(base, clipVideoName(base, 1, "A", "square")));
+  assert.ok(!isClipFile(base, "Episode 386 - Clip 1 - A.mov"));
+
+  const root = mkdtempSync(join(tmpdir(), "t2-export-"));
+  const folder = join(root, base, "Clips");
+  await writeExport(root, base, [], [], {
+    clips: [
+      { name: clipFileName(base, 1, "One"), data: new Uint8Array([1]) },
+      { name: clipVideoName(base, 1, "One", "vertical"), data: new Uint8Array([2]) },
+      { name: clipVideoName(base, 1, "One", "wide"), data: new Uint8Array([3]) },
+    ],
+  });
+  // Video turned off, or the wide shape dropped: the next export leaves no stale videos.
+  await writeExport(root, base, [], [], { clips: [{ name: clipFileName(base, 1, "One"), data: new Uint8Array([4]) }] });
+  assert.deepEqual(readdirSync(folder), [clipFileName(base, 1, "One")]);
+});
+
+test("the episode's own export replaces clip audio but keeps the videos made from the Clips tab", async () => {
+  const base = "Episode 386";
+  const root = mkdtempSync(join(tmpdir(), "t2-export-"));
+  const folder = join(root, base, "Clips");
+  const video = clipVideoName(base, 1, "One", "vertical");
+  await writeExport(root, base, [], [], {
+    clips: [
+      { name: clipFileName(base, 1, "One"), data: new Uint8Array([1]) },
+      { name: video, data: new Uint8Array([2]) },
+    ],
+  });
+  await writeExport(root, base, [{ kind: "Transcript", blocks: [] }], ["txt"], {
+    clips: [{ name: clipFileName(base, 1, "One again"), data: new Uint8Array([3]) }],
+    replaceClips: ["wav"],
+  });
+  assert.deepEqual(readdirSync(folder).sort(), [clipFileName(base, 1, "One again"), video].sort());
 });

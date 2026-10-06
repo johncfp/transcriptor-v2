@@ -51,6 +51,10 @@ export interface Api {
   pickLogo(): Promise<{ name: string; preview: string } | null>;
   /** A small data: URL preview of an imported logo, or null if it's gone. */
   logoPreview(name: string): Promise<string | null>;
+  /** Pick an image and copy it in as the video background; null if cancelled. */
+  pickBackground(): Promise<{ name: string; preview: string } | null>;
+  /** A data: URL of an imported video background, for previews; null if it's gone. */
+  backgroundPreview(name: string): Promise<string | null>;
 
   listKeys(): Promise<KeyStatus[]>;
   setKey(providerId: string, key: string): Promise<KeyStatus[]>;
@@ -85,6 +89,10 @@ export interface Api {
   cancelClips(id: string): Promise<void>;
   /** Export the kept clips' audio and their document; rejects with a readable message on failure. */
   exportClips(id: string): Promise<{ folder: string; files: string[] }>;
+  /** Stop an Export kept clips in progress. */
+  cancelClipsExport(id: string): Promise<void>;
+  /** Loudness per video frame (0–1) of the audio from `start` to `end`, for the waveform. */
+  clipLevels(id: string, start: number, end: number): Promise<number[]>;
   /** Save a custom template's sections to a file others can import. */
   exportTemplate(sections: SectionId[]): Promise<boolean>;
   /** Save an annotated sample template file to start a custom one from. */
@@ -129,6 +137,8 @@ export const IPC = {
   listModels: "writing:list-models",
   pickLogo: "branding:pick-logo",
   logoPreview: "branding:logo-preview",
+  pickBackground: "branding:pick-background",
+  backgroundPreview: "branding:background-preview",
   listKeys: "keys:list",
   setKey: "keys:set",
   deleteKey: "keys:delete",
@@ -151,6 +161,8 @@ export const IPC = {
   suggestClips: "jobs:suggest-clips",
   cancelClips: "jobs:cancel-clips",
   exportClips: "jobs:export-clips",
+  clipLevels: "jobs:clip-levels",
+  cancelClipsExport: "jobs:cancel-clips-export",
   exportTemplate: "template:export",
   importTemplate: "template:import",
   saveSampleTemplate: "template:sample",

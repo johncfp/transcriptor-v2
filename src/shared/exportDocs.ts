@@ -17,6 +17,7 @@ import {
 import { formatTimestamp } from "./transcript";
 import { captionWithHashtags, type SocialClip } from "./clips";
 import { PLATFORMS } from "./social";
+import type { ShapeId } from "./video";
 
 export type ExportFormat = "docx" | "txt" | "pdf";
 export type DocKind = "Transcript" | "Show Notes" | "Reference" | "Social Clips";
@@ -126,8 +127,13 @@ export function clipFileName(base: string, n: number, title: string): string {
   return `${base} - Clip ${n} - ${safeFileName(title, 60)}.wav`;
 }
 
-/** Whether a file in the clips folder is one of this episode's clips, so a new export can replace them all. */
-export const isClipFile = (base: string, name: string) => name.startsWith(`${base} - Clip `) && name.toLowerCase().endsWith(".wav");
+/** "Episode 386 - Clip 2 - Tools versus reasons (vertical).mp4" */
+export function clipVideoName(base: string, n: number, title: string, shape: ShapeId): string {
+  return `${base} - Clip ${n} - ${safeFileName(title, 60)} (${shape}).mp4`;
+}
+
+/** Whether a file in the clips folder is one of this episode's clips (audio or video), so a new export can replace them all. */
+export const isClipFile = (base: string, name: string) => name.startsWith(`${base} - Clip `) && /\.(wav|mp4)$/i.test(name);
 
 /** 75.25 → "01:15.2" */
 const clock = (sec: number) => `${formatTimestamp(sec)}.${Math.floor((sec % 1) * 10)}`;

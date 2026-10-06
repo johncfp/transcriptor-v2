@@ -50,6 +50,17 @@ see [INSTALL.md](INSTALL.md).
    tab you play, trim (a word at a time), edit and keep clips; kept clips are
    exported as WAV files in a Clips folder, with a Social Clips document of
    their captions.
+7. **Video clips** (optional, Settings › Social › Video clips): exporting the
+   kept clips also makes each one an MP4 in the shapes you choose (9:16 for
+   Reels, TikTok and Shorts, 1:1, 16:9): the clip's audio with its captions,
+   either highlighted word by word or as scrolling lines, plus the logo, show
+   name, speaker names and a waveform that moves with the audio, in your
+   colours over a colour or an image of your own. Three bundled fonts (Inter,
+   Atkinson Hyperlegible Next, Lexend) keep videos the same on every
+   computer. The Clips tab previews each clip exactly as it will be exported.
+   Videos are made on the computer (H.264 and AAC at 30 fps, about three times
+   faster than real time, 6–8 MB a minute), with progress and a Cancel button,
+   and aren't uploaded anywhere.
 
 Also: watching a Google Drive folder through Drive for Desktop (below), a
 live model list with an effort level for Claude and GPT, light and dark
@@ -73,20 +84,17 @@ Built in milestones:
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
 | M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
 | M6 | Social clips: suggested clips and captions, review, WAV export | Done |
-| M7 | Video clips: MP4 with the clip's audio and captions highlighted word by word, for Reels, TikTok and Shorts | **Next**: feasibility test |
+| M7 | Video clips: MP4s of kept clips with captions, in three shapes | Done (next beta) |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.
 
-**Next for development and testing: video clip feasibility.** Before any
-video work is planned, a test of whether the app can make MP4 video itself,
-the way it now cuts audio (no ffmpeg): H.264 encoding with the browser's own
-WebCodecs in Electron on Windows (including the "N" editions, which may lack
-an H.264 encoder) and macOS, how fast a 60-second 1080×1920 clip renders, and
-file sizes. The answer decides whether video clips go ahead as M7 and how.
-Open questions for then: which shapes (9:16 only, or also 1:1 and 16:9),
-caption style (word-by-word highlight or scrolling lines), and the look
-(background, logo, waveform, speaker names).
+**Video clips** are checked on a real episode on Windows and with generated
+audio on macOS and Windows: the sound is in sync with the captions to the
+millisecond, and the pictures match the preview frame for frame. They use the
+browser's own H.264 encoder (hardware where there is one), so they should
+work on Windows "N" editions too, but that hasn't been tried. Next: release
+them in the next beta.
 
 ## Watching a Google Drive folder (Drive for Desktop)
 

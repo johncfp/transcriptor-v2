@@ -2,6 +2,18 @@ import { EFFORTS, type Effort } from "./providers";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
 import { VOICE_IDS, type VoiceId } from "./voices";
 import type { PlatformId } from "./social";
+import {
+  BACKGROUND_FILE,
+  BACKGROUND_TYPES,
+  CAPTION_SIZES,
+  CAPTION_STYLES,
+  VIDEO_FONTS,
+  type BackgroundType,
+  type CaptionSize,
+  type CaptionStyle,
+  type ShapeId,
+  type VideoFontId,
+} from "./video";
 
 // Settings schema shared by the main process (which owns the file on disk)
 // and the renderer (which edits it over IPC). Keep this file free of Node and
@@ -18,6 +30,8 @@ export interface Settings {
     theme: Theme;
     /** Episode list colors by stage, as "#rrggbb". */
     episodeColors: EpisodeColors;
+    /** How the window first opens each time the app starts (see WINDOW_STARTS). */
+    startWindow: StartWindow;
   };
   processing: {
     /** "approve" asks before each new file is processed; "auto" just starts. */
@@ -66,6 +80,8 @@ export interface Settings {
    * moments from the transcript and writes captions; they're reviewed before
    * the clips are cut and exported.
    */
+  /** Video clips (src/shared/video.ts): kept clips as MP4s with captions. */
+  video: VideoSettings;
   social: ModelChoice &
     VoiceChoice & {
       enabled: boolean;
@@ -82,6 +98,24 @@ export interface Settings {
   template: string;
   /** Section ids, in order, for the "custom" template. */
   customSections: string[];
+}
+
+export interface VideoSettings {
+  enabled: boolean;
+  shapes: Record<ShapeId, boolean>;
+  captionStyle: CaptionStyle;
+  font: VideoFontId;
+  captionSize: CaptionSize;
+  /** As "#rrggbb". The highlight colours the current word, the speaker name and the waveform's newest bar. */
+  colors: { background: string; text: string; highlight: string };
+  backgroundType: BackgroundType;
+  /** File name of the imported background in userData/branding (a JPEG); empty = none. */
+  backgroundImage: string;
+  /** The logo from Output › Cover page, header and footer. */
+  showLogo: boolean;
+  showShowName: boolean;
+  showSpeakers: boolean;
+  waveform: boolean;
 }
 
 /** Which provider, model and effort a writing step uses. */
@@ -134,7 +168,16 @@ export const THEMES = [
 
 export type Theme = (typeof THEMES)[number]["id"];
 
-const COLOR_KEYS = new Set(Object.keys(DEFAULT_EPISODE_COLORS));
+export const WINDOW_STARTS = [
+  { id: "normal", label: "Normal" },
+  { id: "maximized", label: "Maximized" },
+  { id: "fullscreen", label: "Full screen" },
+] as const;
+
+export type StartWindow = (typeof WINDOW_STARTS)[number]["id"];
+
+/** Keys holding a "#rrggbb" colour: the episode stages and the video colours. */
+const COLOR_KEYS = new Set([...Object.keys(DEFAULT_EPISODE_COLORS), "background", "text", "highlight"]);
 
 /** An imported logo's file name (see src/main/logo.ts), so settings can't point anywhere else. */
 export const LOGO_FILE = /^logo-\d+\.png$/;
@@ -144,8 +187,13 @@ const ALLOWED: Record<string, readonly string[]> = {
   intake: ["approve", "auto"],
   speakerFormat: SPEAKER_FORMATS.map((f) => f.id),
   theme: THEMES.map((t) => t.id),
+  startWindow: WINDOW_STARTS.map((w) => w.id),
   voice: VOICE_IDS,
   effort: ["", ...EFFORTS],
+  captionStyle: CAPTION_STYLES.map((s) => s.id),
+  font: VIDEO_FONTS.map((f) => f.id),
+  captionSize: CAPTION_SIZES.map((s) => s.id),
+  backgroundType: BACKGROUND_TYPES,
 };
 
 export interface ShowProfile {
@@ -163,6 +211,7 @@ export const DEFAULT_SETTINGS: Settings = {
     closeToTray: true,
     theme: "system",
     episodeColors: { ...DEFAULT_EPISODE_COLORS },
+    startWindow: "normal",
   },
   processing: {
     intake: "approve",
@@ -211,6 +260,21 @@ export const DEFAULT_SETTINGS: Settings = {
     minSeconds: 15,
     maxSeconds: 60,
     platforms: { instagram: true, x: true, linkedin: true, youtube: true },
+  },
+  video: {
+    // Off until turned on: rendering takes a while.
+    enabled: false,
+    shapes: { vertical: true, square: false, wide: false },
+    captionStyle: "highlight",
+    font: "inter",
+    captionSize: "medium",
+    colors: { background: "#14213d", text: "#ffffff", highlight: "#fca311" },
+    backgroundType: "color",
+    backgroundImage: "",
+    showLogo: true,
+    showShowName: true,
+    showSpeakers: true,
+    waveform: true,
   },
   template: "full",
   customSections: [],
@@ -263,6 +327,7 @@ export function mergeSettings<T>(base: T, patch: unknown): T {
       if (ALLOWED[key] && !ALLOWED[key].includes(p as string)) continue;
       if (COLOR_KEYS.has(key) && !/^#[0-9a-f]{6}$/i.test(p as string)) continue;
       if (key === "logo" && p !== "" && !LOGO_FILE.test(p as string)) continue;
+      if (key === "backgroundImage" && p !== "" && !BACKGROUND_FILE.test(p as string)) continue;
       out[key] = p;
     }
   }

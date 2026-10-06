@@ -25,6 +25,7 @@ export function SocialVoiceSection({ settings, update }: { settings: Settings; u
   const { social } = settings;
   return (
     <VoicePicker
+      className="col-left"
       title="Social voice"
       intro="How the clip captions read. Every voice follows the same accuracy rules: clip text word for word from the episode, nothing added that isn't in it."
       name="social-voice"
@@ -40,6 +41,7 @@ export function SocialVoiceSection({ settings, update }: { settings: Settings; u
 
 function VoicePicker(props: {
   title: string;
+  className?: string;
   intro: string;
   /** Radio group name; unique per picker. */
   name: string;
@@ -56,7 +58,7 @@ function VoicePicker(props: {
   const preset = current === "custom" ? null : props.describe(current);
 
   return (
-    <Section title={props.title} intro={props.intro}>
+    <Section className={props.className} title={props.title} intro={props.intro}>
       <div className="voice-options" role="radiogroup" aria-label={props.title}>
         {VOICE_IDS.map((id) => (
           <label key={id} className={`voice-option${current === id ? " selected" : ""}`}>

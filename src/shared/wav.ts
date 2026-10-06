@@ -49,8 +49,8 @@ export class ClipAssembler {
     for (let c = 0; c < this.channels; c++) {
       const data = channelData[c]!;
       for (let k = first; k < last; k++) {
-        const v = Math.max(-1, Math.min(1, data[k]!));
-        this.pcm[(at + k - this.from) * this.channels + c] = Math.round(v < 0 ? v * 32768 : v * 32767);
+        // The inverse of decoding 16-bit audio (s / 32768), so 16-bit sources come back bit for bit.
+        this.pcm[(at + k - this.from) * this.channels + c] = Math.max(-32768, Math.min(32767, Math.round(data[k]! * 32768)));
       }
     }
     if (last > first) this.filled = Math.max(this.filled, at + last - this.from);
@@ -61,10 +61,16 @@ export class ClipAssembler {
     return this.rate > 0 && this.filled * this.channels >= this.pcm.length;
   }
 
-  /** The clip as a WAV file; shorter than asked if the audio ended first. */
-  toWav(): Uint8Array {
+  /** The clip's samples (interleaved, 16-bit); shorter than asked if the audio ended first. */
+  toPcm(): { pcm: Int16Array; sampleRate: number; channels: number } {
     if (!this.rate || !this.filled) throw new Error("No audio was found for this clip.");
-    return wavFile(this.pcm.subarray(0, this.filled * this.channels), this.rate, this.channels);
+    return { pcm: this.pcm.subarray(0, this.filled * this.channels), sampleRate: this.rate, channels: this.channels };
+  }
+
+  /** The clip as a WAV file. */
+  toWav(): Uint8Array {
+    const { pcm, sampleRate, channels } = this.toPcm();
+    return wavFile(pcm, sampleRate, channels);
   }
 }
 
@@ -88,4 +94,27 @@ export function wavFile(pcm: Int16Array, sampleRate: number, channels: number): 
   view.setUint32(40, pcm.length * 2, true);
   for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, pcm[i]!, true);
   return bytes;
+}
+
+/** A 16-bit PCM WAV file's samples (interleaved), rate and channels; null if it isn't one. */
+export function readWav(bytes: Uint8Array): { pcm: Int16Array; sampleRate: number; channels: number } | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const text = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
+  if (bytes.length < 12 || text(0) !== "RIFF" || text(8) !== "WAVE") return null;
+  let p = 12;
+  let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+  while (p + 8 <= bytes.length) {
+    const id = text(p);
+    const size = view.getUint32(p + 4, true);
+    if (id === "fmt ") fmt = { format: view.getUint16(p + 8, true), channels: view.getUint16(p + 10, true), rate: view.getUint32(p + 12, true), bits: view.getUint16(p + 22, true) };
+    if (id === "data") {
+      if (!fmt || fmt.format !== 1 || fmt.bits !== 16) return null;
+      const count = Math.floor(Math.min(size, bytes.length - p - 8) / 2);
+      const pcm = new Int16Array(count);
+      for (let i = 0; i < count; i++) pcm[i] = view.getInt16(p + 8 + i * 2, true);
+      return { pcm, sampleRate: fmt.rate, channels: fmt.channels };
+    }
+    p += 8 + size + (size & 1);
+  }
+  return null;
 }

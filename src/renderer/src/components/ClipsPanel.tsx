@@ -14,9 +14,11 @@ import { audioUrl, type Job } from "../../../shared/jobs";
 import { EFFORT_LABELS, providerById, type Effort } from "../../../shared/providers";
 import type { Settings } from "../../../shared/settings";
 import { PLATFORMS, socialDefaultModel, type PlatformId } from "../../../shared/social";
+import { SHAPES } from "../../../shared/video";
 import { formatTimestamp } from "../../../shared/transcript";
 import { isVoiceId, VOICES } from "../../../shared/voices";
 import { Section } from "./Section";
+import { ClipVideoPreview } from "./ClipVideoPreview";
 
 /** 75.25 → "01:15.2" */
 const clock = (sec: number) => `${formatTimestamp(sec)}.${Math.floor((sec % 1) * 10)}`;
@@ -39,6 +41,8 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
   const [saveError, setSaveError] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState<SocialClip | null>(null);
+  /** The clip in the video preview: the one last played or clicked. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const pending = useRef<Record<string, ClipEdit>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,6 +98,7 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
     if (!a) return;
     a.currentTime = clip.start;
     setPlaying(clip);
+    setSelectedId(clip.id);
     void a.play();
   };
   const stop = () => {
@@ -118,6 +123,7 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
   };
 
   const clips = result?.clips ?? [];
+  const selected = clips.find((c) => c.id === selectedId) ?? clips[0] ?? null;
   const keptCount = clips.filter((c) => c.kept).length;
   const provider = providerById(settings.social.provider);
   const model = settings.social.model || socialDefaultModel(settings.social.provider);
@@ -154,8 +160,24 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
             {!settings.social.enabled && " Social clips are switched off there, so new episodes don't get them automatically."}
           </p>
         </Section>
+        {selected && ctx && (
+          <ClipVideoPreview
+            jobId={job.id}
+            clip={selected}
+            ctx={ctx}
+            settings={settings}
+            audioRef={audioRef}
+            playing={playing?.id === selected.id}
+          />
+        )}
         {result && result.clips.length > 0 && (
-          <ClipsExport job={job} keptCount={keptCount} folder={job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"} beforeExport={flush} />
+          <ClipsExport
+            job={job}
+            keptCount={keptCount}
+            folder={job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"}
+            video={settings.video}
+            beforeExport={flush}
+          />
         )}
         {result && <ClipChecks result={result} keptCount={keptCount} />}
       </aside>
@@ -176,6 +198,8 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
               ctx={ctx}
               playing={playing?.id === clip.id}
               onPlay={() => (playing?.id === clip.id ? stop() : play(clip))}
+              onSelect={() => setSelectedId(clip.id)}
+              selected={selected?.id === clip.id}
               onChange={(change) => update(clip, change)}
             />
           ))
@@ -202,18 +226,26 @@ const cleanError = (err: unknown) =>
   String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
 /** Export the kept clips: each as a WAV, plus a Social Clips document with their captions. */
-function ClipsExport(props: { job: Job; keptCount: number; folder: string; beforeExport: () => Promise<void> }) {
-  const { job, keptCount } = props;
+/** Export the kept clips: each as a WAV (and, with video clips on, an MP4 per shape), plus a Social Clips document. */
+function ClipsExport(props: { job: Job; keptCount: number; folder: string; video: Settings["video"]; beforeExport: () => Promise<void> }) {
+  const { job, keptCount, video } = props;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const exported = job.social?.exported;
+  const progress = job.social?.exporting;
   useEffect(() => setError(job.social?.exportError ?? ""), [job.social?.exportError]);
+  const shapes = SHAPES.filter((s) => video.shapes[s.id]);
+  const withVideo = video.enabled && shapes.length > 0;
+  const percent = progress && progress.total ? Math.floor((progress.done / progress.total) * 100) : 0;
 
   return (
     <Section title="Export clips">
       <p className="hint">
-        Each kept clip as a WAV file in a Clips folder, plus a Social Clips document with their captions, in your usual
-        formats. Saved to {props.folder}, in the episode's folder. Exporting the episode includes them too.
+        {withVideo
+          ? `Each kept clip as a WAV file and as video (${shapes.map((s) => s.label).join(", ")}), in a Clips folder, `
+          : "Each kept clip as a WAV file in a Clips folder, "}
+        plus a Social Clips document with their captions, in your usual formats. Saved to {props.folder}, in the episode's folder.
+        {!withVideo && " For videos, turn on Make video clips in Settings › Social."}
       </p>
       <div className="notes-actions">
         <button
@@ -233,17 +265,30 @@ function ClipsExport(props: { job: Job; keptCount: number; folder: string; befor
             }
           }}
         >
-          {busy ? "Cutting clips…" : keptCount ? `Export ${keptCount} kept clip${keptCount === 1 ? "" : "s"}` : "Export kept clips"}
+          {busy ? (progress ? "Making videos…" : "Cutting clips…") : keptCount ? `Export ${keptCount} kept clip${keptCount === 1 ? "" : "s"}` : "Export kept clips"}
         </button>
-        {exported && (
+        {busy && (
+          <button className="button ghost" onClick={() => void window.api.cancelClipsExport(job.id)}>
+            Cancel
+          </button>
+        )}
+        {exported && !busy && (
           <button className="button" onClick={() => void window.api.openFolder(exported.folder)}>
             Open folder
           </button>
         )}
       </div>
+      {busy && progress && (
+        <>
+          <div className="progress" role="progressbar" aria-label="Video progress" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+            <div className="progress-bar" style={{ width: `${percent}%` }} />
+          </div>
+          <p className="hint">{percent}% of the videos made.</p>
+        </>
+      )}
       {!keptCount && <p className="hint">Keep at least one clip to export.</p>}
       {error && <p className="hint error">{error}</p>}
-      {exported && !error && (
+      {exported && !error && !busy && (
         <p className="hint">
           Exported {exported.files.length} file{exported.files.length === 1 ? "" : "s"} on {new Date(exported.at).toLocaleString()}.
         </p>
@@ -292,9 +337,14 @@ function ClipCard(props: {
   playing: boolean;
   onPlay: () => void;
   onChange: (change: Partial<ClipEdit>) => void;
+  onSelect: () => void;
+  selected: boolean;
 }) {
   const { clip, ctx } = props;
   const [title, setTitle] = useState(clip.title);
+  // Collapsed to the title, buttons and why; the rest on "Show more".
+  const [expanded, setExpanded] = useState(false);
+  const toCheck = clip.titleProblems.length + Object.values(clip.captions).reduce((n, c) => n + (c?.problems.length ?? 0), 0);
   const move = (edge: "start" | "end", by: -1 | 1) => nudgeClip(ctx.turns, clip, edge, by);
   const Nudge = ({ edge, by, label }: { edge: "start" | "end"; by: -1 | 1; label: string }) => {
     const next = move(edge, by);
@@ -306,7 +356,11 @@ function ClipCard(props: {
   };
 
   return (
-    <section className={`section clip-card${clip.kept ? " kept" : ""}`} aria-label={clip.title}>
+    <section
+      className={`section clip-card${clip.kept ? " kept" : ""}${props.selected ? " selected" : ""}`}
+      aria-label={clip.title}
+      onMouseDownCapture={props.onSelect}
+    >
       <div className="clip-head">
         <input
           className="input clip-title"
@@ -324,34 +378,49 @@ function ClipCard(props: {
           {clip.kept ? "Kept" : "Keep"}
         </button>
       </div>
-      {clip.titleProblems.map((p) => (
-        <p key={p} className="hint warn">
-          {p}
-        </p>
-      ))}
-
-      <div className="clip-times">
-        <span>Start {clock(clip.start)}</span>
-        <Nudge edge="start" by={-1} label="Start one word earlier" />
-        <Nudge edge="start" by={1} label="Start one word later" />
-        <span className="clip-times-gap">End {clock(clip.end)}</span>
-        <Nudge edge="end" by={-1} label="End one word earlier" />
-        <Nudge edge="end" by={1} label="End one word later" />
-        <span className="muted">{(clip.end - clip.start).toFixed(1)} s</span>
+      {clip.why && <p className="hint">Why: {clip.why}</p>}
+      <div className="clip-more">
+        <button className="button ghost" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show less" : "Show more"}
+        </button>
+        {!expanded && toCheck > 0 && (
+          <span className="hint warn">
+            {toCheck} {toCheck === 1 ? "thing" : "things"} to check
+          </span>
+        )}
       </div>
 
-      <blockquote className="clip-lines">
-        {clip.lines.map((l, i) => (
-          <p key={i}>
-            <strong>{l.speaker}:</strong> {l.text}
-          </p>
-        ))}
-      </blockquote>
-      {clip.why && <p className="hint">Why: {clip.why}</p>}
+      {expanded && (
+        <div className="clip-details">
+          {clip.titleProblems.map((p) => (
+            <p key={p} className="hint warn">
+              {p}
+            </p>
+          ))}
 
-      {(Object.keys(clip.captions) as PlatformId[]).map((id) => (
-        <CaptionEditor key={id} platform={id} caption={clip.captions[id]!} onChange={(c) => props.onChange({ captions: { ...editOf(clip).captions, [id]: c } })} />
-      ))}
+          <div className="clip-times">
+            <span>Start {clock(clip.start)}</span>
+            <Nudge edge="start" by={-1} label="Start one word earlier" />
+            <Nudge edge="start" by={1} label="Start one word later" />
+            <span className="clip-times-gap">End {clock(clip.end)}</span>
+            <Nudge edge="end" by={-1} label="End one word earlier" />
+            <Nudge edge="end" by={1} label="End one word later" />
+            <span className="muted">{(clip.end - clip.start).toFixed(1)} s</span>
+          </div>
+
+          <blockquote className="clip-lines">
+            {clip.lines.map((l, i) => (
+              <p key={i}>
+                <strong>{l.speaker}:</strong> {l.text}
+              </p>
+            ))}
+          </blockquote>
+
+          {(Object.keys(clip.captions) as PlatformId[]).map((id) => (
+            <CaptionEditor key={id} platform={id} caption={clip.captions[id]!} onChange={(c) => props.onChange({ captions: { ...editOf(clip).captions, [id]: c } })} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

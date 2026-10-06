@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { BrowserWindow, ipcMain, type WebContents } from "electron";
-import { CUTTER_IPC, type CutJob, type CutResult } from "../shared/cutter";
+import { CUTTER_IPC, type CutJob, type CutProgress, type CutResult, type VideoJob } from "../shared/cutter";
+import { AbortedError } from "./transcribe/multipart";
 
 /**
- * Cuts social clips out of an episode's audio as WAV files. Decoding needs
- * the browser's WebCodecs, which the main process doesn't have, so each call
- * opens a hidden, sandboxed page (src/renderer/src/cutter.ts) that runs
- * mediabunny. The page never sees the file path: it reads the bytes it needs
- * through IPC, from the one file this call opened.
+ * Cuts social clips out of an episode's audio as WAV files, and can make
+ * them into MP4 videos. Decoding and encoding need the browser's WebCodecs,
+ * which the main process doesn't have, so each call opens a hidden, sandboxed
+ * page (src/renderer/src/cutter.ts) that runs mediabunny. The page never sees
+ * the file path: it reads the bytes it needs through IPC, from the one file
+ * this call opened.
  */
 export interface CutterOptions {
   preload: string;
@@ -21,6 +23,7 @@ interface Running {
   size: number;
   sender: WebContents;
   settle: (result: CutResult) => void;
+  onProgress?: (p: CutProgress) => void;
 }
 
 const running = new Map<string, Running>();
@@ -44,17 +47,41 @@ function installHandlers(): void {
     }
     return new Uint8Array(bytes.buffer, bytes.byteOffset, read);
   });
+  ipcMain.on(CUTTER_IPC.progress, (e, id: unknown, p: CutProgress) => {
+    const job = typeof id === "string" ? running.get(id) : undefined;
+    if (job && e.sender === job.sender && Number.isFinite(p?.done) && Number.isFinite(p?.total)) job.onProgress?.({ done: p.done, total: p.total });
+  });
   ipcMain.on(CUTTER_IPC.done, (e, id: unknown, result: CutResult) => {
     const job = typeof id === "string" ? running.get(id) : undefined;
     if (job && e.sender === job.sender) job.settle(result);
   });
 }
 
-/** Generous: decoding an hour of MP3 to reach a late clip takes seconds, not minutes. */
-const timeoutMs = (clips: number) => 60_000 + clips * 30_000;
+/**
+ * Generous: decoding an hour of MP3 to reach a late clip takes seconds, not
+ * minutes, and video renders at about 3x real time even in software.
+ */
+const timeoutMs = (clips: { start: number; end: number }[], video?: VideoJob) =>
+  60_000 +
+  clips.length * 30_000 +
+  (video ? clips.reduce((ms, c, i) => ms + (c.end - c.start) * 1000 * (video.clips[i]?.shapes.length ?? 0), 0) : 0);
 
-export async function cutClips(filePath: string, clips: { start: number; end: number }[], opts: CutterOptions): Promise<Uint8Array[]> {
-  if (!clips.length) return [];
+export interface CutOptions {
+  video?: VideoJob;
+  onProgress?: (p: CutProgress) => void;
+  /** Aborting closes the cutter and rejects with AbortedError. */
+  signal?: AbortSignal;
+}
+
+/** WAVs for the clips, and with `video`, their MP4s (videos[clip][shape]). */
+export async function cutClips(
+  filePath: string,
+  clips: { start: number; end: number }[],
+  opts: CutterOptions,
+  more: CutOptions = {},
+): Promise<{ wavs: Uint8Array[]; videos: Uint8Array[][] }> {
+  if (!clips.length) return { wavs: [], videos: [] };
+  if (more.signal?.aborted) throw new AbortedError("aborted");
   installHandlers();
   let fd: number;
   try {
@@ -70,27 +97,41 @@ export async function cutClips(filePath: string, clips: { start: number; end: nu
   win.webContents.on("will-navigate", (e) => e.preventDefault());
   const id = randomUUID();
   let onReady: ((e: Electron.IpcMainEvent) => void) | null = null;
+  let onAbort: (() => void) | null = null;
+  let aborted = false;
   try {
-    const job: CutJob = { id, size: fstatSync(fd).size, clips };
+    const job: CutJob = { id, size: fstatSync(fd).size, clips, ...(more.video ? { video: more.video } : {}) };
     const result = await new Promise<CutResult>((resolve) => {
-      const timer = setTimeout(() => resolve({ error: "Cutting the clips took too long." }), timeoutMs(clips.length));
+      const timer = setTimeout(
+        () => resolve({ error: more.video ? "Making the videos took too long." : "Cutting the clips took too long." }),
+        timeoutMs(clips, more.video),
+      );
       const settle = (r: CutResult) => {
         clearTimeout(timer);
         resolve(r);
       };
-      running.set(id, { fd, size: job.size, sender: win.webContents, settle });
+      running.set(id, { fd, size: job.size, sender: win.webContents, settle, onProgress: more.onProgress });
       win.webContents.on("render-process-gone", () => settle({ error: "The clip cutter stopped unexpectedly." }));
+      onAbort = () => {
+        aborted = true;
+        settle({ error: "cancelled" });
+      };
+      more.signal?.addEventListener("abort", onAbort);
       onReady = (e: Electron.IpcMainEvent) => {
         if (e.sender === win.webContents) win.webContents.send(CUTTER_IPC.job, job);
       };
       ipcMain.on(CUTTER_IPC.ready, onReady);
       opts.load(win).catch(() => settle({ error: "The clip cutter couldn't start." }));
     });
+    if (aborted) throw new AbortedError("aborted");
     if (result.error !== undefined) throw new Error(result.error);
     if (result.clips.length !== clips.length) throw new Error("Some clips didn't come back from the cutter.");
-    return result.clips.map((c) => new Uint8Array(c));
+    const videos = (result.videos ?? []).map((perShape) => perShape.map((v) => new Uint8Array(v)));
+    if (more.video && videos.length !== clips.length) throw new Error("Some videos didn't come back from the cutter.");
+    return { wavs: result.clips.map((c) => new Uint8Array(c)), videos };
   } finally {
     if (onReady) ipcMain.removeListener(CUTTER_IPC.ready, onReady);
+    if (onAbort) more.signal?.removeEventListener("abort", onAbort);
     running.delete(id);
     closeSync(fd);
     if (!win.isDestroyed()) win.destroy();
