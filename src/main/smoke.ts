@@ -273,6 +273,19 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await click(".tab", "Clips");
       await pause(800);
       await shot("clips.png");
+      // Cards open collapsed (title, buttons, why) and fill the column; "Show more" opens the rest.
+      const clipsCollapsed = await js<{ why: boolean; captions: number; times: number; fill: boolean }>(`(() => {
+        const card = document.querySelector(".clip-card");
+        const main = document.querySelector(".review-main");
+        return {
+          why: card.innerText.includes("Why: Short and friendly."),
+          captions: card.querySelectorAll(".caption-editor").length,
+          times: card.querySelectorAll(".clip-times").length,
+          fill: card.getBoundingClientRect().width >= main.clientWidth - 24,
+        };
+      })()`);
+      await click(".clip-card button", "Show more");
+      await pause(300);
       const clipsView = await js<{ cards: number; text: string; captions: number; fullWidth: boolean }>(`({
         cards: document.querySelectorAll(".clip-card").length,
         text: document.querySelector(".clip-lines")?.innerText ?? "",
@@ -282,8 +295,30 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           (el) => Math.round(el.getBoundingClientRect().width) === Math.round(el.parentElement.getBoundingClientRect().width),
         ),
       })`);
+      // Video preview of the clip: drawn, with the clip's waveform levels from the main process,
+      // and moving with the audio while it plays.
+      const previewHash = () =>
+        js<string>(`(() => {
+          const c = document.querySelector("canvas[aria-label='Clip video preview']");
+          if (!c) return "";
+          const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          let h = 0;
+          for (let i = 0; i < d.length; i += 4 * 53) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
+          return c.width + "x" + c.height + ":" + h;
+        })()`);
+      await pause(1200);
+      const clipPreviewStill = await previewHash();
+      const clipPreviewFont = await js<boolean>(`document.fonts.check('700 40px "T2 Inter"')`);
+      const clipLevels = await js<number[]>(`window.api.listJobs().then((j) => window.api.getSocial(j[0].id).then((s) => window.api.clipLevels(j[0].id, s.clips[0].start, s.clips[0].end)))`);
+      writeFileSync(
+        join(dir, "clip-preview.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
       await click(".clip-card button", "Play clip");
       await pause(400);
+      const clipPreviewEarly = await previewHash();
+      await pause(1500);
+      const clipPreviewLater = await previewHash();
       const clipPlayback = await js<{ paused: boolean; time: number; label: string }>(`({
         paused: document.querySelector(".review-main audio").paused,
         time: document.querySelector(".review-main audio").currentTime,
@@ -310,6 +345,16 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipsView.text.includes("Pete: Thanks, glad to be here.") &&
         clipsView.captions === 2 &&
         clipsView.fullWidth &&
+        clipsCollapsed.why &&
+        clipsCollapsed.captions === 0 &&
+        clipsCollapsed.times === 0 &&
+        clipsCollapsed.fill &&
+        clipPreviewStill.startsWith("540x960:") &&
+        clipPreviewFont &&
+        // One per frame of the clip as it is here, 0–7.9 s (it's trimmed to 7.5 s further down).
+        clipLevels.length === Math.ceil(7.9 * 30) &&
+        clipPreviewEarly !== clipPreviewStill &&
+        clipPreviewLater !== clipPreviewEarly &&
         !clipPlayback.paused &&
         clipPlayback.label === "Stop" &&
         savedClip?.kept === true &&
@@ -343,6 +388,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(500);
       await pause(500);
       const notesText = await js<string>(`document.querySelector(".doc")?.innerText ?? ""`);
+      // The notes fill the width of their column, like the clips.
+      const docFills = await js<boolean>(`document.querySelector(".doc").getBoundingClientRect().width >= document.querySelector(".review-main").clientWidth - 24`);
       const checksText = await js<string>(`document.querySelector(".review-side")?.innerText ?? ""`);
       await shot("notes.png");
       // Auto-export ran when the notes finished (DOCX is the default format).
@@ -466,57 +513,30 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         socialPicker.voices === 4 &&
         JSON.stringify(socialPicker.clips) === JSON.stringify(["3", "5", "15", "60"]);
 
-      // Video clips settings: the preview is drawn (in the bundled font) and redraws per shape.
-      const previewInfo = () =>
-        js<{ width: number; height: number; colors: number; font: boolean; captionsTwoCol: boolean; enabled: boolean }>(`(() => {
-          const c = document.querySelector("canvas[aria-label='Video preview']");
-          const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-          const colors = new Set();
-          for (let i = 0; i < data.length; i += 4 * 97) colors.add(data[i] + "," + data[i + 1] + "," + data[i + 2]);
-          const checks = [...document.querySelectorAll(".checks.two-col")][0];
-          const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
-          return {
-            width: c.width,
-            height: c.height,
-            colors: colors.size,
-            font: document.fonts.check('700 40px "T2 Inter"'),
-            captionsTwoCol: !!checks && getComputedStyle(checks).gridTemplateColumns.split(" ").length === 2,
-            enabled: video.querySelector(".switch").checked,
-          };
-        })()`);
+      // Video clips settings: the controls, off by default, with the platforms in two columns.
+      // (The preview is on each clip's Clips tab; it's checked there.)
       await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Video clips").scrollIntoView()`);
-      await pause(800);
-      const previewVertical = await previewInfo();
+      await pause(500);
       await shot("settings-video.png");
-      // The preview frames themselves, at their drawn size.
-      const savePreview = async (name: string) =>
-        writeFileSync(
-          join(dir, name),
-          Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
-        );
-      await savePreview("video-preview-vertical.png");
-      await click("[aria-label='Preview shape'] .segment", "Wide 16:9");
-      await pause(600);
-      const previewWide = await previewInfo();
-      await click("[aria-label='Caption style'] .segment", "Scrolling lines");
-      await pause(600);
-      await shot("settings-video-wide-scroll.png");
-      await savePreview("video-preview-wide-scroll.png");
-      const previewScroll = await previewInfo();
+      const videoControls = await js<{ shapes: number; fonts: string[]; styles: string[]; enabled: boolean; captionsTwoCol: boolean; preview: number }>(`(() => {
+        const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
+        const checks = document.querySelector(".checks.two-col");
+        return {
+          shapes: video.querySelectorAll(".checks input[type=checkbox]").length,
+          fonts: [...video.querySelectorAll("select[aria-label=Font] option")].map((o) => o.textContent),
+          styles: [...video.querySelectorAll("[aria-label='Caption style'] .segment")].map((b) => b.textContent),
+          enabled: video.querySelector(".switch").checked,
+          captionsTwoCol: !!checks && getComputedStyle(checks).gridTemplateColumns.split(" ").length === 2,
+          preview: video.querySelectorAll("canvas").length,
+        };
+      })()`);
       const videoSettings =
-        previewVertical.width === 540 &&
-        previewVertical.height === 960 &&
-        previewVertical.colors > 20 &&
-        previewVertical.font &&
-        previewVertical.captionsTwoCol &&
-        !previewVertical.enabled &&
-        previewWide.width === 960 &&
-        previewWide.height === 540 &&
-        previewWide.colors > 20 &&
-        previewScroll.colors > 20;
-      // Leave the scrolling style as a draft, not saved.
-      await click("button", "Discard");
-      await pause(300);
+        videoControls.shapes === 3 &&
+        JSON.stringify(videoControls.fonts) === JSON.stringify(["Inter", "Atkinson Hyperlegible Next", "Lexend"]) &&
+        JSON.stringify(videoControls.styles) === JSON.stringify(["Word by word", "Scrolling lines"]) &&
+        !videoControls.enabled &&
+        videoControls.captionsTwoCol &&
+        videoControls.preview === 0;
       claude.close();
       const draftRequest = claude.requests.find((r) => r.body.stream)?.body;
       const modelPicker =
@@ -763,6 +783,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           notesStacked &&
           socialColumns &&
           videoSettings &&
+          docFills &&
           themes &&
           saveFlow &&
           customVoice &&
@@ -790,6 +811,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         social,
         clipsView,
         clipPlayback,
+        clipsCollapsed,
+        clipPreview: { still: clipPreviewStill, early: clipPreviewEarly, later: clipPreviewLater, levels: clipLevels.length },
         savedClip,
         clipsExport,
         clipsExportError,
@@ -814,7 +837,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         settingsColumns,
         notesLayout,
         socialLayout,
-        preview: { previewVertical, previewWide, previewScroll },
+        videoControls,
         pageWidth,
         saveFlow: { dirtyShown, promptShown, stayed, discarded, savedOk },
         stageColor,

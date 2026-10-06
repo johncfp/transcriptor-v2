@@ -89,3 +89,26 @@ export function wavFile(pcm: Int16Array, sampleRate: number, channels: number): 
   for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, pcm[i]!, true);
   return bytes;
 }
+
+/** A 16-bit PCM WAV file's samples (interleaved), rate and channels; null if it isn't one. */
+export function readWav(bytes: Uint8Array): { pcm: Int16Array; sampleRate: number; channels: number } | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const text = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
+  if (bytes.length < 12 || text(0) !== "RIFF" || text(8) !== "WAVE") return null;
+  let p = 12;
+  let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+  while (p + 8 <= bytes.length) {
+    const id = text(p);
+    const size = view.getUint32(p + 4, true);
+    if (id === "fmt ") fmt = { format: view.getUint16(p + 8, true), channels: view.getUint16(p + 10, true), rate: view.getUint32(p + 12, true), bits: view.getUint16(p + 22, true) };
+    if (id === "data") {
+      if (!fmt || fmt.format !== 1 || fmt.bits !== 16) return null;
+      const count = Math.floor(Math.min(size, bytes.length - p - 8) / 2);
+      const pcm = new Int16Array(count);
+      for (let i = 0; i < count; i++) pcm[i] = view.getInt16(p + 8 + i * 2, true);
+      return { pcm, sampleRate: fmt.rate, channels: fmt.channels };
+    }
+    p += 8 + size + (size & 1);
+  }
+  return null;
+}

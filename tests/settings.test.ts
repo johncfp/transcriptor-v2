@@ -137,3 +137,9 @@ test("episode stages for the list colors", async () => {
   assert.equal(episodeStage({ status: "failed", failedStep: "transcription" }), null);
   assert.equal(episodeStage({ status: "cancelled" }), null);
 });
+
+test("window at startup: normal by default; only known choices are kept", () => {
+  assert.equal(DEFAULT_SETTINGS.general.startWindow, "normal");
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { general: { startWindow: "fullscreen" } }).general.startWindow, "fullscreen");
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { general: { startWindow: "huge" } }).general.startWindow, "normal");
+});

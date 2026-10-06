@@ -687,9 +687,6 @@ a {
 .review-side .section {
   margin-bottom: 14px;
 }
-.review-main .transcript {
-  max-width: 860px;
-}
 @media (max-width: 1080px) {
   .content.full {
     overflow-y: auto;
@@ -826,7 +823,6 @@ textarea.input {
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
-  max-width: 860px;
 }
 .checks-list {
   margin: 6px 0;
@@ -841,7 +837,6 @@ textarea.input {
 }
 
 .doc {
-  max-width: 860px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1174,8 +1169,17 @@ textarea.input {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
-.review-main .clip-card {
-  max-width: 860px;
+.clip-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.clip-more .button {
+  padding-left: 0;
+}
+.clip-details {
+  margin-top: 6px;
 }
 
 /* Two columns of checkboxes (Social › Captions for). */
@@ -1214,4 +1218,10 @@ textarea.input {
   width: 100%;
   max-width: 480px;
 }
-
+.clip-card.selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.video-canvas.clip-preview {
+  display: block;
+  margin-top: 10px;
+}

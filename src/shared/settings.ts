@@ -30,6 +30,8 @@ export interface Settings {
     theme: Theme;
     /** Episode list colors by stage, as "#rrggbb". */
     episodeColors: EpisodeColors;
+    /** How the window first opens each time the app starts (see WINDOW_STARTS). */
+    startWindow: StartWindow;
   };
   processing: {
     /** "approve" asks before each new file is processed; "auto" just starts. */
@@ -166,6 +168,14 @@ export const THEMES = [
 
 export type Theme = (typeof THEMES)[number]["id"];
 
+export const WINDOW_STARTS = [
+  { id: "normal", label: "Normal" },
+  { id: "maximized", label: "Maximized" },
+  { id: "fullscreen", label: "Full screen" },
+] as const;
+
+export type StartWindow = (typeof WINDOW_STARTS)[number]["id"];
+
 /** Keys holding a "#rrggbb" colour: the episode stages and the video colours. */
 const COLOR_KEYS = new Set([...Object.keys(DEFAULT_EPISODE_COLORS), "background", "text", "highlight"]);
 
@@ -177,6 +187,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   intake: ["approve", "auto"],
   speakerFormat: SPEAKER_FORMATS.map((f) => f.id),
   theme: THEMES.map((t) => t.id),
+  startWindow: WINDOW_STARTS.map((w) => w.id),
   voice: VOICE_IDS,
   effort: ["", ...EFFORTS],
   captionStyle: CAPTION_STYLES.map((s) => s.id),
@@ -200,6 +211,7 @@ export const DEFAULT_SETTINGS: Settings = {
     closeToTray: true,
     theme: "system",
     episodeColors: { ...DEFAULT_EPISODE_COLORS },
+    startWindow: "normal",
   },
   processing: {
     intake: "approve",

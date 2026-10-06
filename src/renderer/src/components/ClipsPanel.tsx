@@ -17,6 +17,7 @@ import { PLATFORMS, socialDefaultModel, type PlatformId } from "../../../shared/
 import { formatTimestamp } from "../../../shared/transcript";
 import { isVoiceId, VOICES } from "../../../shared/voices";
 import { Section } from "./Section";
+import { ClipVideoPreview } from "./ClipVideoPreview";
 
 /** 75.25 → "01:15.2" */
 const clock = (sec: number) => `${formatTimestamp(sec)}.${Math.floor((sec % 1) * 10)}`;
@@ -39,6 +40,8 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
   const [saveError, setSaveError] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState<SocialClip | null>(null);
+  /** The clip in the video preview: the one last played or clicked. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const pending = useRef<Record<string, ClipEdit>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,6 +97,7 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
     if (!a) return;
     a.currentTime = clip.start;
     setPlaying(clip);
+    setSelectedId(clip.id);
     void a.play();
   };
   const stop = () => {
@@ -118,6 +122,7 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
   };
 
   const clips = result?.clips ?? [];
+  const selected = clips.find((c) => c.id === selectedId) ?? clips[0] ?? null;
   const keptCount = clips.filter((c) => c.kept).length;
   const provider = providerById(settings.social.provider);
   const model = settings.social.model || socialDefaultModel(settings.social.provider);
@@ -154,6 +159,16 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
             {!settings.social.enabled && " Social clips are switched off there, so new episodes don't get them automatically."}
           </p>
         </Section>
+        {selected && ctx && (
+          <ClipVideoPreview
+            jobId={job.id}
+            clip={selected}
+            ctx={ctx}
+            settings={settings}
+            audioRef={audioRef}
+            playing={playing?.id === selected.id}
+          />
+        )}
         {result && result.clips.length > 0 && (
           <ClipsExport job={job} keptCount={keptCount} folder={job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"} beforeExport={flush} />
         )}
@@ -176,6 +191,8 @@ export function ClipsPanel({ job, settings }: { job: Job; settings: Settings }) 
               ctx={ctx}
               playing={playing?.id === clip.id}
               onPlay={() => (playing?.id === clip.id ? stop() : play(clip))}
+              onSelect={() => setSelectedId(clip.id)}
+              selected={selected?.id === clip.id}
               onChange={(change) => update(clip, change)}
             />
           ))
@@ -292,9 +309,14 @@ function ClipCard(props: {
   playing: boolean;
   onPlay: () => void;
   onChange: (change: Partial<ClipEdit>) => void;
+  onSelect: () => void;
+  selected: boolean;
 }) {
   const { clip, ctx } = props;
   const [title, setTitle] = useState(clip.title);
+  // Collapsed to the title, buttons and why; the rest on "Show more".
+  const [expanded, setExpanded] = useState(false);
+  const toCheck = clip.titleProblems.length + Object.values(clip.captions).reduce((n, c) => n + (c?.problems.length ?? 0), 0);
   const move = (edge: "start" | "end", by: -1 | 1) => nudgeClip(ctx.turns, clip, edge, by);
   const Nudge = ({ edge, by, label }: { edge: "start" | "end"; by: -1 | 1; label: string }) => {
     const next = move(edge, by);
@@ -306,7 +328,11 @@ function ClipCard(props: {
   };
 
   return (
-    <section className={`section clip-card${clip.kept ? " kept" : ""}`} aria-label={clip.title}>
+    <section
+      className={`section clip-card${clip.kept ? " kept" : ""}${props.selected ? " selected" : ""}`}
+      aria-label={clip.title}
+      onMouseDownCapture={props.onSelect}
+    >
       <div className="clip-head">
         <input
           className="input clip-title"
@@ -324,34 +350,49 @@ function ClipCard(props: {
           {clip.kept ? "Kept" : "Keep"}
         </button>
       </div>
-      {clip.titleProblems.map((p) => (
-        <p key={p} className="hint warn">
-          {p}
-        </p>
-      ))}
-
-      <div className="clip-times">
-        <span>Start {clock(clip.start)}</span>
-        <Nudge edge="start" by={-1} label="Start one word earlier" />
-        <Nudge edge="start" by={1} label="Start one word later" />
-        <span className="clip-times-gap">End {clock(clip.end)}</span>
-        <Nudge edge="end" by={-1} label="End one word earlier" />
-        <Nudge edge="end" by={1} label="End one word later" />
-        <span className="muted">{(clip.end - clip.start).toFixed(1)} s</span>
+      {clip.why && <p className="hint">Why: {clip.why}</p>}
+      <div className="clip-more">
+        <button className="button ghost" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show less" : "Show more"}
+        </button>
+        {!expanded && toCheck > 0 && (
+          <span className="hint warn">
+            {toCheck} {toCheck === 1 ? "thing" : "things"} to check
+          </span>
+        )}
       </div>
 
-      <blockquote className="clip-lines">
-        {clip.lines.map((l, i) => (
-          <p key={i}>
-            <strong>{l.speaker}:</strong> {l.text}
-          </p>
-        ))}
-      </blockquote>
-      {clip.why && <p className="hint">Why: {clip.why}</p>}
+      {expanded && (
+        <div className="clip-details">
+          {clip.titleProblems.map((p) => (
+            <p key={p} className="hint warn">
+              {p}
+            </p>
+          ))}
 
-      {(Object.keys(clip.captions) as PlatformId[]).map((id) => (
-        <CaptionEditor key={id} platform={id} caption={clip.captions[id]!} onChange={(c) => props.onChange({ captions: { ...editOf(clip).captions, [id]: c } })} />
-      ))}
+          <div className="clip-times">
+            <span>Start {clock(clip.start)}</span>
+            <Nudge edge="start" by={-1} label="Start one word earlier" />
+            <Nudge edge="start" by={1} label="Start one word later" />
+            <span className="clip-times-gap">End {clock(clip.end)}</span>
+            <Nudge edge="end" by={-1} label="End one word earlier" />
+            <Nudge edge="end" by={1} label="End one word later" />
+            <span className="muted">{(clip.end - clip.start).toFixed(1)} s</span>
+          </div>
+
+          <blockquote className="clip-lines">
+            {clip.lines.map((l, i) => (
+              <p key={i}>
+                <strong>{l.speaker}:</strong> {l.text}
+              </p>
+            ))}
+          </blockquote>
+
+          {(Object.keys(clip.captions) as PlatformId[]).map((id) => (
+            <CaptionEditor key={id} platform={id} caption={clip.captions[id]!} onChange={(c) => props.onChange({ captions: { ...editOf(clip).captions, [id]: c } })} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

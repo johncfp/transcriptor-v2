@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ClipAssembler, wavFile } from "../src/shared/wav";
+import { ClipAssembler, readWav, wavFile } from "../src/shared/wav";
 
 const RATE = 44100;
 /** Sample n of a test signal: a ramp that wraps, so every position is recognisable. */
@@ -82,4 +82,15 @@ test("WAV header: RIFF/WAVE, PCM, rate, channels, 16-bit, sizes", () => {
     [36 + 8, 1, 2, 16000, 64000, 4, 16, 8],
   );
   assert.deepEqual([view.getInt16(44, true), view.getInt16(50, true)], [1, -32768]);
+});
+
+test("reading a WAV back: samples, rate and channels; anything else is null", () => {
+  const wav = wavFile(Int16Array.from([1, -2, 3, -4]), 22050, 2);
+  const back = readWav(wav)!;
+  assert.deepEqual([...back.pcm], [1, -2, 3, -4]);
+  assert.deepEqual([back.sampleRate, back.channels], [22050, 2]);
+  assert.equal(readWav(new Uint8Array(10)), null);
+  const float = wav.slice();
+  new DataView(float.buffer).setUint16(20, 3, true); // IEEE float, not 16-bit PCM
+  assert.equal(readWav(float), null);
 });

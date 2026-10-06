@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_SETTINGS, mergeSettings } from "../src/shared/settings";
-import { breakLines, darken, pageAt, pageLines, scrollAt, wordState, type CaptionWord } from "../src/shared/video";
+import { audioLevels, breakLines, clipCaptionWords, darken, pageAt, pageLines, scrollAt, wordState, type CaptionWord } from "../src/shared/video";
 
 /** Each character is 10 px wide; a space too. */
 const measure = (text: string) => text.length * 10;
@@ -95,4 +95,40 @@ test("background gradient colour: darker by the amount asked", () => {
   assert.equal(darken("#ffffff", 0.5), "#808080");
   assert.equal(darken("#14213d", 0), "#14213d");
   assert.equal(darken("#14213d", 1), "#000000");
+});
+
+test("a clip's caption words: cleaned words between its first and last word, timed from the clip's start", () => {
+  const turns = [
+    { speaker: "Nigel T.", start: 9, words: [{ index: 9, text: "Before.", start: 9, end: 9.5 }] },
+    {
+      speaker: "Pete",
+      start: 10,
+      words: [
+        { index: 10, text: "So", start: 10.2, end: 10.4 },
+        // index 11 ("um") was removed by cleanup, so it isn't here.
+        { index: 12, text: "listen.", start: 11, end: 11.4 },
+      ],
+    },
+    { speaker: "Nigel T.", start: 12, words: [{ index: 13, text: "After.", start: 12, end: 12.5 }] },
+  ];
+  assert.deepEqual(clipCaptionWords(turns, { firstWord: 10, lastWord: 12, start: 10 }), [
+    { text: "So", start: 10.2 - 10, end: 10.4 - 10, speaker: "Pete" },
+    { text: "listen.", start: 1, end: 11.4 - 10, speaker: "Pete" },
+  ]);
+});
+
+test("waveform levels: one per video frame, loud parts reach 1, silence is 0", () => {
+  const rate = 3000; // 100 samples per frame at 30 fps
+  const pcm = new Int16Array(rate); // one second, mono
+  for (let i = 0; i < pcm.length; i++) {
+    const frame = Math.floor(i / 100);
+    const amp = frame < 10 ? 0 : frame < 20 ? 4000 : 16000; // silent, quiet, loud
+    pcm[i] = i % 2 ? amp : -amp;
+  }
+  const levels = audioLevels(pcm, 1, rate);
+  assert.equal(levels.length, 30);
+  assert.ok(levels.slice(0, 10).every((l) => l === 0));
+  assert.ok(levels.slice(20).every((l) => l === 1));
+  assert.ok(Math.abs(levels[15]! - 0.5) < 0.01, "a quarter as loud shows at half height (square-root curve)");
+  assert.deepEqual(audioLevels(new Int16Array(200), 2, rate), [0], "all silence stays flat");
 });

@@ -4,6 +4,7 @@ import {
   mergeSettings,
   SPEAKER_FORMATS,
   THEMES,
+  WINDOW_STARTS,
   type EpisodeColors,
   type Settings,
   type SettingsPatch,
@@ -152,6 +153,13 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
                 hint="Closing the window hides it to the tray so work in progress keeps going. Quit from the tray icon."
                 checked={general.closeToTray}
                 onChange={(v) => update({ general: { closeToTray: v } })}
+              />
+              <Choice
+                label="Window at startup"
+                hint="Full screen hides the title bar and taskbar; F11 or Esc leaves it, and F11 brings it back."
+                value={general.startWindow}
+                options={WINDOW_STARTS.map((w) => ({ value: w.id, label: w.label }))}
+                onChange={(v) => update({ general: { startWindow: v } })}
               />
               <Choice
                 label="Appearance"
@@ -379,12 +387,13 @@ function Check(props: { label: string; checked: boolean; disabled?: boolean; onC
 
 function Choice<T extends string>(props: {
   label: string;
+  hint?: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
   return (
-    <Row label={props.label}>
+    <Row label={props.label} hint={props.hint}>
       <div className="segmented" role="radiogroup" aria-label={props.label}>
         {props.options.map((o) => (
           <button

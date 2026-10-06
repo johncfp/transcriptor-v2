@@ -41,6 +41,8 @@ export type BackgroundType = (typeof BACKGROUND_TYPES)[number];
 /** An imported background image's file name (see src/main/background.ts). */
 export const BACKGROUND_FILE = /^background-\d+\.jpg$/;
 
+import type { CleanTurn } from "./cleanup";
+
 // ---------------------------------------------------------------------------
 // Caption layout
 
@@ -143,4 +145,49 @@ export function darken(hex: string, amount: number): string {
   const n = parseInt(hex.slice(1), 16);
   const f = (v: number) => Math.round(v * (1 - amount)).toString(16).padStart(2, "0");
   return `#${f((n >> 16) & 255)}${f((n >> 8) & 255)}${f(n & 255)}`;
+}
+
+// ---------------------------------------------------------------------------
+// A clip's captions and waveform
+
+/**
+ * A clip's words as captions: the cleaned transcript's words between the
+ * clip's first and last word (removed fillers left out, review corrections
+ * in), timed from the start of the clip.
+ */
+export function clipCaptionWords(turns: CleanTurn[], clip: { firstWord: number; lastWord: number; start: number }): CaptionWord[] {
+  const out: CaptionWord[] = [];
+  for (const turn of turns) {
+    for (const w of turn.words) {
+      if (w.index < clip.firstWord || w.index > clip.lastWord) continue;
+      out.push({ text: w.text, start: w.start - clip.start, end: w.end - clip.start, speaker: turn.speaker });
+    }
+  }
+  return out;
+}
+
+/**
+ * Loudness for each video frame, 0–1, for the waveform: the RMS of each
+ * frame's samples, scaled so the clip's loud parts (95th percentile, so one
+ * spike doesn't flatten the rest) reach 1, with a square-root curve so quiet
+ * speech still moves the bars.
+ */
+export function audioLevels(pcm: Int16Array, channels: number, sampleRate: number, fps = VIDEO_FPS): number[] {
+  const perFrame = sampleRate / fps;
+  const frames = Math.ceil(pcm.length / channels / perFrame);
+  const rms: number[] = [];
+  for (let f = 0; f < frames; f++) {
+    const a = Math.floor(f * perFrame), b = Math.min(pcm.length / channels, Math.floor((f + 1) * perFrame));
+    let sum = 0;
+    for (let i = a; i < b; i++) {
+      for (let c = 0; c < channels; c++) {
+        const v = pcm[i * channels + c]! / 32768;
+        sum += v * v;
+      }
+    }
+    rms.push(b > a ? Math.sqrt(sum / ((b - a) * channels)) : 0);
+  }
+  const sorted = [...rms].sort((x, y) => x - y);
+  const loud = sorted[Math.floor(sorted.length * 0.95)] || 0;
+  return loud > 0 ? rms.map((r) => Math.min(1, Math.sqrt(r / loud))) : rms.map(() => 0);
 }

@@ -89,6 +89,8 @@ export interface Api {
   cancelClips(id: string): Promise<void>;
   /** Export the kept clips' audio and their document; rejects with a readable message on failure. */
   exportClips(id: string): Promise<{ folder: string; files: string[] }>;
+  /** Loudness per video frame (0–1) of the audio from `start` to `end`, for the waveform. */
+  clipLevels(id: string, start: number, end: number): Promise<number[]>;
   /** Save a custom template's sections to a file others can import. */
   exportTemplate(sections: SectionId[]): Promise<boolean>;
   /** Save an annotated sample template file to start a custom one from. */
@@ -157,6 +159,7 @@ export const IPC = {
   suggestClips: "jobs:suggest-clips",
   cancelClips: "jobs:cancel-clips",
   exportClips: "jobs:export-clips",
+  clipLevels: "jobs:clip-levels",
   exportTemplate: "template:export",
   importTemplate: "template:import",
   saveSampleTemplate: "template:sample",
