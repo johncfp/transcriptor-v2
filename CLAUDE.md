@@ -3,15 +3,15 @@
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
 file (Claude by default) → optional social clips → DOCX/TXT export. Runs from the tray on Windows and
-macOS. Currently **2.0.0-beta.5**. The README has the feature overview and the
+macOS. Currently **2.0.0-beta.6**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
 ## Next up
 
-Video clips (M7) are done on branch `video-clips` and checked on a real
-episode and on macOS and Windows CI runners (branch `video-sync-check`, not for
-main). Next: merge to main and release 2.0.0-beta.6 when the owner asks, with
-INSTALL.md updated for video clips. Untested: a Windows N edition.
+Video clips (M7) shipped in 2.0.0-beta.6, checked on a real episode and on
+macOS and Windows CI runners (branch `video-sync-check`, not for main).
+Nothing planned next; wait for the owner's feedback. Untested: a Windows N
+edition, and the Drive for Desktop watcher on a real Drive.
 
 ## Working with the owner
 

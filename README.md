@@ -5,7 +5,7 @@ transcript, show notes, and a reference file for reusing the episode's content
 later. It runs in the background from the system tray on Windows and macOS.
 
 Transcriptor 2 is a clean rebuild, separate from Transcriptor 1. Both can be
-installed at the same time. Current release: **2.0.0-beta.5**. To install it,
+installed at the same time. Current release: **2.0.0-beta.6**. To install it,
 see [INSTALL.md](INSTALL.md).
 
 ## How it works
@@ -84,7 +84,7 @@ Built in milestones:
 | M4 | Export (DOCX, TXT; Google Doc is set up later) | Done |
 | M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
 | M6 | Social clips: suggested clips and captions, review, WAV export | Done |
-| M7 | Video clips: MP4s of kept clips with captions, in three shapes | Done (next beta) |
+| M7 | Video clips: MP4s of kept clips with captions, in three shapes | Done |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.
@@ -93,8 +93,8 @@ currently unsigned) and real-episode testing across the team.
 audio on macOS and Windows: the sound is in sync with the captions to the
 millisecond, and the pictures match the preview frame for frame. They use the
 browser's own H.264 encoder (hardware where there is one), so they should
-work on Windows "N" editions too, but that hasn't been tried. Next: release
-them in the next beta.
+work on Windows "N" editions too, but that hasn't been tried. Released in
+2.0.0-beta.6.
 
 ## Watching a Google Drive folder (Drive for Desktop)
 
