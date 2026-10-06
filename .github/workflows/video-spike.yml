@@ -1,0 +1,31 @@
+name: Video spike
+
+# Milestone 7.0: can Electron make captioned H.264 MP4s on macOS (and Windows)?
+# Runs only on pushes to the video-spike branch; uses generated audio, so no
+# episode audio is uploaded. Results are kept as a workflow artifact.
+on:
+  push:
+    branches: [video-spike]
+
+jobs:
+  spike:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx electron spikes/video/main.js
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-spike-${{ matrix.os }}
+          path: spikes/video/out/
+          if-no-files-found: warn
