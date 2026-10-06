@@ -1,0 +1,45 @@
+name: Video sync check
+
+# Milestone 7.4: are the exported MP4s in sync, and do they look as previewed,
+# on macOS as well as Windows? Runs the app's own cutter on generated audio
+# and words (no episode audio is uploaded), checks each MP4, then runs the
+# smoke test. Runs only on pushes to the video-sync-check branch; results are
+# kept as an artifact. Not for main.
+on:
+  push:
+    branches: [video-sync-check]
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node spikes/video-sync/build.mjs
+      - name: Sync check
+        run: npx electron spikes/video-sync/ci.js
+      - name: Smoke test
+        if: always()
+        env:
+          SMOKE_OUT: ${{ runner.temp }}/smoke
+        run: npm run smoke
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-sync-${{ matrix.os }}
+          path: |
+            spikes/video-sync/out/
+            !spikes/video-sync/out/profile/
+            !spikes/video-sync/out/episode-*.wav
+            ${{ runner.temp }}/smoke/
+          if-no-files-found: warn
