@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ClipAssembler, readWav, wavFile } from "../src/shared/wav";
+import { ClipAssembler, fadeEdges, readWav, wavFile } from "../src/shared/wav";
 
 const RATE = 44100;
 /** Sample n of a test signal: a ramp that wraps, so every position is recognisable. */
@@ -104,6 +104,20 @@ test("reading a WAV back: samples, rate and channels; anything else is null", ()
   const float = wav.slice();
   new DataView(float.buffer).setUint16(20, 3, true); // IEEE float, not 16-bit PCM
   assert.equal(readWav(float), null);
+});
+
+test("fades: a short ramp in, a longer ramp out, the middle untouched; short clips get shorter fades", () => {
+  const pcm = new Int16Array(200 * 2).fill(1000); // 200 stereo frames at 1 kHz
+  fadeEdges(pcm, 1000, 2, 0.01, 0.05);
+  assert.deepEqual([...pcm.subarray(0, 4)], [0, 0, 100, 100], "in over 10 frames");
+  assert.deepEqual([...pcm.subarray(20, 22)], [1000, 1000]);
+  assert.deepEqual([...pcm.subarray(298, 300)], [1000, 1000], "the middle is untouched");
+  assert.deepEqual([...pcm.subarray(398, 400)], [0, 0], "out to silence on the last frame");
+  assert.deepEqual([...pcm.subarray(396, 398)], [20, 20], "out over 50 frames");
+
+  const tiny = new Int16Array(10).fill(1000);
+  fadeEdges(tiny, 1000, 1, 0.03, 0.12);
+  assert.deepEqual([...tiny], [0, 200, 400, 600, 800, 800, 600, 400, 200, 0]);
 });
 
 test("the assembled clip's samples, as well as its WAV", () => {

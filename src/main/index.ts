@@ -168,6 +168,7 @@ function start(): void {
         show: { name: show.name, hosts: show.hosts, website: show.website },
         limits: clipLimits(social),
         platforms: PLATFORMS.map((p) => p.id).filter((id) => social.platforms[id]),
+        oneSpeaker: social.oneSpeaker,
         voice: social.voice,
         customVoice: social.customVoice,
         writer,

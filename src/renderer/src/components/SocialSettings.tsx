@@ -57,6 +57,22 @@ export function SocialSettings({ settings, update }: { settings: Settings; updat
           <NumberField label="Longest clip" value={social.maxSeconds} range={CLIP_SECONDS_RANGE} onCommit={(n) => setLimits({ maxSeconds: n })} />
         </div>
       </div>
+      <label className="row toggle-row">
+        <div className="row-label">
+          <span>One speaker per clip</span>
+          <span className="hint">
+            Only stretches where one person talks: a clip where someone else cuts in, even with a quick "yeah", is trimmed or left out. Fewer
+            back-and-forth clips.
+          </span>
+        </div>
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch"
+          checked={social.oneSpeaker}
+          onChange={(e) => update({ social: { ...social, oneSpeaker: e.target.checked } })}
+        />
+      </label>
       <div className="row">
         <div className="row-label">
           <span>Captions for</span>

@@ -74,7 +74,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   the writing step; voices are appended after the rules, never before.
   Social clips follow the same rule: the model gives only a clip's first and
   last words, and `checkClips`/`reviseClip` take the text and times from the
-  transcript, including after edits in review.
+  transcript, including after edits in review. Other speakers in a clip are
+  found from the raw words (removed fillers are still in the audio), named
+  as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them.
 - **Third-party notices.** mediabunny (MPL-2.0) and the three video fonts
   (Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
   Add an entry there for any new bundled code whose license asks for one.
@@ -115,6 +117,8 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   The cutter decodes with `AudioSampleSink` and cuts with `ClipAssembler`
   (`src/shared/wav.ts`), which is sample-exact (16-bit sources come back bit
   for bit: it converts with round(v × 32768), the inverse of mediabunny's decode).
+  The cutter then fades each clip's edges (`fadeEdges`, 30 ms in, 120 ms out)
+  for both the WAV and the video; the Clips tab's Play clip doesn't fade.
 - Videos are made only by **Export kept clips** on the Clips tab; the episode's
   own export writes WAVs, not videos. Each export replaces only the clip files it
   makes (`writeExport` `replaceClips`), so the episode export keeps the videos.

@@ -62,7 +62,9 @@ Open **Settings** (left sidebar). Changes are saved when you press **Save**
 3. **Social** tab (optional): turn on **Suggest social clips** to have short
    clips and captions suggested after the show notes. Set how many clips, how
    long, which platforms get captions, the model (Claude Sonnet 5.5 at medium
-   effort by default) and the captions' voice. Turn on **Make video clips**
+   effort by default) and the captions' voice. Turn on **One speaker per
+   clip** to keep out clips where someone else cuts in, even with a quick
+   "yeah" (you get fewer back-and-forth clips). Turn on **Make video clips**
    to also get each kept clip as an MP4 video: choose the shapes (9:16 for
    Reels, TikTok and Shorts, 1:1, 16:9), captions highlighted word by word or
    scrolling, the font and size, your colours, a colour or image background,
@@ -100,7 +102,7 @@ computer and are only sent to the service they belong to.
    transcript. Play a clip, trim its start or end a word at a time, edit the
    title and captions (with each platform's character count and a **Copy**
    button), and **Keep** the ones you want. **Show more** on a clip opens its
-   full details. With video clips on, the panel beside the clips previews the
+   full details, including a note when someone else is heard in it. With video clips on, the panel beside the clips previews the
    one you play or select exactly as its video will look. **Export kept
    clips** saves each as a WAV file in a **Clips** folder, with a Social Clips
    document of their captions, and with video clips on, an MP4 for each shape.

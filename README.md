@@ -46,7 +46,14 @@ see [INSTALL.md](INSTALL.md).
    text, speakers and times come from the transcript, and clips that can't be
    found or don't fit the length settings are dropped. Captions over a
    platform's limit, or with numbers or links that aren't in the transcript,
-   confirmed guest facts or show website, are flagged. On the episode's Clips
+   confirmed guest facts or show website, are flagged, and so is anyone else
+   heard in a clip (a host's "yeah" in the guest's answer, even one the
+   cleanup removed). With **One speaker per clip** on, the model is asked for
+   one-person stretches and clips with someone else in them are trimmed to
+   the longest one-speaker part, or dropped. Clips fade in and out briefly
+   at their edges, and next to another speaker the cut stops halfway to their
+   word. Overlapping speech the transcript missed can't be removed from a
+   mixed recording. On the episode's Clips
    tab you play, trim (a word at a time), edit and keep clips; kept clips are
    exported as WAV files in a Clips folder, with a Social Clips document of
    their captions.

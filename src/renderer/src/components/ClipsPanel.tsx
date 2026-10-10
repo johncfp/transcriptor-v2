@@ -344,7 +344,8 @@ function ClipCard(props: {
   const [title, setTitle] = useState(clip.title);
   // Collapsed to the title, buttons and why; the rest on "Show more".
   const [expanded, setExpanded] = useState(false);
-  const toCheck = clip.titleProblems.length + Object.values(clip.captions).reduce((n, c) => n + (c?.problems.length ?? 0), 0);
+  const crosstalk = clip.crosstalk ?? [];
+  const toCheck = clip.titleProblems.length + crosstalk.length + Object.values(clip.captions).reduce((n, c) => n + (c?.problems.length ?? 0), 0);
   const move = (edge: "start" | "end", by: -1 | 1) => nudgeClip(ctx.turns, clip, edge, by);
   const Nudge = ({ edge, by, label }: { edge: "start" | "end"; by: -1 | 1; label: string }) => {
     const next = move(edge, by);
@@ -392,7 +393,7 @@ function ClipCard(props: {
 
       {expanded && (
         <div className="clip-details">
-          {clip.titleProblems.map((p) => (
+          {[...clip.titleProblems, ...crosstalk].map((p) => (
             <p key={p} className="hint warn">
               {p}
             </p>
