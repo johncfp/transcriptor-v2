@@ -91,6 +91,8 @@ export interface Settings {
       /** Clip length in seconds; clamped by clipLimits. */
       minSeconds: number;
       maxSeconds: number;
+      /** Only clips where one person talks: others are trimmed to one speaker or dropped (see checkClips). */
+      oneSpeaker: boolean;
       /** Which platforms get a caption (see PLATFORMS). */
       platforms: Record<PlatformId, boolean>;
     };
@@ -259,6 +261,7 @@ export const DEFAULT_SETTINGS: Settings = {
     maxClips: 5,
     minSeconds: 15,
     maxSeconds: 60,
+    oneSpeaker: false,
     platforms: { instagram: true, x: true, linkedin: true, youtube: true },
   },
   video: {

@@ -4,10 +4,10 @@
 // speakers and times come from the transcript. Clips that can't be found or
 // don't fit the settings are dropped; caption problems are flagged for review.
 
-import { cleanTranscript, normalize, type CleanTurn, type EpisodeEdits } from "./cleanup";
+import { cleanTranscript, normalize, speakerName, type CleanTurn, type EpisodeEdits } from "./cleanup";
 import type { WritingResult } from "./showNotes";
 import { MAX_TITLE_CHARS, PLATFORMS, type ClipLimits, type PlatformId } from "./social";
-import type { Transcript, Word } from "./transcript";
+import { formatTimestamp, type Transcript, type Word } from "./transcript";
 import { confirmedFacts, normalizeUrl } from "./verify";
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,8 @@ export interface SocialClip {
   captions: Partial<Record<PlatformId, SocialCaption>>;
   /** Title problems, e.g. too long for YouTube. */
   titleProblems: string[];
+  /** Other speakers heard in the clip, e.g. a "yeah" from the host. Missing in clips saved before 2.0.0-beta.7. */
+  crosstalk?: string[];
   /** Chosen in review to be cut and exported. */
   kept: boolean;
 }
@@ -164,6 +166,10 @@ export interface ClipCheckOptions {
   platforms: PlatformId[];
   /** The raw transcript's words, for the room around each cut. */
   rawWords: Word[];
+  /** Each raw word's speaker, as named in review (see rawSpeakerNames); by number if left out. */
+  rawSpeakers?: string[];
+  /** Keep only stretches where one person talks: clips with someone else in them are trimmed or dropped. */
+  oneSpeaker?: boolean;
   durationSec: number;
   /** Confirmed guest facts: numbers in captions may come from these too. */
   facts: string[];
@@ -244,15 +250,18 @@ const titleProblems = (title: string) =>
 /**
  * Where to cut for the raw words `firstWord`..`lastWord`: a little room
  * around them, without reaching into the neighbouring words of the audio and
- * never cutting into the clip's own first or last word.
+ * never cutting into the clip's own first or last word. Next to another
+ * speaker the room stops halfway to their word, since their sound (a breath,
+ * the start of a word) often comes before the word's time.
  */
 export function clipCut(rawWords: Word[], durationSec: number, firstWord: number, lastWord: number): { start: number; end: number } {
   const first = rawWords[firstWord]!;
   const last = rawWords[lastWord]!;
   const prev = rawWords[firstWord - 1];
   const next = rawWords[lastWord + 1];
-  const start = Math.max(0, Math.min(first.start, Math.max(prev?.end ?? 0, first.start - PAD_BEFORE)));
-  const endLimit = next ? next.start : durationSec || Infinity;
+  const startLimit = !prev ? 0 : prev.speaker === first.speaker ? prev.end : (prev.end + first.start) / 2;
+  const start = Math.max(0, Math.min(first.start, Math.max(startLimit, first.start - PAD_BEFORE)));
+  const endLimit = !next ? durationSec || Infinity : next.speaker === last.speaker ? next.start : (last.end + next.start) / 2;
   const end = Math.max(last.end, Math.min(endLimit, last.end + PAD_AFTER));
   return { start: round(start), end: round(end) };
 }
@@ -269,6 +278,94 @@ export function clipLines(turns: CleanTurn[], firstWord: number, lastWord: numbe
     }
   }
   return lines;
+}
+
+/** Each raw word's speaker as named in review, so two diarized speakers given one name count as one. */
+export const rawSpeakerNames = (transcript: Transcript, edits: EpisodeEdits): string[] =>
+  transcript.words.map((w) => speakerName(edits, w.speaker));
+
+/** Most notes about other speakers listed one by one; beyond this they're summed up. */
+const MAX_CROSSTALK_NOTES = 3;
+
+/**
+ * Other speakers heard between the raw words `firstWord`..`lastWord`, as
+ * notes for review ("Nigel T. says “Yeah.” 00:12 into the clip."). Words the
+ * cleanup removed count too: they're still in the audio.
+ */
+export function clipCrosstalk(rawWords: Word[], rawSpeakers: string[], firstWord: number, lastWord: number, clipStart: number): string[] {
+  const count = new Map<string, number>();
+  for (let i = firstWord; i <= lastWord; i++) count.set(rawSpeakers[i]!, (count.get(rawSpeakers[i]!) ?? 0) + 1);
+  if (count.size < 2) return [];
+  const main = [...count].sort((a, b) => b[1] - a[1])[0]![0];
+  const runs: { speaker: string; words: Word[] }[] = [];
+  for (let i = firstWord; i <= lastWord; i++) {
+    const speaker = rawSpeakers[i]!;
+    if (speaker === main) continue;
+    const run = runs.at(-1);
+    if (run && run.speaker === speaker && rawSpeakers[i - 1] === speaker) run.words.push(rawWords[i]!);
+    else runs.push({ speaker, words: [rawWords[i]!] });
+  }
+  if (runs.length > MAX_CROSSTALK_NOTES) {
+    const names = [...new Set(runs.map((r) => r.speaker))];
+    return [`${names.join(" and ")} ${names.length > 1 ? "talk" : "talks"} ${runs.length} times in this clip.`];
+  }
+  return runs.map((r) => {
+    const said = r.words.slice(0, 8).map((w) => w.text).join(" ") + (r.words.length > 8 ? " …" : "");
+    return `${r.speaker} says “${said}” ${formatTimestamp(r.words[0]!.start - clipStart)} into the clip.`;
+  });
+}
+
+/**
+ * The longest stretch of the flat words `from`..`to` with only one speaker
+ * heard (removed words count: they're still in the audio), trimmed to whole
+ * sentences where that leaves it long enough; null if no stretch is.
+ */
+function soloSpan(words: FlatWord[], rawSpeakers: string[], from: number, to: number, minSec: number): { from: number; to: number } | null {
+  let best: { from: number; to: number } | null = null;
+  const seconds = (s: { from: number; to: number }) => words[s.to]!.end - words[s.from]!.start;
+  const close = (a: number, b: number) => {
+    const s = sentenceSpan(words, rawSpeakers, a, b, minSec);
+    if (s && (!best || seconds(s) > seconds(best))) best = s;
+  };
+  let runStart = from;
+  for (let k = from + 1; k <= to; k++) {
+    const speaker = rawSpeakers[words[k - 1]!.index];
+    let mixed = false;
+    for (let r = words[k - 1]!.index + 1; r <= words[k]!.index && !mixed; r++) mixed = rawSpeakers[r] !== speaker;
+    if (mixed) {
+      close(runStart, k - 1);
+      runStart = k;
+    }
+  }
+  close(runStart, to);
+  return best;
+}
+
+/** `a`..`b` with its edges moved in to sentence boundaries where close and still at least `minSec` long; null if it's too short. */
+function sentenceSpan(words: FlatWord[], rawSpeakers: string[], a: number, b: number, minSec: number): { from: number; to: number } | null {
+  const seconds = (s: number, e: number) => words[e]!.end - words[s]!.start;
+  if (seconds(a, b) < minSec) return null;
+  // A sentence starts here if this speaker's previous word ended one; other speakers' words in between don't count.
+  const speaker = rawSpeakers[words[a]!.index];
+  let p = a - 1;
+  while (p >= 0 && rawSpeakers[words[p]!.index] !== speaker) p--;
+  let from = a;
+  if (p >= 0 && !words[p]!.endsSentence) {
+    for (let k = a + 1; k <= b && words[k]!.start - words[a]!.start <= SNAP_SEC; k++) {
+      if (!words[k - 1]!.endsSentence) continue;
+      if (seconds(k, b) >= minSec) from = k;
+      break;
+    }
+  }
+  let to = b;
+  if (!words[b]!.endsSentence) {
+    for (let k = b - 1; k >= from && words[b]!.end - words[k]!.end <= SNAP_SEC; k--) {
+      if (!words[k]!.endsSentence) continue;
+      if (seconds(from, k) >= minSec) to = k;
+      break;
+    }
+  }
+  return { from, to };
 }
 
 /**
@@ -294,6 +391,8 @@ export function nudgeClip(
 export interface ClipContext {
   turns: CleanTurn[];
   rawWords: Word[];
+  /** See rawSpeakerNames. */
+  rawSpeakers: string[];
   durationSec: number;
   known: CaptionKnown;
 }
@@ -329,10 +428,12 @@ export function reviseClip(clip: SocialClip, edit: ClipEdit, ctx: ClipContext): 
     captions[id] = checkCaption({ text, hashtags }, id, ctx.known, "edit").caption;
   }
   const title = typeof edit.title === "string" ? edit.title.trim().slice(0, 300) : clip.title;
+  const cut = clipCut(ctx.rawWords, ctx.durationSec, span.firstWord, span.lastWord);
   return {
     ...clip,
     ...span,
-    ...clipCut(ctx.rawWords, ctx.durationSec, span.firstWord, span.lastWord),
+    ...cut,
+    crosstalk: clipCrosstalk(ctx.rawWords, ctx.rawSpeakers, span.firstWord, span.lastWord, cut.start),
     // Keep the old text if the edit left no words between the edges (it can't, but just in case).
     lines: lines.length ? lines : clip.lines,
     title,
@@ -358,6 +459,7 @@ export function checkClips(
 ): { clips: SocialClip[]; checks: SocialResult["checks"] } {
   const words = flatten(turns);
   const { limits } = opts;
+  const speakers = opts.rawSpeakers ?? opts.rawWords.map((w) => String(w.speaker));
   const dropped: SocialResult["checks"]["dropped"] = [];
   const kept: { from: number; to: number; draft: ClipDraft }[] = [];
   const minSec = limits.minSeconds - SHORT_SLACK_SEC;
@@ -420,6 +522,14 @@ export function checkClips(
       });
       continue;
     }
+    if (opts.oneSpeaker) {
+      const solo = soloSpan(words, speakers, found.from, found.to, minSec);
+      if (!solo) {
+        dropped.push({ title, reason: "Someone else talks in it, and no stretch with one speaker is long enough." });
+        continue;
+      }
+      found = solo;
+    }
     if (kept.length >= limits.maxClips) {
       dropped.push({ title, reason: `More than ${limits.maxClips} clips were suggested.` });
       continue;
@@ -449,16 +559,18 @@ export function checkClips(
         hashtagsDropped += checked.hashtagsDropped;
       }
       const title = draft.title || "Untitled clip";
+      const cut = clipCut(opts.rawWords, opts.durationSec, firstWord, lastWord);
       return {
         id: `clip-${n + 1}`,
         title,
         why: draft.why,
         firstWord,
         lastWord,
-        ...clipCut(opts.rawWords, opts.durationSec, firstWord, lastWord),
+        ...cut,
         lines: clipLines(turns, firstWord, lastWord),
         captions,
         titleProblems: titleProblems(title),
+        crosstalk: clipCrosstalk(opts.rawWords, speakers, firstWord, lastWord, cut.start),
         kept: false,
       };
     });
@@ -476,6 +588,7 @@ export function clipContext(transcript: Transcript, edits: EpisodeEdits, writing
   return {
     turns,
     rawWords: transcript.words,
+    rawSpeakers: rawSpeakerNames(transcript, edits),
     durationSec: transcript.durationSec ?? transcript.words.at(-1)?.end ?? 0,
     known: captionKnown(turns, facts, [website, ...links].filter(Boolean)),
   };

@@ -22,7 +22,7 @@ import {
 } from "mediabunny";
 import type { CutJob, CutProgress, CutResult, VideoJob } from "../../shared/cutter";
 import { audioLevels, SHAPES, VIDEO_FPS, type CaptionWord, type ShapeId } from "../../shared/video";
-import { ClipAssembler, wavFile } from "../../shared/wav";
+import { ClipAssembler, fadeEdges, wavFile } from "../../shared/wav";
 import { drawFrame, makeScene } from "./video/drawFrame";
 import { loadVideoFont } from "./video/fonts";
 
@@ -72,7 +72,9 @@ async function cutAll(job: CutJob): Promise<CutResult> {
           sample.close();
         }
       }
-      pcms.push(assembler.toPcm());
+      const pcm = assembler.toPcm();
+      fadeEdges(pcm.pcm, pcm.sampleRate, pcm.channels);
+      pcms.push(pcm);
     }
     const clips = pcms.map((p) => wavFile(p.pcm, p.sampleRate, p.channels));
     if (!job.video) return { clips };

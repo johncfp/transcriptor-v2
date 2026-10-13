@@ -5,14 +5,16 @@ import {
   checkClips,
   cleanHashtag,
   clipContext,
+  clipCut,
   coerceClips,
   nudgeClip,
+  rawSpeakerNames,
   reviseClip,
   type ClipCheckOptions,
   type ClipDraft,
   type ClipEdit,
 } from "../src/shared/clips";
-import type { Transcript, Word } from "../src/shared/transcript";
+import { formatTimestamp, type Transcript, type Word } from "../src/shared/transcript";
 import { startFakeAnthropic } from "../src/main/testing/fakeAnthropic";
 import { anthropicWriter } from "../src/main/writing/anthropic";
 import { suggestClips } from "../src/main/writing/social";
@@ -133,6 +135,90 @@ test("a clip can run across speakers", () => {
   );
 });
 
+/** The episode with the host's "Mm." between two of the guest's sentences; later words move along to make room. */
+function withInterjection(): { transcript: Transcript; edits: EpisodeEdits } {
+  const { transcript, edits } = episode();
+  const at = transcript.words.findIndex((w) => w.text === "tool.") + 1;
+  const words = transcript.words.map((w, i) => (i < at ? w : { ...w, start: w.start + 0.5, end: w.end + 0.5 }));
+  const t = words[at - 1]!.end + 0.1;
+  words.splice(at, 0, { text: "Mm.", start: t, end: t + 0.4, speaker: 0 });
+  return { transcript: { ...transcript, words, durationSec: transcript.durationSec! + 0.5 }, edits };
+}
+
+function checkEpisode(ep: { transcript: Transcript; edits: EpisodeEdits }, drafts: ClipDraft[], over: Partial<ClipCheckOptions> = {}) {
+  const { transcript, edits } = ep;
+  return checkClips(drafts, cleanTranscript(transcript, edits), {
+    limits: { minClips: 1, maxClips: 3, minSeconds: 5, maxSeconds: 30 },
+    platforms: [],
+    rawWords: transcript.words,
+    rawSpeakers: rawSpeakerNames(transcript, edits),
+    durationSec: transcript.durationSec!,
+    facts: [],
+    allowedUrls: [],
+    ...over,
+  });
+}
+
+const acrossSpeakers = draft({ first_words: "If a tool saves me an hour", last_words: "fallen in love with an optimized calendar." });
+
+test("other speakers in a clip are noted for review", () => {
+  const [clip] = checkEpisode(episode(), [acrossSpeakers]).clips;
+  assert.deepEqual(
+    clip!.lines.map((l) => l.speaker),
+    ["Pete M.", "Nigel T.", "Pete M."],
+  );
+  const tell = wordAt("Tell");
+  assert.deepEqual(clip!.crosstalk, [`Nigel T. says “Tell me about the three buckets.” ${formatTimestamp(tell.start - clip!.start)} into the clip.`]);
+  assert.deepEqual(check([draft({})]).clips[0]!.crosstalk, [], "one speaker, nothing to note");
+});
+
+test("one speaker per clip: a clip across speakers is trimmed to its longest one-speaker stretch", () => {
+  const { clips, checks } = checkEpisode(episode(), [acrossSpeakers], { oneSpeaker: true });
+  assert.deepEqual(clips[0]!.lines, [
+    { speaker: "Pete M.", text: "If a tool saves me an hour but costs me the reason I started, that's not a win. I learned that the hard way in 2019." },
+  ]);
+  assert.deepEqual(clips[0]!.crosstalk, []);
+  assert.deepEqual(checks.dropped, []);
+});
+
+test("one speaker per clip: dropped when no one-speaker stretch is long enough", () => {
+  const { clips, checks } = checkEpisode(episode(), [acrossSpeakers], { oneSpeaker: true, limits: { minClips: 1, maxClips: 3, minSeconds: 15, maxSeconds: 30 } });
+  assert.equal(clips.length, 0);
+  assert.deepEqual(checks.dropped, [{ title: "Tools versus reasons", reason: "Someone else talks in it, and no stretch with one speaker is long enough." }]);
+});
+
+test("an interjection the cleanup removed still counts: it's in the audio", () => {
+  const ep = withInterjection();
+  const whole = draft({ first_words: "So the biggest mistake I see", last_words: "the reason I started, that's not a win." });
+  const [clip] = checkEpisode(ep, [whole]).clips;
+  assert.deepEqual(
+    clip!.lines.map((l) => l.speaker),
+    ["Pete M."],
+    "the cleaned text doesn't show it",
+  );
+  assert.equal(clip!.crosstalk!.length, 1);
+  assert.match(clip!.crosstalk![0]!, /^Nigel T\. says “Mm\.” 00:0\d into the clip\.$/);
+
+  const [solo] = checkEpisode(ep, [whole], { oneSpeaker: true }).clips;
+  assert.deepEqual(solo!.lines, [{ speaker: "Pete M.", text: "If a tool saves me an hour but costs me the reason I started, that's not a win." }]);
+
+  // Edited in review to take the interjection in again: noted again.
+  const ctx = clipContext(ep.transcript, ep.edits, null, "");
+  const revised = reviseClip(solo!, { title: solo!.title, kept: true, firstWord: clip!.firstWord, lastWord: solo!.lastWord, captions: {} }, ctx);
+  assert.equal(revised.crosstalk!.length, 1);
+});
+
+test("next to another speaker, the room around a cut stops halfway to their word", () => {
+  const words: Word[] = [
+    { text: "Right.", start: 0, end: 1, speaker: 0 },
+    { text: "Yes.", start: 1.1, end: 2, speaker: 1 },
+    { text: "And", start: 2.2, end: 3, speaker: 0 },
+  ];
+  assert.deepEqual(clipCut(words, 4, 1, 1), { start: 1.05, end: 2.1 });
+  const same = words.map((w) => ({ ...w, speaker: 0 }));
+  assert.deepEqual(clipCut(same, 4, 1, 1), { start: 1, end: 2.2 });
+});
+
 test("clips that can't be found, don't fit the length, overlap, or go over the count are dropped with a reason", () => {
   const { clips, checks } = check(
     [
@@ -221,6 +307,10 @@ test("prompt: limits and chosen platforms in the rules, the voice last; schema a
   assert.doesNotMatch(system, /- instagram/);
   assert.ok(system.endsWith(SOCIAL_VOICES.industry.prompt), "voice comes after the rules");
   assert.ok(system.indexOf("Never add facts") < system.indexOf("Voice ("));
+  assert.match(system, /A clip can include more than one speaker\./);
+  const solo = socialSystem(limits, ["x"], "industry", "", true);
+  assert.match(solo, /Each clip must be one person talking/);
+  assert.doesNotMatch(solo, /more than one speaker/);
   const captions = (socialSchema(["x", "youtube"]).properties.clips.items.properties.captions as { required: string[] }).required;
   assert.deepEqual(captions, ["x", "youtube"]);
 });
