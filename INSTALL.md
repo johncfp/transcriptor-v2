@@ -1,6 +1,6 @@
 # Installing Transcriptor 2 (beta)
 
-Version **2.0.0-beta.6**. Transcriptor 2 turns an episode's audio into a clean
+Version **2.0.0-beta.7**. Transcriptor 2 turns an episode's audio into a clean
 transcript, show notes, a reference file and, if you like, short social media
 clips with captions, as audio or as captioned videos. It's separate from Transcriptor 1, and both can be
 installed at the same time.
@@ -9,9 +9,9 @@ installed at the same time.
 
 | Computer | File |
 |---|---|
-| Windows 10 or 11 | [Transcriptor2-Setup.exe](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.6/Transcriptor2-Setup.exe) |
-| Mac with Apple Silicon (M1 or later) | [Transcriptor2-mac-arm64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.6/Transcriptor2-mac-arm64.dmg) |
-| Mac with an Intel processor | [Transcriptor2-mac-x64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.6/Transcriptor2-mac-x64.dmg) |
+| Windows 10 or 11 | [Transcriptor2-Setup.exe](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.7/Transcriptor2-Setup.exe) |
+| Mac with Apple Silicon (M1 or later) | [Transcriptor2-mac-arm64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.7/Transcriptor2-mac-arm64.dmg) |
+| Mac with an Intel processor | [Transcriptor2-mac-x64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.7/Transcriptor2-mac-x64.dmg) |
 
 All versions are on the [releases page](https://github.com/johncfp/transcriptor2-releases/releases).
 Not sure which Mac you have? Open the Apple menu → **About This Mac**: "Chip:

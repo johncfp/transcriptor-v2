@@ -3,19 +3,19 @@
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
 file (Claude by default) → optional social clips → DOCX/TXT export. Runs from the tray on Windows and
-macOS. Currently **2.0.0-beta.6**. The README has the feature overview and the
+macOS. Currently **2.0.0-beta.7**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
 ## Next up
 
 Video clips (M7) shipped in 2.0.0-beta.6, checked on a real episode and on
 macOS and Windows CI runners (branch `video-sync-check`, not for main).
-Since then, merged and not yet released: crosstalk in clips (Settings >
-Social > One speaker per clip, notes on other speakers in review, cut edges
-that stop short of the next speaker, fades on exported clips). The owner
-tried it on a real episode in `npm run dev` on Windows; untested on macOS.
-Next: cut 2.0.0-beta.7 when the owner asks. Untested: a Windows N edition,
-and the Drive for Desktop watcher on a real Drive.
+2.0.0-beta.7 added crosstalk handling for clips (Settings > Social > One
+speaker per clip, notes on other speakers in review, cut edges that stop
+short of the next speaker, fades on exported clips). The owner tried it on a
+real episode in `npm run dev` on Windows; untested on macOS. Nothing planned
+next; wait for the owner's feedback. Untested: a Windows N edition, and the
+Drive for Desktop watcher on a real Drive.
 
 ## Working with the owner
 
