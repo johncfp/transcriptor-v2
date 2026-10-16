@@ -8,14 +8,26 @@ Google Drive setup; INSTALL.md is the user install guide.
 
 ## Next up
 
-Video clips (M7) shipped in 2.0.0-beta.6, checked on a real episode and on
-macOS and Windows CI runners (branch `video-sync-check`, not for main).
-2.0.0-beta.7 added crosstalk handling for clips (Settings > Social > One
-speaker per clip, notes on other speakers in review, cut edges that stop
-short of the next speaker, fades on exported clips). The owner tried it on a
-real episode in `npm run dev` on Windows; untested on macOS. Nothing planned
-next; wait for the owner's feedback. Untested: a Windows N edition, and the
-Drive for Desktop watcher on a real Drive.
+M8, motion graphics for video clips, in four milestones, each checked in with
+the owner before the next:
+- **M8a (done, unreleased, branch `claude/motion-graphics-transcript-audio-e90fae`):**
+  Settings > Video > Motion: opening quote (`hookQuote`: until M8d it's the
+  clip's shortest whole sentence of 3–10 words by one speaker, skipping the
+  first), word pop, background glow, progress bar, and a Pulse/Rolling
+  waveform style. All on by default (the owner's choice); scroll captions now ease.
+- **M8b:** outro card (logo, "Full episode on {show}", website) after the
+  audio: the video runs longer than the sound, padded with silence; update
+  the frame totals and the cutter timeout, and rerun the `video-sync-check`
+  CI on both systems.
+- **M8c:** lower thirds from review speaker names, Host/Guest from
+  `show.hosts`, on first words and speaker changes; only named speakers.
+- **M8d:** the clip model also gives a pull quote (first/last words, ≤10
+  words, one speaker) and up to 3 keywords, checked in code like clips and
+  editable on the Clips tab. The opening quote then uses the model's pick
+  (the owner wants the hook to be a short quote, not the title).
+
+Earlier: 2.0.0-beta.7 added crosstalk handling for clips, untested on macOS.
+Untested: a Windows N edition, and the Drive for Desktop watcher on a real Drive.
 
 ## Working with the owner
 
@@ -58,7 +70,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
 - `src/shared`: pure logic used by both sides: settings schema, cleanup,
   speaker suggestions, show-notes model and templates, verification of AI output
   (`verify.ts`; `clips.ts` for social clips), export documents, voices, confidence,
-  `video.ts` (video shapes, fonts, caption layout, waveform levels).
+  `video.ts` (video shapes, fonts, caption layout, waveform levels, motion
+  timing: every effect is a function of the time in the clip, so the
+  preview and the export draw the same frames).
 - `src/renderer`: React UI. `src/renderer/src/video/` draws video frames
   (`drawFrame.ts`) and loads the bundled fonts; the Clips tab preview and the
   export both use it, so the preview is what's exported. `src/preload`: the

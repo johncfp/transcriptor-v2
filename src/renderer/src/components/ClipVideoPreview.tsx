@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ClipContext, SocialClip } from "../../../shared/clips";
 import type { Settings } from "../../../shared/settings";
 import { clipCaptionWords, SHAPES, type ShapeId } from "../../../shared/video";
-import { drawFrame, makeScene, type FrameScene } from "../video/drawFrame";
+import { drawFrame, makeScene, stillTime, type FrameScene } from "../video/drawFrame";
 import { loadVideoFont } from "../video/fonts";
 import { Section } from "./Section";
 
@@ -94,11 +94,7 @@ export function ClipVideoPreview(props: {
     const ctx = canvas.current?.getContext("2d");
     if (!scene || !ctx) return;
     const audio = props.audioRef.current;
-    const still = () => {
-      const line = scene.lines[1] ?? scene.lines[0];
-      const word = line?.words[Math.floor(line.words.length / 2)];
-      drawFrame(ctx, scene, word ? word.start + 0.05 : 0);
-    };
+    const still = () => drawFrame(ctx, scene, stillTime(scene));
     if (!props.playing || !audio) {
       still();
       return;

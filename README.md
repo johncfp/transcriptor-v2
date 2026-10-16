@@ -62,7 +62,11 @@ see [INSTALL.md](INSTALL.md).
    Reels, TikTok and Shorts, 1:1, 16:9): the clip's audio with its captions,
    either highlighted word by word or as scrolling lines, plus the logo, show
    name, speaker names and a waveform that moves with the audio, in your
-   colours over a colour or an image of your own. Three bundled fonts (Inter,
+   colours over a colour or an image of your own. Motion, each part with its
+   own switch: an opening quote (a short whole sentence from later in the
+   clip, word for word) where the logo goes for the first few seconds, the
+   word being said popping, a background glow that drifts and swells with the
+   voice, a pulsing or rolling waveform and a progress bar. Three bundled fonts (Inter,
    Atkinson Hyperlegible Next, Lexend) keep videos the same on every
    computer. The Clips tab previews each clip exactly as it will be exported.
    Videos are made on the computer (H.264 and AAC at 30 fps, about three times
@@ -92,6 +96,7 @@ Built in milestones:
 | M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
 | M6 | Social clips: suggested clips and captions, review, WAV export | Done |
 | M7 | Video clips: MP4s of kept clips with captions, in three shapes | Done |
+| M8 | Motion graphics for video clips: a) motion from what the app already has, b) outro card, c) lower thirds, d) AI-picked pull quote and keywords | a done (unreleased) |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.

@@ -35,6 +35,12 @@ export const CAPTION_SIZES = [
 ] as const;
 export type CaptionSize = (typeof CAPTION_SIZES)[number]["id"];
 
+export const WAVEFORM_STYLES = [
+  { id: "pulse", label: "Pulse", hint: "Bars either side of the middle that pulse with the voice." },
+  { id: "history", label: "Rolling", hint: "The last moments of sound roll in from the right." },
+] as const;
+export type WaveformStyle = (typeof WAVEFORM_STYLES)[number]["id"];
+
 export const BACKGROUND_TYPES = ["color", "image"] as const;
 export type BackgroundType = (typeof BACKGROUND_TYPES)[number];
 
@@ -138,6 +144,102 @@ export function wordState(w: CaptionWord, t: number): "said" | "now" | "ahead" {
   if (t < w.start) return "ahead";
   // A short hold, so quick words don't flicker.
   return t < Math.max(w.end, w.start + 0.12) ? "now" : "said";
+}
+
+// ---------------------------------------------------------------------------
+// Motion. Everything here is a function of the time in the clip, so a frame
+// drawn for the preview is the same frame the export draws.
+
+/** Timings, in seconds. */
+export const MOTION = {
+  /** Hook: each word fades in this long after the one before it… */
+  hookStagger: 0.12,
+  hookWordIn: 0.3,
+  /** …the quote stays up until here, then lifts away; the logo and show name come back as it goes. */
+  hookHold: 2.8,
+  hookOut: 0.4,
+  headerDelay: 0.25,
+  headerIn: 0.4,
+  /** Word pop: how long the bump lasts, and how much bigger the word gets at its peak. */
+  popSec: 0.28,
+  popScale: 0.13,
+} as const;
+
+/** Ease out: fast start, gentle stop. Clamped to 0–1. */
+export function easeOut(x: number): number {
+  const c = Math.max(0, Math.min(1, x));
+  return 1 - (1 - c) ** 3;
+}
+
+/** Ease in and out, for movements that start and stop at rest. Clamped to 0–1. */
+export function easeInOut(x: number): number {
+  const c = Math.max(0, Math.min(1, x));
+  return c < 0.5 ? 4 * c ** 3 : 1 - (-2 * c + 2) ** 3 / 2;
+}
+
+const MIN_HOOK_WORDS = 3;
+const MAX_HOOK_WORDS = 10;
+
+/**
+ * The hook: a short quote shown at the start of the video, word for word from
+ * the clip's captions. Until the clip model picks one (M8d), it's the clip's
+ * shortest whole sentence of 3–10 words by one speaker, not counting the first
+ * sentence (that one is heard straight away, so it wouldn't tease anything).
+ * Ties go to the earlier sentence. Null when no sentence fits.
+ */
+export function hookQuote(words: CaptionWord[]): CaptionWord[] | null {
+  const ends = (w: CaptionWord) => /[.!?]["'”’)]*$/.test(w.text);
+  const sentences: { words: CaptionWord[]; whole: boolean }[] = [];
+  const lastBy = new Map<string, CaptionWord>();
+  let current: CaptionWord[] = [];
+  let clean = true;
+  for (const w of words) {
+    // Someone else cutting in breaks the sentence; what follows picks up mid-sentence.
+    if (current.length && w.speaker !== current[0]!.speaker) {
+      sentences.push({ words: current, whole: false });
+      current = [];
+    }
+    if (!current.length) {
+      const before = lastBy.get(w.speaker);
+      clean = !before || ends(before);
+    }
+    current.push(w);
+    lastBy.set(w.speaker, w);
+    if (ends(w)) {
+      sentences.push({ words: current, whole: clean });
+      current = [];
+    }
+  }
+  let best: CaptionWord[] | null = null;
+  for (const s of sentences.slice(1)) {
+    if (!s.whole || s.words.length < MIN_HOOK_WORDS || s.words.length > MAX_HOOK_WORDS) continue;
+    if (!best || s.words.length < best.length) best = s.words;
+  }
+  return best;
+}
+
+/** How far each hook word has faded in at `t`, times how much of the hook is still up (0–1). */
+export function hookWordAlpha(index: number, t: number): number {
+  return easeOut((t - index * MOTION.hookStagger) / MOTION.hookWordIn) * (1 - hookOut(t));
+}
+
+/** How far the hook has lifted away (0 while it's up, 1 once it's gone). */
+export function hookOut(t: number): number {
+  return easeOut((t - MOTION.hookHold) / MOTION.hookOut);
+}
+
+/** How far the logo and show name have faded back in after the hook (0–1); they start once the quote is mostly gone. */
+export function headerIn(t: number): number {
+  return easeOut((t - MOTION.hookHold - MOTION.headerDelay) / MOTION.headerIn);
+}
+
+/** When the hook is gone and the logo and show name are fully back. */
+export const HOOK_END = MOTION.hookHold + MOTION.headerDelay + MOTION.headerIn;
+
+/** How much bigger the word being said is drawn at `t` (1 = normal size). */
+export function popScale(w: CaptionWord, t: number): number {
+  const x = (t - w.start) / MOTION.popSec;
+  return x < 0 || x > 1 ? 1 : 1 + MOTION.popScale * Math.sin(Math.PI * x);
 }
 
 /** "#14213d" darkened by `amount` (0–1), for the background gradient. */
