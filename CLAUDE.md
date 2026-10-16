@@ -15,10 +15,11 @@ the owner before the next:
   clip's shortest whole sentence of 3–10 words by one speaker, skipping the
   first), word pop, background glow, progress bar, and a Pulse/Rolling
   waveform style. All on by default (the owner's choice); scroll captions now ease.
-- **M8b:** outro card (logo, "Full episode on {show}", website) after the
-  audio: the video runs longer than the sound, padded with silence; update
-  the frame totals and the cutter timeout, and rerun the `video-sync-check`
-  CI on both systems.
+- **M8b (done, unreleased, same branch):** outro card (`hasOutro`, needs a
+  show name or website): the video runs `MOTION.outroSec` past the audio
+  with silence padded under it (`cutter.ts`); frame totals and the cutter
+  timeout include it; the Clips tab preview plays it when a clip plays to its
+  end. The `video-sync-check` CI hasn't been rerun with it (needs a push; ask).
 - **M8c:** lower thirds from review speaker names, Host/Guest from
   `show.hosts`, on first words and speaker changes; only named speakers.
 - **M8d:** the clip model also gives a pull quote (first/last words, ≤10
@@ -140,6 +141,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
 - Videos are made only by **Export kept clips** on the Clips tab; the episode's
   own export writes WAVs, not videos. Each export replaces only the clip files it
   makes (`writeExport` `replaceClips`), so the episode export keeps the videos.
+- With the outro card on, a clip's MP4 is longer than its WAV by
+  `MOTION.outroSec` (silence under the card). The waveform levels still
+  cover only the audio, and `audioSeconds(scene)` comes from them.
 - AAC encoders take only 44.1 and 48 kHz: the cutter resamples other rates for
   the video's sound (the WAV keeps the source rate).
 - macOS's AAC encoder adds 2112 frames of priming (Windows' adds none), which

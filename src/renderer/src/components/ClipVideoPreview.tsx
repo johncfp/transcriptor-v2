@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ClipContext, SocialClip } from "../../../shared/clips";
 import type { Settings } from "../../../shared/settings";
-import { clipCaptionWords, SHAPES, type ShapeId } from "../../../shared/video";
-import { drawFrame, makeScene, stillTime, type FrameScene } from "../video/drawFrame";
+import { clipCaptionWords, MOTION, SHAPES, type ShapeId } from "../../../shared/video";
+import { audioSeconds, drawFrame, makeScene, stillTime, type FrameScene } from "../video/drawFrame";
 import { loadVideoFont } from "../video/fonts";
 import { Section } from "./Section";
 
@@ -81,20 +81,38 @@ export function ClipVideoPreview(props: {
       height: spec.height / 2,
       style: video,
       showName: settings.show.name,
+      website: settings.show.website,
       logo,
       background,
       levels,
       words,
     });
     // `shape` re-creates the canvas, so the scene follows it.
-  }, [fontReady, spec, video, settings.show.name, logo, background, levels, words, shape]);
+  }, [fontReady, spec, video, settings.show.name, settings.show.website, logo, background, levels, words, shape]);
 
   // A still partway in when not playing; frames following the audio while it plays.
+  // When a clip plays to its end, the outro card follows (on the clock, as the audio
+  // has stopped), then the still.
+  const wasPlaying = useRef(false);
   useEffect(() => {
     const ctx = canvas.current?.getContext("2d");
     if (!scene || !ctx) return;
     const audio = props.audioRef.current;
     const still = () => drawFrame(ctx, scene, stillTime(scene));
+    const ended = wasPlaying.current && !props.playing && !!audio && audio.currentTime >= clip.end - 0.15;
+    wasPlaying.current = props.playing;
+    if (ended && scene.outro) {
+      const from = audioSeconds(scene), began = performance.now();
+      let frame = 0;
+      const tick = () => {
+        const t = from + (performance.now() - began) / 1000;
+        if (t >= from + MOTION.outroSec) return still();
+        drawFrame(ctx, scene, t);
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frame);
+    }
     if (!props.playing || !audio) {
       still();
       return;
@@ -112,7 +130,7 @@ export function ClipVideoPreview(props: {
       cancelAnimationFrame(frame);
       audio.removeEventListener("timeupdate", draw);
     };
-  }, [scene, props.playing, props.audioRef, clip.start]);
+  }, [scene, props.playing, props.audioRef, clip.start, clip.end]);
 
   return (
     <Section title="Video preview" intro={`“${clip.title}”, as its video will look. Play the clip to watch it move.`}>

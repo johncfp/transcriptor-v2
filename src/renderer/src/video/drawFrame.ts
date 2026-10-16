@@ -15,7 +15,10 @@ import {
   hookOut,
   hookQuote,
   hookWordAlpha,
+  hasOutro,
   MOTION,
+  outroIn,
+  outroLines,
   pageAt,
   pageLines,
   popScale,
@@ -33,6 +36,8 @@ export interface FrameScene {
   height: number;
   style: VideoSettings;
   showName: string;
+  /** From the show profile, for the outro card. */
+  website: string;
   logo: CanvasImageSource | null;
   background: CanvasImageSource | null;
   /** Loudness per video frame, 0–1, for the waveform. */
@@ -44,7 +49,12 @@ export interface FrameScene {
   captionPx: number;
   /** The hook quote laid out to fit where the logo and show name go; null = no hook. */
   hook: HookLayout | null;
+  /** Whether the outro card follows the audio (see hasOutro). */
+  outro: boolean;
 }
+
+/** How long the clip's audio is, from its waveform levels (one per frame). */
+export const audioSeconds = (s: FrameScene) => s.levels.length / VIDEO_FPS;
 
 interface HookLayout {
   lines: { text: string; width: number }[][];
@@ -69,7 +79,7 @@ const font = (style: VideoSettings, weight: 600 | 700, px: number) => `${weight}
 /** Lay the captions out for this frame size and style. Call once per clip and shape. */
 export function makeScene(
   ctx: Ctx,
-  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook"> & { words: CaptionWord[] },
+  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro"> & { words: CaptionWord[] },
 ): FrameScene {
   const unit = Math.min(input.width, input.height) / 1080;
   const scale = CAPTION_SIZES.find((c) => c.id === input.style.captionSize)?.scale ?? 1;
@@ -77,7 +87,8 @@ export function makeScene(
   ctx.font = font(input.style, 700, captionPx);
   const lines = breakLines(input.words, (t) => ctx.measureText(t).width, input.width - 2 * margin(input, unit));
   const hook = input.style.motion.hook ? layoutHook(ctx, input, unit, captionPx) : null;
-  return { ...input, lines, pages: pageLines(lines, pageSize(input)), unit, captionPx, hook };
+  const outro = hasOutro(input.style, input.showName, input.website);
+  return { ...input, lines, pages: pageLines(lines, pageSize(input)), unit, captionPx, hook, outro };
 }
 
 /**
@@ -215,9 +226,55 @@ function drawHook(ctx: Ctx, s: FrameScene, hook: HookLayout, t: number): void {
   }
 }
 
+/**
+ * The outro card, once the audio has ended: the background colour comes up
+ * over the frame, then the logo, "Full episode on", the show name and the
+ * website rise into place, centred.
+ */
+function drawOutro(ctx: Ctx, s: FrameScene, L: ReturnType<typeof layout>, t: number): void {
+  const { width: W, height: H, unit: u } = s;
+  const o = outroIn(t, audioSeconds(s));
+  // The background (gradient or image, and the glow) fades back in over everything.
+  ctx.globalAlpha = o;
+  drawBackground(ctx, s);
+  if (s.style.motion.glow) drawGlow(ctx, s, t);
+  const lines = outroLines(s.showName, s.website);
+  const maxW = W - 2 * margin(s, u);
+  const logo = s.style.showLogo && s.logo ? (s.logo as { width: number; height: number }) : null;
+  const logoSize = L.logo * 1.25;
+  const abovePx = 44 * u, bigPx = (wide(s) ? 96 : 88) * u, belowPx = 40 * u;
+  // Heights of each piece and the gaps between them, to centre the whole block.
+  const parts = [logo ? logoSize + 50 * u : 0, abovePx * 1.3, bigPx * 1.25, lines.below ? belowPx * 1.5 : 0];
+  const block = parts.reduce((a, b) => a + b, 0);
+  let y = (H - block) / 2 + (1 - o) * 50 * u;
+  ctx.globalAlpha = o;
+  if (logo) {
+    // A small pop as it arrives.
+    const k = Math.min(logoSize / logo.width, logoSize / logo.height) * (0.85 + 0.15 * outroIn(t - 0.1, audioSeconds(s)));
+    ctx.drawImage(s.logo!, (W - logo.width * k) / 2, y + (logoSize - logo.height * k) / 2, logo.width * k, logo.height * k);
+    y += parts[0]!;
+  }
+  ctx.textAlign = "center";
+  ctx.font = font(s.style, 600, abovePx);
+  ctx.fillStyle = s.style.colors.highlight;
+  ctx.fillText(lines.above, W / 2, y + abovePx, maxW);
+  y += parts[1]!;
+  ctx.font = font(s.style, 700, bigPx);
+  ctx.fillStyle = s.style.colors.text;
+  ctx.fillText(lines.big, W / 2, y + bigPx, maxW);
+  y += parts[2]!;
+  if (lines.below) {
+    ctx.font = font(s.style, 600, belowPx);
+    ctx.fillStyle = withAlpha(s.style.colors.text, 0.75);
+    ctx.fillText(lines.below, W / 2, y + belowPx * 1.2, maxW);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "left";
+}
+
 /** How far into the clip, as a bar along the bottom. */
 function drawProgress(ctx: Ctx, s: FrameScene, t: number, y: number): void {
-  const seconds = s.levels.length / VIDEO_FPS;
+  const seconds = audioSeconds(s);
   if (!seconds) return;
   const m = margin(s, s.unit);
   const w = s.width - 2 * m;
@@ -372,6 +429,7 @@ export function drawFrame(ctx: Ctx, s: FrameScene, t: number): void {
 
   if (s.style.waveform) (s.style.waveformStyle === "pulse" ? drawPulse : drawWaveform)(ctx, s, t, L.waveY, L.waveH);
   if (s.style.motion.progress) drawProgress(ctx, s, t, L.progressY);
+  if (s.outro && s.levels.length && t > audioSeconds(s)) drawOutro(ctx, s, L, t);
   ctx.restore();
 }
 

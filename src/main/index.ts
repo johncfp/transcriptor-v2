@@ -216,6 +216,7 @@ function start(): void {
                 ? {
                     style: s.video,
                     showName: s.show.name,
+                    website: s.show.website,
                     logo: s.video.showLogo && branding.logo ? (loadLogo(userData, branding.logo)?.png ?? null) : null,
                     background: background ? readFileSync(background) : null,
                     clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes })),

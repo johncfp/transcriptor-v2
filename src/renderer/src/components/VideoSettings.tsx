@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Settings, SettingsPatch, VideoSettings as Video } from "../../../shared/settings";
-import { CAPTION_SIZES, CAPTION_STYLES, SHAPES, VIDEO_FONTS, videoFont, WAVEFORM_STYLES } from "../../../shared/video";
+import { CAPTION_SIZES, CAPTION_STYLES, MOTION, SHAPES, VIDEO_FONTS, videoFont, WAVEFORM_STYLES } from "../../../shared/video";
 import { Section } from "./Section";
 
 const cleanError = (err: unknown) =>
@@ -15,6 +15,7 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
   const [bgError, setBgError] = useState("");
   const hasLogo = !!settings.output.branding.logo;
   const noShape = !SHAPES.some((s) => video.shapes[s.id]);
+  const hasShowLink = !!(settings.show.name.trim() || settings.show.website.trim());
 
   useEffect(() => {
     let live = true;
@@ -151,6 +152,16 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
       <Toggle label="Word pop" hint="The word being said grows for a moment." checked={video.motion.pop} onChange={(pop) => setMotion({ pop })} />
       <Toggle label="Background glow" hint="A soft light in the highlight colour drifts across and brightens with the voice." checked={video.motion.glow} onChange={(glow) => setMotion({ glow })} />
       <Toggle label="Progress bar" hint="Along the bottom, showing how far into the clip it is." checked={video.motion.progress} onChange={(progress) => setMotion({ progress })} />
+      <Toggle
+        label="Outro card"
+        hint={
+          hasShowLink
+            ? `${MOTION.outroSec} seconds after the clip: the logo, “Full episode on” the show name, and the website, from the show profile.`
+            : "Add a show name or website to the show profile to show it."
+        }
+        checked={video.motion.outro}
+        onChange={(outro) => setMotion({ outro })}
+      />
 
     </Section>
   );

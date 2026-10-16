@@ -163,7 +163,35 @@ export const MOTION = {
   /** Word pop: how long the bump lasts, and how much bigger the word gets at its peak. */
   popSec: 0.28,
   popScale: 0.13,
+  /** Outro card: how long it stays after the audio ends, and how long it takes to come in. */
+  outroSec: 2.5,
+  outroIn: 0.45,
 } as const;
+
+/**
+ * Whether a video gets the outro card: it's on, and there's a show name or a
+ * website to point to. The video then runs MOTION.outroSec past the audio,
+ * with silence under the card.
+ */
+export function hasOutro(style: { motion: { outro: boolean } }, showName: string, website: string): boolean {
+  return style.motion.outro && !!(showName.trim() || website.trim());
+}
+
+/** How long the video runs, for audio of `audioSec` seconds. */
+export function videoSeconds(audioSec: number, outro: boolean): number {
+  return audioSec + (outro ? MOTION.outroSec : 0);
+}
+
+/** How far the outro card has come in at `t` (0 before the audio ends, 1 once it's up). */
+export function outroIn(t: number, audioSec: number): number {
+  return easeOut((t - audioSec) / MOTION.outroIn);
+}
+
+/** The outro's lines: a small one above, the show (or website) big, the website small below. */
+export function outroLines(showName: string, website: string): { above: string; big: string; below: string } {
+  const name = showName.trim(), site = website.trim();
+  return name ? { above: "Full episode on", big: name, below: site } : { above: "Full episode at", big: site, below: "" };
+}
 
 /** Ease out: fast start, gentle stop. Clamped to 0–1. */
 export function easeOut(x: number): number {

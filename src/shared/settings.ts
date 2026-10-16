@@ -134,6 +134,8 @@ export interface VideoMotion {
   glow: boolean;
   /** A bar along the bottom showing how far into the clip it is. */
   progress: boolean;
+  /** A card after the audio: the logo, "Full episode on {show}" and the website. */
+  outro: boolean;
 }
 
 /** Which provider, model and effort a writing step uses. */
@@ -296,7 +298,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showSpeakers: true,
     waveform: true,
     waveformStyle: "pulse",
-    motion: { hook: true, pop: true, glow: true, progress: true },
+    motion: { hook: true, pop: true, glow: true, progress: true, outro: true },
   },
   template: "full",
   customSections: [],

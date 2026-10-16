@@ -12,12 +12,16 @@ import {
   HOOK_END,
   hookOut,
   hookQuote,
+  hasOutro,
   hookWordAlpha,
   MOTION,
+  outroIn,
+  outroLines,
   pageAt,
   pageLines,
   popScale,
   scrollAt,
+  videoSeconds,
   wordState,
   type CaptionWord,
 } from "../src/shared/video";
@@ -153,7 +157,7 @@ test("waveform levels: one per video frame, loud parts reach 1, silence is 0", (
 });
 
 test("motion settings: on by default, kept when saved, and bad values fall back", () => {
-  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true });
+  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true });
   assert.equal(DEFAULT_SETTINGS.video.waveformStyle, "pulse");
   // A settings file from before motion gets the defaults.
   const old = mergeSettings(DEFAULT_SETTINGS, { video: { enabled: true, waveform: true } });
@@ -161,7 +165,7 @@ test("motion settings: on by default, kept when saved, and bad values fall back"
   assert.equal(old.video.waveformStyle, "pulse");
   const next = mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "history", motion: { glow: false, sparkle: true } } });
   assert.equal(next.video.waveformStyle, "history");
-  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true });
+  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true });
   assert.equal(mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "spiral" } }).video.waveformStyle, "pulse");
 });
 
@@ -199,4 +203,18 @@ test("motion timing: the hook fades in word by word and lifts away; the word bei
   assert.equal(popScale(w, 0.9), 1);
   assert.ok(Math.abs(popScale(w, 1 + MOTION.popSec / 2) - (1 + MOTION.popScale)) < 1e-9);
   assert.equal(popScale(w, 1 + MOTION.popSec + 0.01), 1);
+});
+
+test("outro card: only with something to point to; the video runs on past the audio", () => {
+  const on = { motion: { outro: true } }, off = { motion: { outro: false } };
+  assert.equal(hasOutro(on, "LOL a Podcast", ""), true);
+  assert.equal(hasOutro(on, "", "lol.example"), true);
+  assert.equal(hasOutro(on, " ", ""), false);
+  assert.equal(hasOutro(off, "LOL a Podcast", "lol.example"), false);
+  assert.equal(videoSeconds(42.6, true), 42.6 + MOTION.outroSec);
+  assert.equal(videoSeconds(42.6, false), 42.6);
+  assert.equal(outroIn(42, 42.6), 0);
+  assert.equal(outroIn(42.6 + MOTION.outroIn, 42.6), 1);
+  assert.deepEqual(outroLines("LOL a Podcast", " lol.example "), { above: "Full episode on", big: "LOL a Podcast", below: "lol.example" });
+  assert.deepEqual(outroLines("", "lol.example"), { above: "Full episode at", big: "lol.example", below: "" });
 });
