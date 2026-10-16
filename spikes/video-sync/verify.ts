@@ -22,6 +22,9 @@ interface Job {
   words: CaptionWord[];
   style: VideoSettings;
   showName: string;
+  website: string;
+  /** With the outro card: the video runs on past the WAV, silent. */
+  outro: boolean;
   logoPath: string | null;
   backgroundPath?: string | null;
   clipSeconds: number;
@@ -87,9 +90,13 @@ async function sound(mp4: Uint8Array, wav: Uint8Array) {
   const ref = await ctx.decodeAudioData(buf(wav));
   const x = heard.getChannelData(0), R = ref.getChannelData(0);
   const len = ref.duration;
+  // Under the outro card: the loudest sample heard after the clip's sound has ended.
+  let tailPeak = 0;
+  for (let i = Math.round((len + 0.15) * 48000); i < x.length - 2400; i++) tailPeak = Math.max(tailPeak, Math.abs(x[i]!));
   return {
     heardSeconds: r2(heard.duration),
     wavSeconds: r2(len),
+    tailPeak: Math.round(tailPeak * 1e5) / 1e5,
     points: [0.3, len * 0.25, len * 0.5, len * 0.75, len - 1.5].map((t) => locate(x, R, 48000, t)),
   };
 }
@@ -103,7 +110,7 @@ async function pictures(mp4: Uint8Array, wav: Uint8Array) {
   const levels = audioLevels(pcm.pcm, pcm.channels, pcm.sampleRate);
   const full = new OffscreenCanvas(job.width, job.height);
   const fctx = full.getContext("2d")!;
-  const scene = makeScene(fctx, { width: job.width, height: job.height, style: job.style, showName: job.showName, logo, background, levels, words: job.words });
+  const scene = makeScene(fctx, { width: job.width, height: job.height, style: job.style, showName: job.showName, website: job.website, logo, background, levels, words: job.words });
   const sw = job.width / 4, sh = job.height / 4;
   const small = new OffscreenCanvas(sw, sh);
   const sctx = small.getContext("2d", { willReadFrequently: true })!;
@@ -131,12 +138,16 @@ async function pictures(mp4: Uint8Array, wav: Uint8Array) {
   const last = Math.floor(video.duration * VIDEO_FPS) - 1;
   // Frames where a word starts (the highlight moves, or a page turns), spread over the clip; plus the ends.
   const starts = job.words.map((w) => Math.ceil(w.start * VIDEO_FPS)).filter((k) => k > 3 && k < last - 3);
-  const picks = [2, ...Array.from({ length: 10 }, (_, i) => starts[Math.floor(((i + 0.5) / 10) * starts.length)]!), last - 3];
+  // The opening quote moves in the first seconds; the outro card comes in just after the sound ends.
+  const end = Math.ceil(job.clipSeconds * VIDEO_FPS);
+  const outroPicks = job.outro ? [end + 3, end + 9].filter((k) => k < last - 3) : [];
+  // The card holds still at the very end, so neighbouring frames there tie; the end of the sound is checked instead.
+  const picks = [2, 20, 90, ...Array.from({ length: 10 }, (_, i) => starts[Math.floor(((i + 0.5) / 10) * starts.length)]!), ...outroPicks, job.outro ? end - 3 : last - 3];
   const rows = [];
   for (const [n, k] of picks.entries()) {
     video.currentTime = (k + 0.5) / VIDEO_FPS;
     await new Promise((ok) => (video.onseeked = ok));
-    if (job.snapshot && n === 6) {
+    if (job.snapshot && n === 8) {
       const c = new OffscreenCanvas(job.width, job.height);
       c.getContext("2d")!.drawImage(video, 0, 0);
       writeFileSync(job.snapshot, new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer()));
