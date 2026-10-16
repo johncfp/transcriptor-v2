@@ -19,9 +19,12 @@ the owner before the next:
   show name or website): the video runs `MOTION.outroSec` past the audio
   with silence padded under it (`cutter.ts`); frame totals and the cutter
   timeout include it; the Clips tab preview plays it when a clip plays to its
-  end. The `video-sync-check` CI hasn't been rerun with it (needs a push; ask).
-- **M8c:** lower thirds from review speaker names, Host/Guest from
-  `show.hosts`, on first words and speaker changes; only named speakers.
+  end. The `video-sync-check` branch has the M8a/b sync check (outro length, silence, frames of the hook and the outro coming in); it passed locally on Windows 2026-10-16; CI results pending the owner's push.
+- **M8c (done, unreleased, same branch):** name cards (`nameCards`): when
+  a speaker named in review starts talking (not "Speaker N"), for up to
+  3.5 s; Host if the name matches `show.hosts` (whole or first name), else
+  Guest; stretches under 1.2 s get none. A card replaces the name above
+  the captions for that speaker. The Clips tab says which speakers aren't named.
 - **M8d:** the clip model also gives a pull quote (first/last words, ≤10
   words, one speaker) and up to 3 keywords, checked in code like clips and
   editable on the Clips tab. The opening quote then uses the model's pick

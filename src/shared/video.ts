@@ -187,6 +187,63 @@ export function outroIn(t: number, audioSec: number): number {
   return easeOut((t - audioSec) / MOTION.outroIn);
 }
 
+// ---------------------------------------------------------------------------
+// Lower thirds: a name card when a named speaker starts talking.
+
+export interface NameCard {
+  name: string;
+  role: "Host" | "Guest";
+  /** Seconds from the start of the clip. */
+  start: number;
+  end: number;
+}
+
+/** How long a name card stays up, at most, and the shortest stretch worth one. */
+export const CARD_HOLD = 3.5;
+const CARD_MIN = 1.2;
+/** How long a card takes to slide in, and to slide out. */
+export const CARD_SLIDE = 0.4;
+
+/** A speaker left with the transcript's own label ("Speaker 2") hasn't been named in review. */
+export const isPlaceholderName = (name: string) => /^Speaker \d+$/.test(name);
+
+/** "Host" when the name is one of the show's hosts (the whole name, or the same first name), otherwise "Guest". */
+export function speakerRole(name: string, hosts: string[]): "Host" | "Guest" {
+  const n = name.trim().toLowerCase();
+  const first = (s: string) => s.split(/\s+/)[0]!;
+  return hosts.some((h) => {
+    const host = h.trim().toLowerCase();
+    return !!host && (host === n || first(host) === first(n));
+  })
+    ? "Host"
+    : "Guest";
+}
+
+/**
+ * Name cards for a clip: one each time a named speaker starts talking, up for
+ * CARD_HOLD seconds or until shortly before the next speaker, whichever is
+ * first. Speakers not named in review, and stretches too short to read a card
+ * in, get none.
+ */
+export function nameCards(words: CaptionWord[], hosts: string[]): NameCard[] {
+  const runs: { speaker: string; start: number }[] = [];
+  for (const w of words) if (runs.at(-1)?.speaker !== w.speaker) runs.push({ speaker: w.speaker, start: w.start });
+  const cards: NameCard[] = [];
+  runs.forEach((r, i) => {
+    if (isPlaceholderName(r.speaker)) return;
+    const next = runs[i + 1]?.start ?? Infinity;
+    const start = Math.max(0, r.start);
+    const end = Math.min(start + CARD_HOLD, next - 0.2);
+    if (end - start >= CARD_MIN) cards.push({ name: r.speaker, role: speakerRole(r.speaker, hosts), start, end });
+  });
+  return cards;
+}
+
+/** How far a card is on screen at `t`: 0 off, 1 fully in; it slides in at its start and out at its end. */
+export function cardIn(card: NameCard, t: number): number {
+  return easeOut((t - card.start) / CARD_SLIDE) * (1 - easeOut((t - card.end + CARD_SLIDE) / CARD_SLIDE));
+}
+
 /** The outro's lines: a small one above, the show (or website) big, the website small below. */
 export function outroLines(showName: string, website: string): { above: string; big: string; below: string } {
   const name = showName.trim(), site = website.trim();

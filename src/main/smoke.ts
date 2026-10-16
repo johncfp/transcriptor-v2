@@ -634,7 +634,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         JSON.stringify(videoControls.fonts) === JSON.stringify(["Inter", "Atkinson Hyperlegible Next", "Lexend"]) &&
         JSON.stringify(videoControls.styles) === JSON.stringify(["Word by word", "Scrolling lines"]) &&
         JSON.stringify(videoControls.waveStyles) === JSON.stringify(["Pulse", "Rolling"]) &&
-        JSON.stringify(videoControls.motion) === JSON.stringify(["Opening quote", "Word pop", "Background glow", "Progress bar", "Outro card"]) &&
+        JSON.stringify(videoControls.motion) === JSON.stringify(["Opening quote", "Word pop", "Background glow", "Name cards", "Progress bar", "Outro card"]) &&
         videoControls.motionOn &&
         !videoControls.enabled &&
         videoControls.captionsTwoCol &&

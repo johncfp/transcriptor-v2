@@ -145,6 +145,7 @@ async function renderOne(
     style: video.style,
     showName: video.showName,
     website: video.website,
+    hosts: video.hosts,
     logo,
     background,
     levels,

@@ -4,6 +4,8 @@ import { DEFAULT_SETTINGS, mergeSettings } from "../src/shared/settings";
 import {
   audioLevels,
   breakLines,
+  CARD_HOLD,
+  cardIn,
   clipCaptionWords,
   darken,
   easeInOut,
@@ -14,13 +16,16 @@ import {
   hookQuote,
   hasOutro,
   hookWordAlpha,
+  isPlaceholderName,
   MOTION,
+  nameCards,
   outroIn,
   outroLines,
   pageAt,
   pageLines,
   popScale,
   scrollAt,
+  speakerRole,
   videoSeconds,
   wordState,
   type CaptionWord,
@@ -157,7 +162,7 @@ test("waveform levels: one per video frame, loud parts reach 1, silence is 0", (
 });
 
 test("motion settings: on by default, kept when saved, and bad values fall back", () => {
-  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true });
+  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true });
   assert.equal(DEFAULT_SETTINGS.video.waveformStyle, "pulse");
   // A settings file from before motion gets the defaults.
   const old = mergeSettings(DEFAULT_SETTINGS, { video: { enabled: true, waveform: true } });
@@ -165,7 +170,7 @@ test("motion settings: on by default, kept when saved, and bad values fall back"
   assert.equal(old.video.waveformStyle, "pulse");
   const next = mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "history", motion: { glow: false, sparkle: true } } });
   assert.equal(next.video.waveformStyle, "history");
-  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true });
+  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true, nameCards: true });
   assert.equal(mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "spiral" } }).video.waveformStyle, "pulse");
 });
 
@@ -217,4 +222,29 @@ test("outro card: only with something to point to; the video runs on past the au
   assert.equal(outroIn(42.6 + MOTION.outroIn, 42.6), 1);
   assert.deepEqual(outroLines("LOL a Podcast", " lol.example "), { above: "Full episode on", big: "LOL a Podcast", below: "lol.example" });
   assert.deepEqual(outroLines("", "lol.example"), { above: "Full episode at", big: "lol.example", below: "" });
+});
+
+test("name cards: one when a named speaker starts, Host or Guest, none for unnamed speakers", () => {
+  assert.equal(isPlaceholderName("Speaker 2"), true);
+  assert.equal(isPlaceholderName("Delaney Howell"), false);
+  assert.equal(speakerRole("Brian", ["Brian Smith"]), "Host");
+  assert.equal(speakerRole("nigel t.", ["Nigel T."]), "Host");
+  assert.equal(speakerRole("Delaney Howell", ["Brian Smith", " "]), "Guest");
+  assert.equal(speakerRole("Pete", []), "Guest");
+  // Pete talks for 4 s, Nigel for 0.8 s (too short for a card), Pete again, then Speaker 3 (unnamed).
+  const ws = [...words("a b c d e f g h i j", "Pete", 0), ...words("k l", "Nigel", 4.2), ...words("m n o p q r", "Pete", 5.2), ...words("s t u v", "Speaker 3", 8)];
+  const cards = nameCards(ws, ["Nigel"]);
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.role, c.start, +c.end.toFixed(2)]),
+    [
+      ["Pete", "Guest", 0, CARD_HOLD],
+      ["Pete", "Guest", 5.2, 7.8],
+    ],
+  );
+  // Slides in, holds, slides out.
+  const card = cards[0]!;
+  assert.equal(cardIn(card, -0.1), 0);
+  assert.equal(cardIn(card, 1.5), 1);
+  assert.equal(cardIn(card, card.end), 0);
+  assert.deepEqual(nameCards([], ["Nigel"]), []);
 });

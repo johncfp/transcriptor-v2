@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ClipContext, SocialClip } from "../../../shared/clips";
 import type { Settings } from "../../../shared/settings";
-import { clipCaptionWords, MOTION, SHAPES, type ShapeId } from "../../../shared/video";
+import { clipCaptionWords, isPlaceholderName, MOTION, SHAPES, type ShapeId } from "../../../shared/video";
 import { audioSeconds, drawFrame, makeScene, stillTime, type FrameScene } from "../video/drawFrame";
 import { loadVideoFont } from "../video/fonts";
 import { Section } from "./Section";
@@ -73,6 +73,7 @@ export function ClipVideoPreview(props: {
   }, [props.jobId, clip.start, clip.end]);
 
   const words = useMemo(() => clipCaptionWords(props.ctx.turns, clip), [props.ctx, clip]);
+  const unnamed = useMemo(() => [...new Set(words.map((w) => w.speaker).filter(isPlaceholderName))], [words]);
   const scene = useMemo<FrameScene | null>(() => {
     const ctx = canvas.current?.getContext("2d");
     if (!fontReady || !ctx) return null;
@@ -82,13 +83,14 @@ export function ClipVideoPreview(props: {
       style: video,
       showName: settings.show.name,
       website: settings.show.website,
+      hosts: settings.show.hosts,
       logo,
       background,
       levels,
       words,
     });
     // `shape` re-creates the canvas, so the scene follows it.
-  }, [fontReady, spec, video, settings.show.name, settings.show.website, logo, background, levels, words, shape]);
+  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, logo, background, levels, words, shape]);
 
   // A still partway in when not playing; frames following the audio while it plays.
   // When a clip plays to its end, the outro card follows (on the clock, as the audio
@@ -151,6 +153,11 @@ export function ClipVideoPreview(props: {
       />
       {!video.enabled && <p className="hint">Video clips are off, so exports are audio only. Turn them on in Settings › Social.</p>}
       {video.enabled && !video.shapes[shape] && <p className="hint">This shape isn't chosen in Settings, so it won't be exported.</p>}
+      {video.motion.nameCards && unnamed.length > 0 && (
+        <p className="hint">
+          {unnamed.join(" and ")} {unnamed.length > 1 ? "aren't" : "isn't"} named in review, so the video shows no name card for them.
+        </p>
+      )}
     </Section>
   );
 }

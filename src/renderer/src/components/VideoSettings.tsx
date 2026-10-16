@@ -151,6 +151,12 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
       />
       <Toggle label="Word pop" hint="The word being said grows for a moment." checked={video.motion.pop} onChange={(pop) => setMotion({ pop })} />
       <Toggle label="Background glow" hint="A soft light in the highlight colour drifts across and brightens with the voice." checked={video.motion.glow} onChange={(glow) => setMotion({ glow })} />
+      <Toggle
+        label="Name cards"
+        hint="When a speaker starts talking: their name as given in review, and Host (one of the show's hosts) or Guest. Speakers not named in review get no card."
+        checked={video.motion.nameCards}
+        onChange={(nameCards) => setMotion({ nameCards })}
+      />
       <Toggle label="Progress bar" hint="Along the bottom, showing how far into the clip it is." checked={video.motion.progress} onChange={(progress) => setMotion({ progress })} />
       <Toggle
         label="Outro card"

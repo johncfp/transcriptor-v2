@@ -136,6 +136,8 @@ export interface VideoMotion {
   progress: boolean;
   /** A card after the audio: the logo, "Full episode on {show}" and the website. */
   outro: boolean;
+  /** A name card (Host or Guest) when a speaker named in review starts talking; it replaces the name above the captions. */
+  nameCards: boolean;
 }
 
 /** Which provider, model and effort a writing step uses. */
@@ -298,7 +300,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showSpeakers: true,
     waveform: true,
     waveformStyle: "pulse",
-    motion: { hook: true, pop: true, glow: true, progress: true, outro: true },
+    motion: { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true },
   },
   template: "full",
   customSections: [],

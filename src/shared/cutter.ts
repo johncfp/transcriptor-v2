@@ -32,6 +32,8 @@ export interface VideoJob {
   showName: string;
   /** From the show profile, for the outro card. */
   website: string;
+  /** From the show profile, so name cards can say Host or Guest. */
+  hosts: string[];
   /** Image file bytes (PNG or JPEG), or null for none. */
   logo: Uint8Array | null;
   background: Uint8Array | null;

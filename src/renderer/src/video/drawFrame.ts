@@ -7,6 +7,7 @@ import type { VideoSettings } from "../../../shared/settings";
 import {
   breakLines,
   CAPTION_SIZES,
+  cardIn,
   darken,
   easeInOut,
   easeOut,
@@ -17,6 +18,7 @@ import {
   hookWordAlpha,
   hasOutro,
   MOTION,
+  nameCards,
   outroIn,
   outroLines,
   pageAt,
@@ -29,6 +31,7 @@ import {
   type CaptionLine,
   type CaptionPage,
   type CaptionWord,
+  type NameCard,
 } from "../../../shared/video";
 
 export interface FrameScene {
@@ -38,6 +41,8 @@ export interface FrameScene {
   showName: string;
   /** From the show profile, for the outro card. */
   website: string;
+  /** The show's hosts, so name cards can say Host or Guest. */
+  hosts: string[];
   logo: CanvasImageSource | null;
   background: CanvasImageSource | null;
   /** Loudness per video frame, 0–1, for the waveform. */
@@ -51,6 +56,8 @@ export interface FrameScene {
   hook: HookLayout | null;
   /** Whether the outro card follows the audio (see hasOutro). */
   outro: boolean;
+  /** Name cards (lower thirds), when they're on. */
+  cards: NameCard[];
 }
 
 /** How long the clip's audio is, from its waveform levels (one per frame). */
@@ -79,7 +86,7 @@ const font = (style: VideoSettings, weight: 600 | 700, px: number) => `${weight}
 /** Lay the captions out for this frame size and style. Call once per clip and shape. */
 export function makeScene(
   ctx: Ctx,
-  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro"> & { words: CaptionWord[] },
+  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro" | "cards"> & { words: CaptionWord[] },
 ): FrameScene {
   const unit = Math.min(input.width, input.height) / 1080;
   const scale = CAPTION_SIZES.find((c) => c.id === input.style.captionSize)?.scale ?? 1;
@@ -88,7 +95,8 @@ export function makeScene(
   const lines = breakLines(input.words, (t) => ctx.measureText(t).width, input.width - 2 * margin(input, unit));
   const hook = input.style.motion.hook ? layoutHook(ctx, input, unit, captionPx) : null;
   const outro = hasOutro(input.style, input.showName, input.website);
-  return { ...input, lines, pages: pageLines(lines, pageSize(input)), unit, captionPx, hook, outro };
+  const cards = input.style.motion.nameCards ? nameCards(input.words, input.hosts) : [];
+  return { ...input, lines, pages: pageLines(lines, pageSize(input)), unit, captionPx, hook, outro, cards };
 }
 
 /**
@@ -395,7 +403,7 @@ export function drawFrame(ctx: Ctx, s: FrameScene, t: number): void {
   if (s.style.captionStyle === "highlight") {
     const page = pageAt(s.pages, t);
     if (page) {
-      if (s.style.showSpeakers && page.speaker) drawSpeaker(ctx, s, page.speaker, x, speakerY);
+      if (showLabel(s, page.speaker)) drawSpeaker(ctx, s, page.speaker, x, speakerY);
       ctx.font = font(s.style, 700, s.captionPx);
       page.lines.forEach((line, i) => drawWords(ctx, s, line, x, L.captionTop + i * lineH, t, true));
     }
@@ -405,7 +413,7 @@ export function drawFrame(ctx: Ctx, s: FrameScene, t: number): void {
     const at = Math.floor(raw) + easeInOut(raw - Math.floor(raw));
     const current = s.lines[Math.round(at)];
     if (current && t >= current.start - 0.25) {
-      if (s.style.showSpeakers && current.speaker) drawSpeaker(ctx, s, current.speaker, x, speakerY);
+      if (showLabel(s, current.speaker)) drawSpeaker(ctx, s, current.speaker, x, speakerY);
       ctx.font = font(s.style, 700, s.captionPx);
       // A band of rows from captionTop: row 0 is the line before (faded), row 1 the line
       // being read, then the ones coming. Lines slide up a row as the next one starts.
@@ -429,7 +437,54 @@ export function drawFrame(ctx: Ctx, s: FrameScene, t: number): void {
 
   if (s.style.waveform) (s.style.waveformStyle === "pulse" ? drawPulse : drawWaveform)(ctx, s, t, L.waveY, L.waveH);
   if (s.style.motion.progress) drawProgress(ctx, s, t, L.progressY);
+  for (const card of s.cards) {
+    const k = cardIn(card, t);
+    if (k > 0.001) drawCard(ctx, s, L, card, k);
+  }
   if (s.outro && s.levels.length && t > audioSeconds(s)) drawOutro(ctx, s, L, t);
+  ctx.restore();
+}
+
+/** The name above the captions; with name cards on, only speakers who get no card (not named in review) keep it. */
+function showLabel(s: FrameScene, speaker: string): boolean {
+  if (!s.style.showSpeakers || !speaker) return false;
+  return !s.cards.some((c) => c.name === speaker);
+}
+
+/**
+ * A name card, just above the waveform: a highlight bar, the name, and Host or
+ * Guest (with the show's name). It slides in from the left edge and back out.
+ */
+function drawCard(ctx: Ctx, s: FrameScene, L: ReturnType<typeof layout>, card: NameCard, k: number): void {
+  const u = s.unit;
+  const h = (wide(s) || square(s) ? 120 : 140) * u;
+  const namePx = h * 0.37, rolePx = h * 0.23;
+  const role = s.showName.trim() ? `${card.role} · ${s.showName.trim()}` : card.role;
+  ctx.font = font(s.style, 700, namePx);
+  const nameW = ctx.measureText(card.name).width;
+  ctx.font = font(s.style, 600, rolePx);
+  const roleW = ctx.measureText(role).width;
+  const m = margin(s, u);
+  const w = Math.min(s.width - 2 * m, Math.max(nameW, roleW) + 72 * u);
+  const y = L.waveY - L.waveH / 2 - 30 * u - h;
+  const x = m - (1 - k) * (w + m);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, k * 1.5);
+  ctx.fillStyle = withAlpha(s.style.colors.text, 0.1);
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 16 * u);
+  ctx.fill();
+  ctx.fillStyle = s.style.colors.highlight;
+  ctx.beginPath();
+  ctx.roundRect(x, y, 12 * u, h, [16 * u, 0, 0, 16 * u]);
+  ctx.fill();
+  ctx.textAlign = "left";
+  ctx.fillStyle = s.style.colors.text;
+  ctx.font = font(s.style, 700, namePx);
+  ctx.fillText(card.name, x + 40 * u, y + h * 0.48, w - 56 * u);
+  ctx.fillStyle = s.style.colors.highlight;
+  ctx.font = font(s.style, 600, rolePx);
+  ctx.fillText(role, x + 40 * u, y + h * 0.8, w - 56 * u);
   ctx.restore();
 }
 
