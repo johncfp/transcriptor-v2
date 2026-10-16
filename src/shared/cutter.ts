@@ -30,6 +30,8 @@ export interface CutJob {
 export interface VideoJob {
   style: VideoSettings;
   showName: string;
+  /** From the show profile, for the outro card. */
+  website: string;
   /** Image file bytes (PNG or JPEG), or null for none. */
   logo: Uint8Array | null;
   background: Uint8Array | null;

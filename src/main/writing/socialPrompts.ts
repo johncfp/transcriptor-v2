@@ -5,13 +5,17 @@ import type { SourcedFact } from "../../shared/showNotes";
 import { PLATFORMS, type ClipLimits, type PlatformId } from "../../shared/social";
 import { socialVoicePrompt, type VoiceId } from "../../shared/voices";
 
-export function socialRules(limits: ClipLimits, platforms: PlatformId[]): string {
+export function socialRules(limits: ClipLimits, platforms: PlatformId[], oneSpeaker = false): string {
   const chosen = PLATFORMS.filter((p) => platforms.includes(p.id));
   return `You pick short moments from a podcast episode to post on social media, and write a caption for each.
 
 Choose ${limits.minClips} to ${limits.maxClips} clips, each ${limits.minSeconds} to ${limits.maxSeconds} seconds long. A good clip makes sense on its own to someone who hasn't heard the episode: a clear point, a short story, a surprising answer, a strong opinion, or a useful tip. Skip ads, housekeeping, intros and goodbyes. Clips must not overlap. Fewer strong clips are better than filling the count with weak ones.
 
-The transcript has [mm:ss] markers; use them to judge each clip's length. A clip can include more than one speaker.
+The transcript has [mm:ss] markers; use them to judge each clip's length. ${
+    oneSpeaker
+      ? `Each clip must be one person talking: choose stretches where nobody else speaks, not even a short "yeah" or "right".`
+      : "A clip can include more than one speaker."
+  }
 
 For each clip:
 - first_words: the clip's first 6 to 10 words, copied exactly from the transcript, starting at the beginning of a sentence.
@@ -27,8 +31,8 @@ ${chosen.map((p) => `- ${p.id} (${p.label}): ${p.guide}`).join("\n")}`;
 }
 
 /** The rules with the chosen voice added last; the voice shapes tone, the rules still apply. */
-export function socialSystem(limits: ClipLimits, platforms: PlatformId[], voice: VoiceId, customVoice = ""): string {
-  return `${socialRules(limits, platforms)}
+export function socialSystem(limits: ClipLimits, platforms: PlatformId[], voice: VoiceId, customVoice = "", oneSpeaker = false): string {
+  return `${socialRules(limits, platforms, oneSpeaker)}
 
 Voice (how the captions should read; the rules above still apply):
 ${socialVoicePrompt(voice, customVoice)}`;

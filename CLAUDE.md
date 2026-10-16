@@ -3,15 +3,32 @@
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
 file (Claude by default) → optional social clips → DOCX/TXT export. Runs from the tray on Windows and
-macOS. Currently **2.0.0-beta.5**. The README has the feature overview and the
+macOS. Currently **2.0.0-beta.7**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
 ## Next up
 
-Video clips feasibility (README › Status): can the hidden cutter page encode
-H.264 MP4 with WebCodecs and mediabunny on Windows (including N editions) and
-macOS, at a usable speed? Test it in a scratch spike, as M0 did for audio,
-before planning video clips.
+M8, motion graphics for video clips, in four milestones, each checked in with
+the owner before the next:
+- **M8a (done, unreleased, branch `claude/motion-graphics-transcript-audio-e90fae`):**
+  Settings > Video > Motion: opening quote (`hookQuote`: until M8d it's the
+  clip's shortest whole sentence of 3–10 words by one speaker, skipping the
+  first), word pop, background glow, progress bar, and a Pulse/Rolling
+  waveform style. All on by default (the owner's choice); scroll captions now ease.
+- **M8b (done, unreleased, same branch):** outro card (`hasOutro`, needs a
+  show name or website): the video runs `MOTION.outroSec` past the audio
+  with silence padded under it (`cutter.ts`); frame totals and the cutter
+  timeout include it; the Clips tab preview plays it when a clip plays to its
+  end. The `video-sync-check` CI hasn't been rerun with it (needs a push; ask).
+- **M8c:** lower thirds from review speaker names, Host/Guest from
+  `show.hosts`, on first words and speaker changes; only named speakers.
+- **M8d:** the clip model also gives a pull quote (first/last words, ≤10
+  words, one speaker) and up to 3 keywords, checked in code like clips and
+  editable on the Clips tab. The opening quote then uses the model's pick
+  (the owner wants the hook to be a short quote, not the title).
+
+Earlier: 2.0.0-beta.7 added crosstalk handling for clips, untested on macOS.
+Untested: a Windows N edition, and the Drive for Desktop watcher on a real Drive.
 
 ## Working with the owner
 
@@ -45,15 +62,22 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   after the notes as `job.social`), `transcribe/` (ElevenLabs, streamed
   multipart), `writing/` (Claude via the official SDK; GPT/Kimi/Qwen over
   HTTP; `social.ts` suggests clips), `clipCutter.ts` (cuts kept clips to WAV
-  in a hidden sandboxed page, `src/renderer/cutter.html`, running mediabunny;
-  it reads the audio through IPC), `docx.ts`, `exporter.ts`, `media.ts` (t2-media://
+  and, with video clips on, renders their MP4s, in a hidden sandboxed page,
+  `src/renderer/cutter.html`, running mediabunny; it reads the audio through
+  IPC and reports progress), `background.ts` (video background images), `docx.ts`, `exporter.ts`, `media.ts` (t2-media://
   audio for playback), `updater.ts`, `watch/` (`folderWatcher.ts` watches a Drive for Desktop folder: Settings >
   Drive; the Google Drive API watcher is built but
   switched off: see README), `smoke.ts`.
 - `src/shared`: pure logic used by both sides: settings schema, cleanup,
   speaker suggestions, show-notes model and templates, verification of AI output
-  (`verify.ts`; `clips.ts` for social clips), export documents, voices, confidence.
-- `src/renderer`: React UI. `src/preload`: the `window.api` bridge.
+  (`verify.ts`; `clips.ts` for social clips), export documents, voices, confidence,
+  `video.ts` (video shapes, fonts, caption layout, waveform levels, motion
+  timing: every effect is a function of the time in the clip, so the
+  preview and the export draw the same frames).
+- `src/renderer`: React UI. `src/renderer/src/video/` draws video frames
+  (`drawFrame.ts`) and loads the bundled fonts; the Clips tab preview and the
+  export both use it, so the preview is what's exported. `src/preload`: the
+  `window.api` bridge.
 - User data lives in Electron's userData: settings.json, keys.json (encrypted
   with safeStorage), jobs.json, episodes/<id>/.
 
@@ -69,9 +93,11 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   the writing step; voices are appended after the rules, never before.
   Social clips follow the same rule: the model gives only a clip's first and
   last words, and `checkClips`/`reviseClip` take the text and times from the
-  transcript, including after edits in review.
-- **Third-party notices.** mediabunny (MPL-2.0) is bundled unmodified; the
-  build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
+  transcript, including after edits in review. Other speakers in a clip are
+  found from the raw words (removed fillers are still in the audio), named
+  as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them.
+- **Third-party notices.** mediabunny (MPL-2.0) and the three video fonts
+  (Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
   Add an entry there for any new bundled code whose license asks for one.
 - Settings are edited as a draft and saved with the Save button; new fields
   need a default in `DEFAULT_SETTINGS` and pass through `mergeSettings`.
@@ -108,7 +134,23 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   don't land on a sample can leave an empty decoded block and its PCM encoder
   throws "frameOffset out of range" (65 of 150 random clips on a real M4A).
   The cutter decodes with `AudioSampleSink` and cuts with `ClipAssembler`
-  (`src/shared/wav.ts`), which is sample-exact.
+  (`src/shared/wav.ts`), which is sample-exact (16-bit sources come back bit
+  for bit: it converts with round(v × 32768), the inverse of mediabunny's decode).
+  The cutter then fades each clip's edges (`fadeEdges`, 30 ms in, 120 ms out)
+  for both the WAV and the video; the Clips tab's Play clip doesn't fade.
+- Videos are made only by **Export kept clips** on the Clips tab; the episode's
+  own export writes WAVs, not videos. Each export replaces only the clip files it
+  makes (`writeExport` `replaceClips`), so the episode export keeps the videos.
+- With the outro card on, a clip's MP4 is longer than its WAV by
+  `MOTION.outroSec` (silence under the card). The waveform levels still
+  cover only the audio, and `audioSeconds(scene)` comes from them.
+- AAC encoders take only 44.1 and 48 kHz: the cutter resamples other rates for
+  the video's sound (the WAV keeps the source rate).
+- macOS's AAC encoder adds 2112 frames of priming (Windows' adds none), which
+  made video sound 48 ms late on macOS. The cutter measures the delay once per
+  format (`aacDelay`) and starts the sound that much early; mediabunny then
+  writes an edit list so players skip it. Check sync with
+  `spikes/video-sync` on the `video-sync-check` branch (push it to run CI).
 - The cutter's hidden window closes after each export; the app stays open only
   because the main window is hidden, not closed. A script that drives
   `cutClips` on its own needs a `window-all-closed` listener.

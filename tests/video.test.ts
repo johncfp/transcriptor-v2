@@ -1,7 +1,30 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_SETTINGS, mergeSettings } from "../src/shared/settings";
-import { audioLevels, breakLines, clipCaptionWords, darken, pageAt, pageLines, scrollAt, wordState, type CaptionWord } from "../src/shared/video";
+import {
+  audioLevels,
+  breakLines,
+  clipCaptionWords,
+  darken,
+  easeInOut,
+  easeOut,
+  headerIn,
+  HOOK_END,
+  hookOut,
+  hookQuote,
+  hasOutro,
+  hookWordAlpha,
+  MOTION,
+  outroIn,
+  outroLines,
+  pageAt,
+  pageLines,
+  popScale,
+  scrollAt,
+  videoSeconds,
+  wordState,
+  type CaptionWord,
+} from "../src/shared/video";
 
 /** Each character is 10 px wide; a space too. */
 const measure = (text: string) => text.length * 10;
@@ -131,4 +154,67 @@ test("waveform levels: one per video frame, loud parts reach 1, silence is 0", (
   assert.ok(levels.slice(20).every((l) => l === 1));
   assert.ok(Math.abs(levels[15]! - 0.5) < 0.01, "a quarter as loud shows at half height (square-root curve)");
   assert.deepEqual(audioLevels(new Int16Array(200), 2, rate), [0], "all silence stays flat");
+});
+
+test("motion settings: on by default, kept when saved, and bad values fall back", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true });
+  assert.equal(DEFAULT_SETTINGS.video.waveformStyle, "pulse");
+  // A settings file from before motion gets the defaults.
+  const old = mergeSettings(DEFAULT_SETTINGS, { video: { enabled: true, waveform: true } });
+  assert.deepEqual(old.video.motion, DEFAULT_SETTINGS.video.motion);
+  assert.equal(old.video.waveformStyle, "pulse");
+  const next = mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "history", motion: { glow: false, sparkle: true } } });
+  assert.equal(next.video.waveformStyle, "history");
+  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true });
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "spiral" } }).video.waveformStyle, "pulse");
+});
+
+test("hook quote: the shortest whole sentence of 3–10 words after the first, by one speaker", () => {
+  const text = (ws: CaptionWord[] | null) => ws?.map((w) => w.text).join(" ") ?? null;
+  // The first sentence is heard straight away, so it isn't used even though it's shortest.
+  const ws = words("We start here. This one is a bit longer than that. We're not tech-averse. Two words. And the end of a sentence");
+  assert.equal(text(hookQuote(ws)), "We're not tech-averse.");
+  // Ties go to the earlier sentence; questions and exclamations count.
+  assert.equal(text(hookQuote(words("Hi there you. Is it really true? It is so true!"))), "Is it really true?");
+  // More than 10 words is too long for a hook.
+  assert.equal(hookQuote(words("Start now please. One two three four five six seven eight nine ten eleven.")), null);
+  // A sentence cut off by another speaker isn't whole, and isn't used.
+  const cut = [...words("First one here. We are not"), ...words("Mm-hmm.", "Nigel", 3), ...words("tech-averse at all.", "Pete", 4)];
+  assert.equal(hookQuote(cut), null);
+  assert.equal(hookQuote([]), null);
+});
+
+test("motion timing: the hook fades in word by word and lifts away; the word being said pops", () => {
+  assert.equal(easeOut(-1), 0);
+  assert.equal(easeOut(2), 1);
+  assert.equal(easeInOut(0.5), 0.5);
+  assert.equal(hookWordAlpha(0, 0), 0);
+  assert.equal(hookWordAlpha(0, MOTION.hookWordIn), 1);
+  // The third word starts later than the first.
+  assert.ok(hookWordAlpha(2, 0.2) < hookWordAlpha(0, 0.2));
+  assert.equal(hookOut(MOTION.hookHold), 0);
+  assert.equal(hookOut(MOTION.hookHold + MOTION.hookOut), 1);
+  // The logo and show name wait until the quote is mostly gone, and are back by HOOK_END.
+  assert.equal(headerIn(MOTION.hookHold + MOTION.headerDelay), 0);
+  assert.ok(hookOut(MOTION.hookHold + MOTION.headerDelay) > 0.8);
+  assert.equal(headerIn(HOOK_END), 1);
+  assert.equal(hookWordAlpha(0, HOOK_END), 0);
+  const w = { text: "pop", start: 1, end: 1.4, speaker: "Pete" };
+  assert.equal(popScale(w, 0.9), 1);
+  assert.ok(Math.abs(popScale(w, 1 + MOTION.popSec / 2) - (1 + MOTION.popScale)) < 1e-9);
+  assert.equal(popScale(w, 1 + MOTION.popSec + 0.01), 1);
+});
+
+test("outro card: only with something to point to; the video runs on past the audio", () => {
+  const on = { motion: { outro: true } }, off = { motion: { outro: false } };
+  assert.equal(hasOutro(on, "LOL a Podcast", ""), true);
+  assert.equal(hasOutro(on, "", "lol.example"), true);
+  assert.equal(hasOutro(on, " ", ""), false);
+  assert.equal(hasOutro(off, "LOL a Podcast", "lol.example"), false);
+  assert.equal(videoSeconds(42.6, true), 42.6 + MOTION.outroSec);
+  assert.equal(videoSeconds(42.6, false), 42.6);
+  assert.equal(outroIn(42, 42.6), 0);
+  assert.equal(outroIn(42.6 + MOTION.outroIn, 42.6), 1);
+  assert.deepEqual(outroLines("LOL a Podcast", " lol.example "), { above: "Full episode on", big: "LOL a Podcast", below: "lol.example" });
+  assert.deepEqual(outroLines("", "lol.example"), { above: "Full episode at", big: "lol.example", below: "" });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Settings, SettingsPatch, VideoSettings as Video } from "../../../shared/settings";
-import { CAPTION_SIZES, CAPTION_STYLES, SHAPES, VIDEO_FONTS, videoFont } from "../../../shared/video";
+import { CAPTION_SIZES, CAPTION_STYLES, MOTION, SHAPES, VIDEO_FONTS, videoFont, WAVEFORM_STYLES } from "../../../shared/video";
 import { Section } from "./Section";
 
 const cleanError = (err: unknown) =>
@@ -10,10 +10,12 @@ const cleanError = (err: unknown) =>
 export function VideoSettings({ settings, update }: { settings: Settings; update: (p: SettingsPatch) => void }) {
   const { video } = settings;
   const set = (patch: Partial<Video>) => update({ video: { ...video, ...patch } });
+  const setMotion = (patch: Partial<Video["motion"]>) => set({ motion: { ...video.motion, ...patch } });
   const [bgPreview, setBgPreview] = useState<string | null>(null);
   const [bgError, setBgError] = useState("");
   const hasLogo = !!settings.output.branding.logo;
   const noShape = !SHAPES.some((s) => video.shapes[s.id]);
+  const hasShowLink = !!(settings.show.name.trim() || settings.show.website.trim());
 
   useEffect(() => {
     let live = true;
@@ -134,6 +136,32 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
       <Toggle label="Show name" hint="From the show profile." checked={video.showShowName} onChange={(showShowName) => set({ showShowName })} />
       <Toggle label="Speaker names" hint="Above the captions, as named in review." checked={video.showSpeakers} onChange={(showSpeakers) => set({ showSpeakers })} />
       <Toggle label="Waveform" hint="Moves with the audio." checked={video.waveform} onChange={(waveform) => set({ waveform })} />
+      {video.waveform && (
+        <Row label="Waveform style" hint={WAVEFORM_STYLES.find((w) => w.id === video.waveformStyle)?.hint}>
+          <Segmented label="Waveform style" value={video.waveformStyle} options={WAVEFORM_STYLES} onChange={(waveformStyle) => set({ waveformStyle })} />
+        </Row>
+      )}
+
+      <h3>Motion</h3>
+      <Toggle
+        label="Opening quote"
+        hint="A short line from the clip fades in where the logo and show name go, then lifts away for them. Clips without a short whole sentence go straight to the logo."
+        checked={video.motion.hook}
+        onChange={(hook) => setMotion({ hook })}
+      />
+      <Toggle label="Word pop" hint="The word being said grows for a moment." checked={video.motion.pop} onChange={(pop) => setMotion({ pop })} />
+      <Toggle label="Background glow" hint="A soft light in the highlight colour drifts across and brightens with the voice." checked={video.motion.glow} onChange={(glow) => setMotion({ glow })} />
+      <Toggle label="Progress bar" hint="Along the bottom, showing how far into the clip it is." checked={video.motion.progress} onChange={(progress) => setMotion({ progress })} />
+      <Toggle
+        label="Outro card"
+        hint={
+          hasShowLink
+            ? `${MOTION.outroSec} seconds after the clip: the logo, “Full episode on” the show name, and the website, from the show profile.`
+            : "Add a show name or website to the show profile to show it."
+        }
+        checked={video.motion.outro}
+        onChange={(outro) => setMotion({ outro })}
+      />
 
     </Section>
   );

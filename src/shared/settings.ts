@@ -8,11 +8,13 @@ import {
   CAPTION_SIZES,
   CAPTION_STYLES,
   VIDEO_FONTS,
+  WAVEFORM_STYLES,
   type BackgroundType,
   type CaptionSize,
   type CaptionStyle,
   type ShapeId,
   type VideoFontId,
+  type WaveformStyle,
 } from "./video";
 
 // Settings schema shared by the main process (which owns the file on disk)
@@ -91,6 +93,8 @@ export interface Settings {
       /** Clip length in seconds; clamped by clipLimits. */
       minSeconds: number;
       maxSeconds: number;
+      /** Only clips where one person talks: others are trimmed to one speaker or dropped (see checkClips). */
+      oneSpeaker: boolean;
       /** Which platforms get a caption (see PLATFORMS). */
       platforms: Record<PlatformId, boolean>;
     };
@@ -116,6 +120,22 @@ export interface VideoSettings {
   showShowName: boolean;
   showSpeakers: boolean;
   waveform: boolean;
+  waveformStyle: WaveformStyle;
+  /** Animation, each part on its own (see MOTION in src/shared/video.ts). */
+  motion: VideoMotion;
+}
+
+export interface VideoMotion {
+  /** A short quote from the clip at the start, in place of the logo and show name. */
+  hook: boolean;
+  /** The word being said grows for a moment. */
+  pop: boolean;
+  /** A soft light that drifts across the background and brightens with the voice. */
+  glow: boolean;
+  /** A bar along the bottom showing how far into the clip it is. */
+  progress: boolean;
+  /** A card after the audio: the logo, "Full episode on {show}" and the website. */
+  outro: boolean;
 }
 
 /** Which provider, model and effort a writing step uses. */
@@ -191,6 +211,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   voice: VOICE_IDS,
   effort: ["", ...EFFORTS],
   captionStyle: CAPTION_STYLES.map((s) => s.id),
+  waveformStyle: WAVEFORM_STYLES.map((s) => s.id),
   font: VIDEO_FONTS.map((f) => f.id),
   captionSize: CAPTION_SIZES.map((s) => s.id),
   backgroundType: BACKGROUND_TYPES,
@@ -259,6 +280,7 @@ export const DEFAULT_SETTINGS: Settings = {
     maxClips: 5,
     minSeconds: 15,
     maxSeconds: 60,
+    oneSpeaker: false,
     platforms: { instagram: true, x: true, linkedin: true, youtube: true },
   },
   video: {
@@ -275,6 +297,8 @@ export const DEFAULT_SETTINGS: Settings = {
     showShowName: true,
     showSpeakers: true,
     waveform: true,
+    waveformStyle: "pulse",
+    motion: { hook: true, pop: true, glow: true, progress: true, outro: true },
   },
   template: "full",
   customSections: [],

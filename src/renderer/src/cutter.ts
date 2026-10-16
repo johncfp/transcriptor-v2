@@ -21,8 +21,8 @@ import {
   StreamSource,
 } from "mediabunny";
 import type { CutJob, CutProgress, CutResult, VideoJob } from "../../shared/cutter";
-import { audioLevels, SHAPES, VIDEO_FPS, type CaptionWord, type ShapeId } from "../../shared/video";
-import { ClipAssembler, wavFile } from "../../shared/wav";
+import { audioLevels, hasOutro, SHAPES, VIDEO_FPS, videoSeconds, type CaptionWord, type ShapeId } from "../../shared/video";
+import { ClipAssembler, fadeEdges, wavFile } from "../../shared/wav";
 import { drawFrame, makeScene } from "./video/drawFrame";
 import { loadVideoFont } from "./video/fonts";
 
@@ -72,7 +72,9 @@ async function cutAll(job: CutJob): Promise<CutResult> {
           sample.close();
         }
       }
-      pcms.push(assembler.toPcm());
+      const pcm = assembler.toPcm();
+      fadeEdges(pcm.pcm, pcm.sampleRate, pcm.channels);
+      pcms.push(pcm);
     }
     const clips = pcms.map((p) => wavFile(p.pcm, p.sampleRate, p.channels));
     if (!job.video) return { clips };
@@ -85,6 +87,13 @@ async function cutAll(job: CutJob): Promise<CutResult> {
 // ---------------------------------------------------------------------------
 // Video
 
+const concatPcm = (a: Int16Array, b: Int16Array) => {
+  const out = new Int16Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+};
+
 const loadImage = async (bytes: Uint8Array | null) => (bytes ? createImageBitmap(new Blob([bytes as BlobPart])) : null);
 
 async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<Uint8Array[][]> {
@@ -96,7 +105,8 @@ async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<
   }
   await loadVideoFont(video.style.font);
   const [logo, background] = await Promise.all([loadImage(video.logo), loadImage(video.background)]);
-  const frames = (p: Pcm) => Math.ceil((p.pcm.length / p.channels / p.sampleRate) * VIDEO_FPS);
+  const outro = hasOutro(video.style, video.showName, video.website);
+  const frames = (p: Pcm) => Math.ceil(videoSeconds(p.pcm.length / p.channels / p.sampleRate, outro) * VIDEO_FPS);
   const total = pcms.reduce((n, p, i) => n + frames(p) * (video.clips[i]?.shapes.length ?? 0), 0);
   const progress = { done: 0, total };
   window.cutter.progress(jobId, progress);
@@ -134,6 +144,7 @@ async function renderOne(
     height: spec.height,
     style: video.style,
     showName: video.showName,
+    website: video.website,
     logo,
     background,
     levels,
@@ -152,17 +163,20 @@ async function renderOne(
   output.addAudioTrack(sound);
   await output.start();
 
+  // With the outro card the video runs on past the audio, with silence under the card.
   const seconds = pcm.pcm.length / pcm.channels / pcm.sampleRate;
-  const count = Math.ceil(seconds * VIDEO_FPS);
+  const count = Math.ceil(videoSeconds(seconds, scene.outro) * VIDEO_FPS);
+  const silence = Math.max(0, Math.round(count / VIDEO_FPS * pcm.sampleRate) * pcm.channels - pcm.pcm.length);
+  const sound16 = silence ? concatPcm(pcm.pcm, new Int16Array(silence)) : pcm.pcm;
   const perSecond = pcm.sampleRate * pcm.channels;
   for (let f = 0; f < count; f++) {
     const t = f / VIDEO_FPS;
     // The audio a second at a time alongside the frames, so the MP4 interleaves them.
     if (f % VIDEO_FPS === 0) {
       const a = Math.round(t * pcm.sampleRate) * pcm.channels;
-      const b = Math.min(pcm.pcm.length, a + perSecond);
+      const b = Math.min(sound16.length, a + perSecond);
       if (b > a) {
-        await sound.add(new AudioSample({ data: pcm.pcm.slice(a, b), format: "s16", numberOfChannels: pcm.channels, sampleRate: pcm.sampleRate, timestamp: t - early }));
+        await sound.add(new AudioSample({ data: sound16.slice(a, b), format: "s16", numberOfChannels: pcm.channels, sampleRate: pcm.sampleRate, timestamp: t - early }));
       }
     }
     drawFrame(ctx, scene, t);

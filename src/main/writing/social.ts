@@ -1,5 +1,5 @@
 import { cleanTranscript, type EpisodeEdits } from "../../shared/cleanup";
-import { checkClips, coerceClips, type SocialResult } from "../../shared/clips";
+import { checkClips, coerceClips, rawSpeakerNames, type SocialResult } from "../../shared/clips";
 import type { WritingResult } from "../../shared/showNotes";
 import type { ClipLimits, PlatformId } from "../../shared/social";
 import type { Transcript } from "../../shared/transcript";
@@ -17,6 +17,8 @@ export interface SuggestClipsInput {
   show: { name: string; hosts: string[]; website: string };
   limits: ClipLimits;
   platforms: PlatformId[];
+  /** Only clips where one person talks (Settings > Social clips). */
+  oneSpeaker?: boolean;
   voice: VoiceId;
   customVoice?: string;
   writer: WritingProvider;
@@ -37,7 +39,7 @@ export async function suggestClips(input: SuggestClipsInput): Promise<SocialResu
   const raw = await writer.draft(
     call,
     {
-      system: socialSystem(input.limits, input.platforms, input.voice, input.customVoice),
+      system: socialSystem(input.limits, input.platforms, input.voice, input.customVoice, input.oneSpeaker),
       user: socialPrompt({
         showName: input.show.name,
         website: input.show.website,
@@ -55,6 +57,8 @@ export async function suggestClips(input: SuggestClipsInput): Promise<SocialResu
     limits: input.limits,
     platforms: input.platforms,
     rawWords: transcript.words,
+    rawSpeakers: rawSpeakerNames(transcript, edits),
+    oneSpeaker: input.oneSpeaker,
     durationSec: transcript.durationSec ?? transcript.words.at(-1)?.end ?? 0,
     facts: facts.map((f) => f.fact),
     allowedUrls: [input.show.website, ...(writing?.research?.links.map((l) => l.url) ?? [])].filter(Boolean),

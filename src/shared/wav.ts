@@ -74,6 +74,28 @@ export class ClipAssembler {
   }
 }
 
+/** Fade lengths at a clip's edges, in seconds: short going in, so the first word isn't softened. */
+export const FADE_IN_SEC = 0.03;
+export const FADE_OUT_SEC = 0.12;
+
+/**
+ * Fade a clip's first and last moments, in place, so it never starts or ends
+ * on half a sound from the next speaker or a click. A clip too short for both
+ * fades gets shorter ones.
+ */
+export function fadeEdges(pcm: Int16Array, sampleRate: number, channels: number, inSec = FADE_IN_SEC, outSec = FADE_OUT_SEC): void {
+  const frames = Math.floor(pcm.length / channels);
+  const fadeIn = Math.min(Math.round(inSec * sampleRate), Math.floor(frames / 2));
+  const fadeOut = Math.min(Math.round(outSec * sampleRate), frames - fadeIn);
+  for (let f = 0; f < fadeIn; f++) {
+    for (let c = 0; c < channels; c++) pcm[f * channels + c] = Math.round(pcm[f * channels + c]! * (f / fadeIn));
+  }
+  for (let f = 0; f < fadeOut; f++) {
+    const at = (frames - 1 - f) * channels;
+    for (let c = 0; c < channels; c++) pcm[at + c] = Math.round(pcm[at + c]! * (f / fadeOut));
+  }
+}
+
 /** A 16-bit PCM WAV file from interleaved samples. */
 export function wavFile(pcm: Int16Array, sampleRate: number, channels: number): Uint8Array {
   const bytes = new Uint8Array(44 + pcm.length * 2);

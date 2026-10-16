@@ -346,6 +346,11 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await click(".clip-card button", "Play clip");
       await pause(400);
       const clipPreviewEarly = await previewHash();
+      // Early in the clip the opening quote is up where the logo goes ("Welcome to the show, Pete.").
+      writeFileSync(
+        join(dir, "clip-preview-hook.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
       await pause(1500);
       const clipPreviewLater = await previewHash();
       const clipPlayback = await js<{ paused: boolean; time: number; label: string }>(`({
@@ -354,6 +359,20 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         label: [...document.querySelectorAll(".clip-card button")].find((b) => b.textContent === "Stop")?.textContent ?? "",
       })`);
       await click(".clip-card button", "Stop");
+      // Played to its end, the clip's preview shows the outro card, then goes back to the still.
+      await pause(300);
+      const clipPreviewStopped = await previewHash();
+      await click(".clip-card button", "Play clip");
+      await pause(200);
+      await js(`window.api.listJobs().then((j) => window.api.getSocial(j[0].id)).then((s) => { document.querySelector(".review-main audio").currentTime = s.clips[0].end - 0.4; })`);
+      await pause(1300);
+      const clipPreviewOutro = await previewHash();
+      writeFileSync(
+        join(dir, "clip-preview-outro.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
+      await pause(2500);
+      const clipPreviewAfterOutro = await previewHash();
       await click(".clip-card button", "Keep");
       await pause(200);
       await js(`document.querySelector("button[aria-label='End one word earlier']").click()`);
@@ -384,6 +403,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipLevels.length === Math.ceil(7.9 * 30) &&
         clipPreviewEarly !== clipPreviewStill &&
         clipPreviewLater !== clipPreviewEarly &&
+        clipPreviewOutro !== clipPreviewStill &&
+        clipPreviewOutro !== clipPreviewLater &&
+        clipPreviewAfterOutro === clipPreviewStopped &&
         !clipPlayback.paused &&
         clipPlayback.label === "Stop" &&
         savedClip?.kept === true &&
@@ -426,8 +448,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         videos.length === 2 &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical).mp4") &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square).mp4") &&
-        videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 7.5) < 0.1) &&
-        videoProgress?.total === 2 * Math.ceil(7.5 * 30);
+        // The 7.5 s clip plus the 2.5 s outro card (the show has a name).
+        videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 10) < 0.1) &&
+        videoProgress?.total === 2 * Math.ceil(10 * 30);
 
       // Cancelling an export stops it, says so, and leaves the earlier files alone.
       await click("button", "Export 1 kept clip");
@@ -580,13 +603,27 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await js(`[...document.querySelectorAll("h2")].find((h) => h.textContent === "Video clips").scrollIntoView()`);
       await pause(500);
       await shot("settings-video.png");
-      const videoControls = await js<{ shapes: number; fonts: string[]; styles: string[]; enabled: boolean; captionsTwoCol: boolean; preview: number }>(`(() => {
+      const videoControls = await js<{
+        shapes: number;
+        fonts: string[];
+        styles: string[];
+        waveStyles: string[];
+        motion: string[];
+        motionOn: boolean;
+        enabled: boolean;
+        captionsTwoCol: boolean;
+        preview: number;
+      }>(`(() => {
         const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
         const checks = document.querySelector(".checks.two-col");
         return {
           shapes: video.querySelectorAll(".checks input[type=checkbox]").length,
           fonts: [...video.querySelectorAll("select[aria-label=Font] option")].map((o) => o.textContent),
           styles: [...video.querySelectorAll("[aria-label='Caption style'] .segment")].map((b) => b.textContent),
+          waveStyles: [...video.querySelectorAll("[aria-label='Waveform style'] .segment")].map((b) => b.textContent),
+          // The Motion toggles: everything after the "Motion" heading, all on by default.
+          motion: [...video.querySelectorAll("h3 ~ .toggle-row .row-label > span:first-child")].map((s) => s.textContent),
+          motionOn: [...video.querySelectorAll("h3 ~ .toggle-row .switch")].every((s) => s.checked),
           enabled: video.querySelector(".switch").checked,
           captionsTwoCol: !!checks && getComputedStyle(checks).gridTemplateColumns.split(" ").length === 2,
           preview: video.querySelectorAll("canvas").length,
@@ -596,6 +633,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         videoControls.shapes === 3 &&
         JSON.stringify(videoControls.fonts) === JSON.stringify(["Inter", "Atkinson Hyperlegible Next", "Lexend"]) &&
         JSON.stringify(videoControls.styles) === JSON.stringify(["Word by word", "Scrolling lines"]) &&
+        JSON.stringify(videoControls.waveStyles) === JSON.stringify(["Pulse", "Rolling"]) &&
+        JSON.stringify(videoControls.motion) === JSON.stringify(["Opening quote", "Word pop", "Background glow", "Progress bar", "Outro card"]) &&
+        videoControls.motionOn &&
         !videoControls.enabled &&
         videoControls.captionsTwoCol &&
         videoControls.preview === 0;
@@ -876,7 +916,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipsView,
         clipPlayback,
         clipsCollapsed,
-        clipPreview: { still: clipPreviewStill, early: clipPreviewEarly, later: clipPreviewLater, levels: clipLevels.length },
+        clipPreview: { still: clipPreviewStill, early: clipPreviewEarly, later: clipPreviewLater, stopped: clipPreviewStopped, outro: clipPreviewOutro, afterOutro: clipPreviewAfterOutro, levels: clipLevels.length },
         savedClip,
         clipsExport,
         clipsExportError,

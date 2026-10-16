@@ -168,6 +168,7 @@ function start(): void {
         show: { name: show.name, hosts: show.hosts, website: show.website },
         limits: clipLimits(social),
         platforms: PLATFORMS.map((p) => p.id).filter((id) => social.platforms[id]),
+        oneSpeaker: social.oneSpeaker,
         voice: social.voice,
         customVoice: social.customVoice,
         writer,
@@ -215,6 +216,7 @@ function start(): void {
                 ? {
                     style: s.video,
                     showName: s.show.name,
+                    website: s.show.website,
                     logo: s.video.showLogo && branding.logo ? (loadLogo(userData, branding.logo)?.png ?? null) : null,
                     background: background ? readFileSync(background) : null,
                     clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes })),
