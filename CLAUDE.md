@@ -19,7 +19,7 @@ the owner before the next:
   show name or website): the video runs `MOTION.outroSec` past the audio
   with silence padded under it (`cutter.ts`); frame totals and the cutter
   timeout include it; the Clips tab preview plays it when a clip plays to its
-  end. The `video-sync-check` branch has the M8a/b sync check (outro length, silence, frames of the hook and the outro coming in); it passed locally on Windows 2026-10-16; CI results pending the owner's push.
+  end. The `video-sync-check` branch has the M8a/b sync check (outro length, silence, frames of the hook and the outro coming in); passed locally and on the macOS and Windows CI runners (run 38911087462, 2026-10-16).
 - **M8c (done, unreleased, same branch):** name cards (`nameCards`): when
   a speaker named in review starts talking (not "Speaker N"), for up to
   3.5 s; Host if the name matches `show.hosts` (whole or first name), else
