@@ -3,43 +3,29 @@
 Desktop app (Electron + Vite + React + TypeScript) for podcast production:
 audio → ElevenLabs transcript → cleanup and review → show notes + reference
 file (Claude by default) → optional social clips → DOCX/TXT export. Runs from the tray on Windows and
-macOS. Currently **2.0.0-beta.7**. The README has the feature overview and the
+macOS. Currently **2.0.0-beta.8**. The README has the feature overview and the
 Google Drive setup; INSTALL.md is the user install guide.
 
 ## Next up
 
-M8, motion graphics for video clips, in four milestones, each checked in with
-the owner before the next:
-- **M8a (done, unreleased, branch `claude/motion-graphics-transcript-audio-e90fae`):**
-  Settings > Video > Motion: opening quote (`hookQuote`: until M8d it's the
-  clip's shortest whole sentence of 3–10 words by one speaker, skipping the
-  first), word pop, background glow, progress bar, and a Pulse/Rolling
-  waveform style. All on by default (the owner's choice); scroll captions now ease.
-- **M8b (done, unreleased, same branch):** outro card (`hasOutro`, needs a
-  show name or website): the video runs `MOTION.outroSec` past the audio
-  with silence padded under it (`cutter.ts`); frame totals and the cutter
-  timeout include it; the Clips tab preview plays it when a clip plays to its
-  end. The `video-sync-check` branch has the M8a/b sync check (outro length, silence, frames of the hook and the outro coming in); passed locally and on the macOS and Windows CI runners (run 38911087462, 2026-10-16).
-- **M8c (done, unreleased, same branch):** name cards (`nameCards`): once
-  per named speaker (not "Speaker N"), the first time they talk for 1.2 s or
-  more, for up to 3.5 s; Host if the name matches `show.hosts` (whole or
-  first name), else Guest. A card replaces the name above the captions for
-  that speaker. The Clips tab says which speakers aren't named.
-- **M8d (done, unreleased, same branch):** the clip model also gives a
-  `pull_quote` (copied text) and `keywords`; `checkClips` keeps the quote
-  only if it's 3–10 words by one speaker inside the clip (stored as raw word
-  indexes, `SocialClip.quote`) and keywords only if they're single words said
-  in the clip (normalized, ≤3); `reviseClip` re-checks both after edits and
-  trims. The Clips tab edits them by clicking the clip's words. The opening
-  quote uses the pull quote (else `hookQuote`); the pull-quote moment shows it
-  big when it's said (not when it's said while the opening quote is up);
-  keywords stay highlighted in the captions. Clips suggested before this have
-  neither until picked on the Clips tab or suggested again.
+2.0.0-beta.8 added motion graphics for video clips (M8): Settings > Video >
+Motion (opening quote, pull quote, keywords, word pop, glow, name cards,
+progress bar, outro card; Pulse/Rolling waveform), and a pull quote and
+keywords per clip, picked by the clip model, checked against the transcript
+and editable on the Clips tab. Video sync with the outro was checked on macOS
+and Windows CI (`video-sync-check`, run 38911087462). Clips suggested before
+beta.8 have no pull quote or keywords until picked on the Clips tab or
+suggested again. Nothing planned next; wait for the owner's feedback.
+Untested: macOS for beta.7's crosstalk handling and beta.8's motion in the
+app itself, a Windows N edition, and the Drive for Desktop watcher on a real
+Drive.
 
-Next: the owner tries M8 in `npm run dev`; then merge and, when asked, a release.
-
-Earlier: 2.0.0-beta.7 added crosstalk handling for clips, untested on macOS.
-Untested: a Windows N edition, and the Drive for Desktop watcher on a real Drive.
+Details of each motion part, for changes: opening quote (pull quote, else
+`hookQuote`: the clip's shortest whole sentence of 3–10 words by one
+speaker after the first), outro (`hasOutro`; the MP4 runs `MOTION.outroSec`
+past the audio with silence under it), name cards (`nameCards`: once per
+speaker named in review, Host if in `show.hosts`), pull quote moment (not
+when it's said while the opening quote is up).
 
 ## Working with the owner
 

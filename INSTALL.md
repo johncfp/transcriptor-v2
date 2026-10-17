@@ -1,6 +1,6 @@
 # Installing Transcriptor 2 (beta)
 
-Version **2.0.0-beta.7**. Transcriptor 2 turns an episode's audio into a clean
+Version **2.0.0-beta.8**. Transcriptor 2 turns an episode's audio into a clean
 transcript, show notes, a reference file and, if you like, short social media
 clips with captions, as audio or as captioned videos. It's separate from Transcriptor 1, and both can be
 installed at the same time.
@@ -9,9 +9,9 @@ installed at the same time.
 
 | Computer | File |
 |---|---|
-| Windows 10 or 11 | [Transcriptor2-Setup.exe](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.7/Transcriptor2-Setup.exe) |
-| Mac with Apple Silicon (M1 or later) | [Transcriptor2-mac-arm64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.7/Transcriptor2-mac-arm64.dmg) |
-| Mac with an Intel processor | [Transcriptor2-mac-x64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.7/Transcriptor2-mac-x64.dmg) |
+| Windows 10 or 11 | [Transcriptor2-Setup.exe](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.8/Transcriptor2-Setup.exe) |
+| Mac with Apple Silicon (M1 or later) | [Transcriptor2-mac-arm64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.8/Transcriptor2-mac-arm64.dmg) |
+| Mac with an Intel processor | [Transcriptor2-mac-x64.dmg](https://github.com/johncfp/transcriptor2-releases/releases/download/v2.0.0-beta.8/Transcriptor2-mac-x64.dmg) |
 
 All versions are on the [releases page](https://github.com/johncfp/transcriptor2-releases/releases).
 Not sure which Mac you have? Open the Apple menu → **About This Mac**: "Chip:
@@ -69,7 +69,12 @@ Open **Settings** (left sidebar). Changes are saved when you press **Save**
    Reels, TikTok and Shorts, 1:1, 16:9), captions highlighted word by word or
    scrolling, the font and size, your colours, a colour or image background,
    and whether to show the logo (from the Output tab), show name, speaker names
-   and a waveform.
+   and a waveform (pulsing or rolling). Under **Motion**, each part can be
+   turned off: an opening quote, the clip's pull quote going big as it's
+   said, keywords highlighted in the captions, the word being said popping,
+   a background glow, name cards (Host or Guest, for speakers named in
+   review), a progress bar, and an outro card with your show name and
+   website.
 4. **Output** tab: check where files are saved (Documents › Transcriptor 2 by
    default), the formats (Word, PDF and/or plain text), the **Speaker
    format**, and an optional cover page, logo, header and footer.
@@ -102,7 +107,10 @@ computer and are only sent to the service they belong to.
    transcript. Play a clip, trim its start or end a word at a time, edit the
    title and captions (with each platform's character count and a **Copy**
    button), and **Keep** the ones you want. **Show more** on a clip opens its
-   full details, including a note when someone else is heard in it. With video clips on, the panel beside the clips previews the
+   full details, including a note when someone else is heard in it, and the
+   clip's **pull quote** and **keywords** for its video: click a word to make
+   it a keyword, or **Pick quote** and click the quote's first and last
+   words. With video clips on, the panel beside the clips previews the
    one you play or select exactly as its video will look. **Export kept
    clips** saves each as a WAV file in a **Clips** folder, with a Social Clips
    document of their captions, and with video clips on, an MP4 for each shape.

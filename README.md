@@ -5,7 +5,7 @@ transcript, show notes, and a reference file for reusing the episode's content
 later. It runs in the background from the system tray on Windows and macOS.
 
 Transcriptor 2 is a clean rebuild, separate from Transcriptor 1. Both can be
-installed at the same time. Current release: **2.0.0-beta.7**. To install it,
+installed at the same time. Current release: **2.0.0-beta.8**. To install it,
 see [INSTALL.md](INSTALL.md).
 
 ## How it works
