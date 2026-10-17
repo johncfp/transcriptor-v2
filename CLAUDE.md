@@ -8,14 +8,38 @@ Google Drive setup; INSTALL.md is the user install guide.
 
 ## Next up
 
-Video clips (M7) shipped in 2.0.0-beta.6, checked on a real episode and on
-macOS and Windows CI runners (branch `video-sync-check`, not for main).
-2.0.0-beta.7 added crosstalk handling for clips (Settings > Social > One
-speaker per clip, notes on other speakers in review, cut edges that stop
-short of the next speaker, fades on exported clips). The owner tried it on a
-real episode in `npm run dev` on Windows; untested on macOS. Nothing planned
-next; wait for the owner's feedback. Untested: a Windows N edition, and the
-Drive for Desktop watcher on a real Drive.
+M8, motion graphics for video clips, in four milestones, each checked in with
+the owner before the next:
+- **M8a (done, unreleased, branch `claude/motion-graphics-transcript-audio-e90fae`):**
+  Settings > Video > Motion: opening quote (`hookQuote`: until M8d it's the
+  clip's shortest whole sentence of 3–10 words by one speaker, skipping the
+  first), word pop, background glow, progress bar, and a Pulse/Rolling
+  waveform style. All on by default (the owner's choice); scroll captions now ease.
+- **M8b (done, unreleased, same branch):** outro card (`hasOutro`, needs a
+  show name or website): the video runs `MOTION.outroSec` past the audio
+  with silence padded under it (`cutter.ts`); frame totals and the cutter
+  timeout include it; the Clips tab preview plays it when a clip plays to its
+  end. The `video-sync-check` branch has the M8a/b sync check (outro length, silence, frames of the hook and the outro coming in); passed locally and on the macOS and Windows CI runners (run 38911087462, 2026-10-16).
+- **M8c (done, unreleased, same branch):** name cards (`nameCards`): once
+  per named speaker (not "Speaker N"), the first time they talk for 1.2 s or
+  more, for up to 3.5 s; Host if the name matches `show.hosts` (whole or
+  first name), else Guest. A card replaces the name above the captions for
+  that speaker. The Clips tab says which speakers aren't named.
+- **M8d (done, unreleased, same branch):** the clip model also gives a
+  `pull_quote` (copied text) and `keywords`; `checkClips` keeps the quote
+  only if it's 3–10 words by one speaker inside the clip (stored as raw word
+  indexes, `SocialClip.quote`) and keywords only if they're single words said
+  in the clip (normalized, ≤3); `reviseClip` re-checks both after edits and
+  trims. The Clips tab edits them by clicking the clip's words. The opening
+  quote uses the pull quote (else `hookQuote`); the pull-quote moment shows it
+  big when it's said (not when it's said while the opening quote is up);
+  keywords stay highlighted in the captions. Clips suggested before this have
+  neither until picked on the Clips tab or suggested again.
+
+Next: the owner tries M8 in `npm run dev`; then merge and, when asked, a release.
+
+Earlier: 2.0.0-beta.7 added crosstalk handling for clips, untested on macOS.
+Untested: a Windows N edition, and the Drive for Desktop watcher on a real Drive.
 
 ## Working with the owner
 
@@ -58,7 +82,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
 - `src/shared`: pure logic used by both sides: settings schema, cleanup,
   speaker suggestions, show-notes model and templates, verification of AI output
   (`verify.ts`; `clips.ts` for social clips), export documents, voices, confidence,
-  `video.ts` (video shapes, fonts, caption layout, waveform levels).
+  `video.ts` (video shapes, fonts, caption layout, waveform levels, motion
+  timing: every effect is a function of the time in the clip, so the
+  preview and the export draw the same frames).
 - `src/renderer`: React UI. `src/renderer/src/video/` draws video frames
   (`drawFrame.ts`) and loads the bundled fonts; the Clips tab preview and the
   export both use it, so the preview is what's exported. `src/preload`: the
@@ -80,7 +106,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   last words, and `checkClips`/`reviseClip` take the text and times from the
   transcript, including after edits in review. Other speakers in a clip are
   found from the raw words (removed fillers are still in the audio), named
-  as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them.
+  as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them. A
+  clip's pull quote and keywords are checked the same way (`checkQuote`,
+  `checkKeywords`): their text always comes from the transcript.
 - **Third-party notices.** mediabunny (MPL-2.0) and the three video fonts
   (Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
   Add an entry there for any new bundled code whose license asks for one.
@@ -126,6 +154,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
 - Videos are made only by **Export kept clips** on the Clips tab; the episode's
   own export writes WAVs, not videos. Each export replaces only the clip files it
   makes (`writeExport` `replaceClips`), so the episode export keeps the videos.
+- With the outro card on, a clip's MP4 is longer than its WAV by
+  `MOTION.outroSec` (silence under the card). The waveform levels still
+  cover only the audio, and `audioSeconds(scene)` comes from them.
 - AAC encoders take only 44.1 and 48 kHz: the cutter resamples other rates for
   the video's sound (the WAV keeps the source rate).
 - macOS's AAC encoder adds 2112 frames of priming (Windows' adds none), which

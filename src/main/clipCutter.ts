@@ -3,6 +3,7 @@ import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { BrowserWindow, ipcMain, type WebContents } from "electron";
 import { CUTTER_IPC, type CutJob, type CutProgress, type CutResult, type VideoJob } from "../shared/cutter";
 import { AbortedError } from "./transcribe/multipart";
+import { hasOutro, videoSeconds } from "../shared/video";
 
 /**
  * Cuts social clips out of an episode's audio as WAV files, and can make
@@ -64,7 +65,9 @@ function installHandlers(): void {
 const timeoutMs = (clips: { start: number; end: number }[], video?: VideoJob) =>
   60_000 +
   clips.length * 30_000 +
-  (video ? clips.reduce((ms, c, i) => ms + (c.end - c.start) * 1000 * (video.clips[i]?.shapes.length ?? 0), 0) : 0);
+  (video
+    ? clips.reduce((ms, c, i) => ms + videoSeconds(c.end - c.start, hasOutro(video.style, video.showName, video.website)) * 1000 * (video.clips[i]?.shapes.length ?? 0), 0)
+    : 0);
 
 export interface CutOptions {
   video?: VideoJob;

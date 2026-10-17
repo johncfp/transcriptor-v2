@@ -22,6 +22,8 @@ For each clip:
 - last_words: the clip's last 6 to 10 words, copied exactly from the transcript, ending at the end of a sentence.
 - title: a short hook, under 70 characters. It's also the YouTube Shorts title.
 - why: one sentence on why this moment works as a clip.
+- pull_quote: the clip's most striking line, 3 to 10 words copied exactly from the transcript inside the clip, all said by one person. It's shown big in the clip's video, so choose words that stand on their own.
+- keywords: 1 to 3 single words from inside the clip that carry its point, each copied exactly as said. They're highlighted in the video's captions.
 - captions: one for each platform below.
 
 Captions use only what's said in the episode and the confirmed guest facts provided. Never add facts, numbers, names, titles, links or claims that aren't there. Only put words in quotation marks if they're exactly what was said in the clip. Hashtags go in the hashtags list, without the # sign, never in the text; take them from the clip's topic.
@@ -60,6 +62,8 @@ export function socialSchema(platforms: PlatformId[]) {
             why: { type: "string" },
             first_words: { type: "string" },
             last_words: { type: "string" },
+            pull_quote: { type: "string" },
+            keywords: { type: "array", items: { type: "string" } },
             captions: {
               type: "object",
               properties: Object.fromEntries(ids.map((id) => [id, caption])),
@@ -67,7 +71,7 @@ export function socialSchema(platforms: PlatformId[]) {
               additionalProperties: false,
             },
           },
-          required: ["title", "why", "first_words", "last_words", "captions"],
+          required: ["title", "why", "first_words", "last_words", "pull_quote", "keywords", "captions"],
           additionalProperties: false,
         },
       },

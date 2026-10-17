@@ -3,11 +3,14 @@ import { test } from "node:test";
 import { cleanTranscript, defaultEdits, type EpisodeEdits } from "../src/shared/cleanup";
 import {
   checkClips,
+  checkKeywords,
+  checkQuote,
   cleanHashtag,
   clipContext,
   clipCut,
   coerceClips,
   nudgeClip,
+  quoteText,
   rawSpeakerNames,
   reviseClip,
   type ClipCheckOptions,
@@ -96,7 +99,10 @@ test("a clip's text, speakers and times come from the transcript, with room arou
   assert.equal(clip.start, wordAt("Um").end);
   // The next word ("I learned…") starts 0.1 s after "win.", so the room after stops there.
   assert.equal(clip.end, wordAt("win.").end + 0.1);
-  assert.deepEqual(checks, { suggested: 1, dropped: [], hashtagsDropped: 0 });
+  assert.deepEqual(checks, { suggested: 1, dropped: [], hashtagsDropped: 0, highlightsDropped: 0 });
+  // No pull quote or keywords asked for, none given.
+  assert.equal(clip.quote, null);
+  assert.deepEqual(clip.keywords, []);
 });
 
 test("the cut never clips the clip's own words, even if the reported length or word times are off", () => {
@@ -293,7 +299,8 @@ test("model output is read defensively", () => {
   assert.deepEqual(coerceClips(null), []);
   assert.deepEqual(coerceClips({ clips: "no" }), []);
   const [c] = coerceClips({ clips: [{ title: " T ", first_words: 3, captions: { x: { text: "Hi", hashtags: ["a", 2] }, tiktok: { text: "?" } } }] });
-  assert.deepEqual(c, { title: "T", why: "", first_words: "", last_words: "", captions: { x: { text: "Hi", hashtags: ["a"] } } });
+  assert.deepEqual(c, { title: "T", why: "", first_words: "", last_words: "", pull_quote: "", keywords: [], captions: { x: { text: "Hi", hashtags: ["a"] } } });
+  assert.deepEqual(coerceClips({ clips: [{ pull_quote: " Not a win ", keywords: ["tool", 3, ""] }] })[0]!.keywords, ["tool"]);
   assert.equal(cleanHashtag("##Growth Hacking!"), "GrowthHacking");
   assert.equal(cleanHashtag("#!!"), "");
 });
@@ -428,4 +435,49 @@ test("review: edits can't point a clip outside the transcript or make up its tex
   }
   const sneaky = reviseClip(clip, { ...edit, lines: [{ speaker: "Pete M.", text: "Something never said." }] } as ClipEdit, ctx);
   assert.deepEqual(sneaky.lines, clip.lines);
+});
+
+test("pull quote and keywords: taken from the transcript inside the clip, or left out", () => {
+  const ep = episode();
+  const turns = cleanTranscript(ep.transcript, ep.edits);
+  // Copied with different punctuation and case still matches; the text comes from the transcript.
+  const { clips, checks } = check([draft({ pull_quote: "that's NOT a win", keywords: ["Tool", "reason", "tool", "calendar", "the hard way"] })]);
+  const clip = clips[0]!;
+  assert.equal(quoteText(turns, clip.quote!), "that's not a win.");
+  assert.equal(clip.quote!.firstWord, ep.transcript.words.findIndex((w) => w.text === "that's"));
+  // "calendar" isn't in this clip, "tool" is there twice, and "the hard way" isn't one word.
+  assert.deepEqual(clip.keywords, ["tool", "reason"]);
+  assert.equal(checks.highlightsDropped, 1);
+
+  // Not in the clip, too long, too short: no pull quote.
+  for (const pull_quote of ["Nobody has ever fallen in love", "So the biggest mistake I see is people chasing every new", "a win"]) {
+    const r = check([draft({ pull_quote })]);
+    assert.equal(r.clips[0]!.quote, null, pull_quote);
+  }
+  assert.equal(check([draft({ pull_quote: "Nobody has ever fallen in love" })]).checks.highlightsDropped, 1);
+
+  // Checked directly: edges must be cleaned words inside the clip, 3 to 10 of them, one speaker.
+  const span = { firstWord: clip.firstWord, lastWord: clip.lastWord };
+  assert.deepEqual(checkQuote(turns, span, clip.quote), clip.quote);
+  assert.equal(checkQuote(turns, span, { firstWord: clip.firstWord - 5, lastWord: clip.firstWord + 2 }), null);
+  assert.equal(checkQuote(turns, span, { firstWord: clip.lastWord, lastWord: clip.lastWord }), null);
+  assert.equal(checkQuote(turns, span, null), null);
+  // "Um" was removed in cleanup, so a quote can't start on it.
+  const um = ep.transcript.words.findIndex((w) => w.text === "Um");
+  assert.equal(checkQuote(turns, { firstWord: um, lastWord: clip.lastWord }, { firstWord: um, lastWord: um + 3 }), null);
+  assert.deepEqual(checkKeywords(turns, span, ["win", "WIN", "nope", 4]), ["win"]);
+  assert.deepEqual(checkKeywords(turns, span, "win"), []);
+
+  // An edit can change or clear them; a trim drops what falls outside.
+  const ctx = clipContext(ep.transcript, ep.edits, null, "");
+  const base = { title: clip.title, kept: false, firstWord: clip.firstWord, lastWord: clip.lastWord, captions: {} };
+  assert.equal(reviseClip(clip, { ...base, quote: null }, ctx).quote, null);
+  assert.deepEqual(reviseClip(clip, { ...base, keywords: ["mistake"] }, ctx).keywords, ["mistake"]);
+  const unchanged = reviseClip(clip, base, ctx);
+  assert.deepEqual([unchanged.quote, unchanged.keywords], [clip.quote, clip.keywords]);
+  const trimmed = reviseClip(clip, { ...base, lastWord: clip.quote!.firstWord + 1 }, ctx);
+  assert.equal(trimmed.quote, null);
+  // "tool" and "reason" are both said before the quote, so they stay.
+  assert.deepEqual(trimmed.keywords, ["tool", "reason"]);
+  assert.deepEqual(reviseClip(clip, { ...base, lastWord: clip.firstWord + 4 }, ctx).keywords, []);
 });

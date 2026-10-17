@@ -30,11 +30,15 @@ export interface CutJob {
 export interface VideoJob {
   style: VideoSettings;
   showName: string;
+  /** From the show profile, for the outro card. */
+  website: string;
+  /** From the show profile, so name cards can say Host or Guest. */
+  hosts: string[];
   /** Image file bytes (PNG or JPEG), or null for none. */
   logo: Uint8Array | null;
   background: Uint8Array | null;
   /** Per clip, in the same order as CutJob.clips. */
-  clips: { words: CaptionWord[]; shapes: ShapeId[] }[];
+  clips: { words: CaptionWord[]; shapes: ShapeId[]; quote: { firstWord: number; lastWord: number } | null; keywords: string[] }[];
 }
 
 /** Video frames rendered so far, of all the job's videos. */

@@ -40,9 +40,24 @@ export interface SocialClip {
   titleProblems: string[];
   /** Other speakers heard in the clip, e.g. a "yeah" from the host. Missing in clips saved before 2.0.0-beta.7. */
   crosstalk?: string[];
+  /** The pull quote: a short line from the clip, shown big in its video. Missing in clips saved before 2.0.0-beta.8; null = none. */
+  quote?: ClipQuote | null;
+  /** Up to MAX_KEYWORDS words from the clip (normalized), highlighted in the video's captions. Missing before 2.0.0-beta.8. */
+  keywords?: string[];
   /** Chosen in review to be cut and exported. */
   kept: boolean;
 }
+
+/** A pull quote, as raw transcript word indexes of its first and last words; its text comes from the transcript. */
+export interface ClipQuote {
+  firstWord: number;
+  lastWord: number;
+}
+
+/** A pull quote is 3 to 10 words by one speaker; a clip has at most 3 keywords. */
+export const MIN_QUOTE_WORDS = 3;
+export const MAX_QUOTE_WORDS = 10;
+export const MAX_KEYWORDS = 3;
 
 export interface SocialResult {
   version: 1;
@@ -59,6 +74,8 @@ export interface SocialResult {
     dropped: { title: string; reason: string }[];
     /** Hashtags removed for going over a platform's count. */
     hashtagsDropped: number;
+    /** Pull quotes and keywords left out because they weren't in the clip as given. Missing before 2.0.0-beta.8. */
+    highlightsDropped?: number;
   };
 }
 
@@ -70,6 +87,10 @@ export interface ClipDraft {
   why: string;
   first_words: string;
   last_words: string;
+  /** A short line from inside the clip, copied exactly. */
+  pull_quote?: string;
+  /** Single words from the clip, copied exactly. */
+  keywords?: string[];
   captions: Partial<Record<PlatformId, { text: string; hashtags: string[] }>>;
 }
 
@@ -87,7 +108,15 @@ export function coerceClips(value: unknown): ClipDraft[] {
       if (!Object.keys(cap).length) continue;
       captions[p.id] = { text: str(cap.text), hashtags: arr(cap.hashtags).map(str).filter(Boolean) };
     }
-    return { title: str(d.title), why: str(d.why), first_words: str(d.first_words), last_words: str(d.last_words), captions };
+    return {
+      title: str(d.title),
+      why: str(d.why),
+      first_words: str(d.first_words),
+      last_words: str(d.last_words),
+      pull_quote: str(d.pull_quote),
+      keywords: arr(d.keywords).map(str).filter(Boolean),
+      captions,
+    };
   });
 }
 
@@ -243,6 +272,65 @@ export function checkCaption(
 
 const titleProblems = (title: string) =>
   title.length > MAX_TITLE_CHARS ? [`${title.length - MAX_TITLE_CHARS} characters over YouTube's ${MAX_TITLE_CHARS}-character title limit.`] : [];
+
+// ---------------------------------------------------------------------------
+// Pull quote and keywords: like the clip itself, taken from the transcript.
+
+/** The cleaned words between raw words `firstWord`..`lastWord`, with their speakers. */
+function wordsBetween(turns: CleanTurn[], firstWord: number, lastWord: number): { text: string; index: number; speaker: string }[] {
+  return turns.flatMap((t) =>
+    t.words.filter((w) => w.index >= firstWord && w.index <= lastWord).map((w) => ({ text: w.text, index: w.index, speaker: t.speaker })),
+  );
+}
+
+/**
+ * A pull quote that holds up inside the clip `span`: its edges are words of
+ * the cleaned transcript inside the clip, and between them are 3 to 10 words
+ * by one speaker. Null otherwise.
+ */
+export function checkQuote(turns: CleanTurn[], span: { firstWord: number; lastWord: number }, quote: ClipQuote | null | undefined): ClipQuote | null {
+  if (!quote || !Number.isInteger(quote.firstWord) || !Number.isInteger(quote.lastWord)) return null;
+  if (quote.firstWord < span.firstWord || quote.lastWord > span.lastWord || quote.firstWord > quote.lastWord) return null;
+  const ws = wordsBetween(turns, quote.firstWord, quote.lastWord);
+  if (ws.length < MIN_QUOTE_WORDS || ws.length > MAX_QUOTE_WORDS) return null;
+  if (ws[0]!.index !== quote.firstWord || ws.at(-1)!.index !== quote.lastWord) return null;
+  if (ws.some((w) => w.speaker !== ws[0]!.speaker)) return null;
+  return { firstWord: quote.firstWord, lastWord: quote.lastWord };
+}
+
+/** The pull quote's words, from the cleaned transcript. */
+export function quoteText(turns: CleanTurn[], quote: ClipQuote): string {
+  return wordsBetween(turns, quote.firstWord, quote.lastWord)
+    .map((w) => w.text)
+    .join(" ");
+}
+
+/** Keywords that hold up: single words said in the clip `span`, normalized, without repeats, at most MAX_KEYWORDS. */
+export function checkKeywords(turns: CleanTurn[], span: { firstWord: number; lastWord: number }, keywords: unknown): string[] {
+  if (!Array.isArray(keywords)) return [];
+  const said = new Set(wordsBetween(turns, span.firstWord, span.lastWord).map((w) => normalize(w.text)));
+  const out: string[] = [];
+  for (const k of keywords) {
+    if (typeof k !== "string") continue;
+    const keys = keysOf(k);
+    if (keys.length !== 1 || !said.has(keys[0]!) || out.includes(keys[0]!)) continue;
+    out.push(keys[0]!);
+    if (out.length === MAX_KEYWORDS) break;
+  }
+  return out;
+}
+
+/** Find the model's pull quote (copied text) in the flat words `from`..`to`; null if it isn't there as 3–10 words by one speaker. */
+function findQuote(turns: CleanTurn[], words: FlatWord[], from: number, to: number, text: string): ClipQuote | null {
+  const keys = keysOf(text);
+  if (keys.length < MIN_QUOTE_WORDS || keys.length > MAX_QUOTE_WORDS) return null;
+  const span = { firstWord: words[from]!.index, lastWord: words[to]!.index };
+  for (const at of findAll(words.slice(from, to + 1), keys)) {
+    const ok = checkQuote(turns, span, { firstWord: words[from + at]!.index, lastWord: words[from + at + keys.length - 1]!.index });
+    if (ok) return ok;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Where a clip is cut, and what it says
@@ -404,6 +492,10 @@ export interface ClipEdit {
   firstWord: number;
   lastWord: number;
   captions: Partial<Record<PlatformId, { text: string; hashtags: string[] }>>;
+  /** Absent: keep the clip's; null: no pull quote. */
+  quote?: ClipQuote | null;
+  /** Absent: keep the clip's. */
+  keywords?: string[];
 }
 
 /**
@@ -429,6 +521,9 @@ export function reviseClip(clip: SocialClip, edit: ClipEdit, ctx: ClipContext): 
   }
   const title = typeof edit.title === "string" ? edit.title.trim().slice(0, 300) : clip.title;
   const cut = clipCut(ctx.rawWords, ctx.durationSec, span.firstWord, span.lastWord);
+  // The pull quote and keywords must still be in the clip after a trim; ones that aren't are dropped.
+  const quote = checkQuote(ctx.turns, span, edit.quote !== undefined ? edit.quote : clip.quote);
+  const keywords = checkKeywords(ctx.turns, span, edit.keywords !== undefined ? edit.keywords : (clip.keywords ?? []));
   return {
     ...clip,
     ...span,
@@ -440,6 +535,8 @@ export function reviseClip(clip: SocialClip, edit: ClipEdit, ctx: ClipContext): 
     titleProblems: titleProblems(title),
     kept: edit.kept === true,
     captions,
+    quote,
+    keywords,
   };
 }
 
@@ -544,6 +641,7 @@ export function checkClips(
 
   const known = captionKnown(turns, opts.facts, opts.allowedUrls);
   let hashtagsDropped = 0;
+  let highlightsDropped = 0;
 
   const clips = kept
     .sort((a, b) => a.from - b.from)
@@ -560,6 +658,9 @@ export function checkClips(
       }
       const title = draft.title || "Untitled clip";
       const cut = clipCut(opts.rawWords, opts.durationSec, firstWord, lastWord);
+      const quote = draft.pull_quote ? findQuote(turns, words, from, to, draft.pull_quote) : null;
+      const keywords = checkKeywords(turns, { firstWord, lastWord }, draft.keywords ?? []);
+      highlightsDropped += (draft.pull_quote && !quote ? 1 : 0) + Math.max(0, Math.min(draft.keywords?.length ?? 0, MAX_KEYWORDS) - keywords.length);
       return {
         id: `clip-${n + 1}`,
         title,
@@ -571,11 +672,13 @@ export function checkClips(
         captions,
         titleProblems: titleProblems(title),
         crosstalk: clipCrosstalk(opts.rawWords, speakers, firstWord, lastWord, cut.start),
+        quote,
+        keywords,
         kept: false,
       };
     });
 
-  return { clips, checks: { suggested: drafts.length, dropped, hashtagsDropped } };
+  return { clips, checks: { suggested: drafts.length, dropped, hashtagsDropped, highlightsDropped } };
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;

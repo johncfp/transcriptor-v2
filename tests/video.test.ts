@@ -1,7 +1,41 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_SETTINGS, mergeSettings } from "../src/shared/settings";
-import { audioLevels, breakLines, clipCaptionWords, darken, pageAt, pageLines, scrollAt, wordState, type CaptionWord } from "../src/shared/video";
+import {
+  audioLevels,
+  breakLines,
+  CARD_HOLD,
+  cardIn,
+  clipCaptionWords,
+  darken,
+  easeInOut,
+  easeOut,
+  headerIn,
+  HOOK_END,
+  hookOut,
+  hookQuote,
+  hasOutro,
+  hookWordAlpha,
+  isKeyword,
+  isPlaceholderName,
+  MOTION,
+  nameCards,
+  outroIn,
+  outroLines,
+  pageAt,
+  pageLines,
+  popScale,
+  QUOTE_HOLD,
+  QUOTE_LEAD,
+  quoteMoment,
+  quoteWords,
+  scrollAt,
+  stamp,
+  speakerRole,
+  videoSeconds,
+  wordState,
+  type CaptionWord,
+} from "../src/shared/video";
 
 /** Each character is 10 px wide; a space too. */
 const measure = (text: string) => text.length * 10;
@@ -112,8 +146,8 @@ test("a clip's caption words: cleaned words between its first and last word, tim
     { speaker: "Nigel T.", start: 12, words: [{ index: 13, text: "After.", start: 12, end: 12.5 }] },
   ];
   assert.deepEqual(clipCaptionWords(turns, { firstWord: 10, lastWord: 12, start: 10 }), [
-    { text: "So", start: 10.2 - 10, end: 10.4 - 10, speaker: "Pete" },
-    { text: "listen.", start: 1, end: 11.4 - 10, speaker: "Pete" },
+    { text: "So", start: 10.2 - 10, end: 10.4 - 10, speaker: "Pete", index: 10 },
+    { text: "listen.", start: 1, end: 11.4 - 10, speaker: "Pete", index: 12 },
   ]);
 });
 
@@ -131,4 +165,122 @@ test("waveform levels: one per video frame, loud parts reach 1, silence is 0", (
   assert.ok(levels.slice(20).every((l) => l === 1));
   assert.ok(Math.abs(levels[15]! - 0.5) < 0.01, "a quarter as loud shows at half height (square-root curve)");
   assert.deepEqual(audioLevels(new Int16Array(200), 2, rate), [0], "all silence stays flat");
+});
+
+test("motion settings: on by default, kept when saved, and bad values fall back", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true });
+  assert.equal(DEFAULT_SETTINGS.video.waveformStyle, "pulse");
+  // A settings file from before motion gets the defaults.
+  const old = mergeSettings(DEFAULT_SETTINGS, { video: { enabled: true, waveform: true } });
+  assert.deepEqual(old.video.motion, DEFAULT_SETTINGS.video.motion);
+  assert.equal(old.video.waveformStyle, "pulse");
+  const next = mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "history", motion: { glow: false, sparkle: true } } });
+  assert.equal(next.video.waveformStyle, "history");
+  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true });
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "spiral" } }).video.waveformStyle, "pulse");
+});
+
+test("hook quote: the shortest whole sentence of 3–10 words after the first, by one speaker", () => {
+  const text = (ws: CaptionWord[] | null) => ws?.map((w) => w.text).join(" ") ?? null;
+  // The first sentence is heard straight away, so it isn't used even though it's shortest.
+  const ws = words("We start here. This one is a bit longer than that. We're not tech-averse. Two words. And the end of a sentence");
+  assert.equal(text(hookQuote(ws)), "We're not tech-averse.");
+  // Ties go to the earlier sentence; questions and exclamations count.
+  assert.equal(text(hookQuote(words("Hi there you. Is it really true? It is so true!"))), "Is it really true?");
+  // More than 10 words is too long for a hook.
+  assert.equal(hookQuote(words("Start now please. One two three four five six seven eight nine ten eleven.")), null);
+  // A sentence cut off by another speaker isn't whole, and isn't used.
+  const cut = [...words("First one here. We are not"), ...words("Mm-hmm.", "Nigel", 3), ...words("tech-averse at all.", "Pete", 4)];
+  assert.equal(hookQuote(cut), null);
+  assert.equal(hookQuote([]), null);
+});
+
+test("motion timing: the hook fades in word by word and lifts away; the word being said pops", () => {
+  assert.equal(easeOut(-1), 0);
+  assert.equal(easeOut(2), 1);
+  assert.equal(easeInOut(0.5), 0.5);
+  assert.equal(hookWordAlpha(0, 0), 0);
+  assert.equal(hookWordAlpha(0, MOTION.hookWordIn), 1);
+  // The third word starts later than the first.
+  assert.ok(hookWordAlpha(2, 0.2) < hookWordAlpha(0, 0.2));
+  assert.equal(hookOut(MOTION.hookHold), 0);
+  assert.equal(hookOut(MOTION.hookHold + MOTION.hookOut), 1);
+  // The logo and show name wait until the quote is mostly gone, and are back by HOOK_END.
+  assert.equal(headerIn(MOTION.hookHold + MOTION.headerDelay), 0);
+  assert.ok(hookOut(MOTION.hookHold + MOTION.headerDelay) > 0.8);
+  assert.equal(headerIn(HOOK_END), 1);
+  assert.equal(hookWordAlpha(0, HOOK_END), 0);
+  const w = { text: "pop", start: 1, end: 1.4, speaker: "Pete" };
+  assert.equal(popScale(w, 0.9), 1);
+  assert.ok(Math.abs(popScale(w, 1 + MOTION.popSec / 2) - (1 + MOTION.popScale)) < 1e-9);
+  assert.equal(popScale(w, 1 + MOTION.popSec + 0.01), 1);
+});
+
+test("outro card: only with something to point to; the video runs on past the audio", () => {
+  const on = { motion: { outro: true } }, off = { motion: { outro: false } };
+  assert.equal(hasOutro(on, "LOL a Podcast", ""), true);
+  assert.equal(hasOutro(on, "", "lol.example"), true);
+  assert.equal(hasOutro(on, " ", ""), false);
+  assert.equal(hasOutro(off, "LOL a Podcast", "lol.example"), false);
+  assert.equal(videoSeconds(42.6, true), 42.6 + MOTION.outroSec);
+  assert.equal(videoSeconds(42.6, false), 42.6);
+  assert.equal(outroIn(42, 42.6), 0);
+  assert.equal(outroIn(42.6 + MOTION.outroIn, 42.6), 1);
+  assert.deepEqual(outroLines("LOL a Podcast", " lol.example "), { above: "Full episode on", big: "LOL a Podcast", below: "lol.example" });
+  assert.deepEqual(outroLines("", "lol.example"), { above: "Full episode at", big: "lol.example", below: "" });
+});
+
+test("name cards: one when a named speaker starts, Host or Guest, none for unnamed speakers", () => {
+  assert.equal(isPlaceholderName("Speaker 2"), true);
+  assert.equal(isPlaceholderName("Delaney Howell"), false);
+  assert.equal(speakerRole("Brian", ["Brian Smith"]), "Host");
+  assert.equal(speakerRole("nigel t.", ["Nigel T."]), "Host");
+  assert.equal(speakerRole("Delaney Howell", ["Brian Smith", " "]), "Guest");
+  assert.equal(speakerRole("Pete", []), "Guest");
+  // Pete talks for 4 s, Nigel for 0.8 s (too short for a card), Pete again, then Speaker 3 (unnamed).
+  const ws = [...words("a b c d e f g h i j", "Pete", 0), ...words("k l", "Nigel", 4.2), ...words("m n o p q r", "Pete", 5.2), ...words("s t u v", "Speaker 3", 8)];
+  const cards = nameCards(ws, ["Nigel"]);
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.role, c.start, +c.end.toFixed(2)]),
+    // Pete's card once; coming back after Nigel's short turn doesn't bring it back.
+    [["Pete", "Guest", 0, CARD_HOLD]],
+  );
+  // Nigel's first turn was too short for a card; his next, longer one gets it.
+  const later = nameCards([...words("k l", "Nigel", 0), ...words("a b c d e f", "Pete", 1), ...words("m n o p q r", "Nigel", 4)], ["Nigel"]);
+  assert.deepEqual(
+    later.map((c) => [c.name, c.role, c.start]),
+    [
+      ["Pete", "Guest", 1],
+      ["Nigel", "Host", 4],
+    ],
+  );
+  // Slides in, holds, slides out.
+  const card = cards[0]!;
+  assert.equal(cardIn(card, -0.1), 0);
+  assert.equal(cardIn(card, 1.5), 1);
+  assert.equal(cardIn(card, card.end), 0);
+  assert.deepEqual(nameCards([], ["Nigel"]), []);
+});
+
+test("pull quote in the video: its words by index, a moment around them, words landing, keywords", () => {
+  const ws = words("So the thing is we're not tech-averse at all").map((w, i) => ({ ...w, index: 100 + i }));
+  const quote = quoteWords(ws, { firstWord: 104, lastWord: 106 });
+  assert.deepEqual(
+    quote.map((w) => w.text),
+    ["we're", "not", "tech-averse"],
+  );
+  assert.deepEqual(quoteWords(ws, null), []);
+  // Captions without indexes (made by hand) have no quote.
+  assert.deepEqual(quoteWords(words("we're not tech-averse"), { firstWord: 0, lastWord: 2 }), []);
+  const first = quote[0]!.start, last = quote.at(-1)!.end;
+  assert.equal(quoteMoment(quote, first - QUOTE_LEAD), 0);
+  assert.equal(quoteMoment(quote, first), 1);
+  assert.equal(quoteMoment(quote, last + QUOTE_HOLD), 1);
+  assert.equal(quoteMoment(quote, last + QUOTE_HOLD + 1), 0);
+  assert.equal(quoteMoment([], 1), 0);
+  assert.deepEqual(stamp(quote[0]!, first - 0.1), { alpha: 0, scale: 1.6 });
+  assert.deepEqual(stamp(quote[0]!, first + 0.25), { alpha: 1, scale: 1 });
+  assert.equal(isKeyword({ ...quote[2]!, text: "Tech-averse." }, ["tech-averse"]), true);
+  assert.equal(isKeyword(quote[0]!, ["tech-averse"]), false);
+  assert.equal(isKeyword(quote[0]!, []), false);
 });

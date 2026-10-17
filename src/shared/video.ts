@@ -35,13 +35,19 @@ export const CAPTION_SIZES = [
 ] as const;
 export type CaptionSize = (typeof CAPTION_SIZES)[number]["id"];
 
+export const WAVEFORM_STYLES = [
+  { id: "pulse", label: "Pulse", hint: "Bars either side of the middle that pulse with the voice." },
+  { id: "history", label: "Rolling", hint: "The last moments of sound roll in from the right." },
+] as const;
+export type WaveformStyle = (typeof WAVEFORM_STYLES)[number]["id"];
+
 export const BACKGROUND_TYPES = ["color", "image"] as const;
 export type BackgroundType = (typeof BACKGROUND_TYPES)[number];
 
 /** An imported background image's file name (see src/main/background.ts). */
 export const BACKGROUND_FILE = /^background-\d+\.jpg$/;
 
-import type { CleanTurn } from "./cleanup";
+import { normalize, type CleanTurn } from "./cleanup";
 
 // ---------------------------------------------------------------------------
 // Caption layout
@@ -52,6 +58,8 @@ export interface CaptionWord {
   start: number;
   end: number;
   speaker: string;
+  /** Index into the raw transcript's words, to find the pull quote; absent in hand-made captions. */
+  index?: number;
 }
 
 export interface CaptionLine {
@@ -140,6 +148,218 @@ export function wordState(w: CaptionWord, t: number): "said" | "now" | "ahead" {
   return t < Math.max(w.end, w.start + 0.12) ? "now" : "said";
 }
 
+// ---------------------------------------------------------------------------
+// Motion. Everything here is a function of the time in the clip, so a frame
+// drawn for the preview is the same frame the export draws.
+
+/** Timings, in seconds. */
+export const MOTION = {
+  /** Hook: each word fades in this long after the one before it… */
+  hookStagger: 0.12,
+  hookWordIn: 0.3,
+  /** …the quote stays up until here, then lifts away; the logo and show name come back as it goes. */
+  hookHold: 2.8,
+  hookOut: 0.4,
+  headerDelay: 0.25,
+  headerIn: 0.4,
+  /** Word pop: how long the bump lasts, and how much bigger the word gets at its peak. */
+  popSec: 0.28,
+  popScale: 0.13,
+  /** Outro card: how long it stays after the audio ends, and how long it takes to come in. */
+  outroSec: 2.5,
+  outroIn: 0.45,
+} as const;
+
+/**
+ * Whether a video gets the outro card: it's on, and there's a show name or a
+ * website to point to. The video then runs MOTION.outroSec past the audio,
+ * with silence under the card.
+ */
+export function hasOutro(style: { motion: { outro: boolean } }, showName: string, website: string): boolean {
+  return style.motion.outro && !!(showName.trim() || website.trim());
+}
+
+/** How long the video runs, for audio of `audioSec` seconds. */
+export function videoSeconds(audioSec: number, outro: boolean): number {
+  return audioSec + (outro ? MOTION.outroSec : 0);
+}
+
+/** How far the outro card has come in at `t` (0 before the audio ends, 1 once it's up). */
+export function outroIn(t: number, audioSec: number): number {
+  return easeOut((t - audioSec) / MOTION.outroIn);
+}
+
+// ---------------------------------------------------------------------------
+// Pull quote and keywords (picked with the clip and checked in src/shared/clips.ts)
+
+/** The caption words of a clip's pull quote, from its first to its last word; empty if there's none. */
+export function quoteWords(words: CaptionWord[], quote: { firstWord: number; lastWord: number } | null): CaptionWord[] {
+  if (!quote) return [];
+  return words.filter((w) => w.index !== undefined && w.index >= quote.firstWord && w.index <= quote.lastWord);
+}
+
+/** Pull-quote moment: it comes in just before its first word, and goes this long after its last. */
+export const QUOTE_LEAD = 0.25;
+export const QUOTE_HOLD = 0.7;
+const QUOTE_FADE = 0.3;
+
+/** How far the pull-quote moment is up at `t` (0–1); the captions give way to it. */
+export function quoteMoment(quote: CaptionWord[], t: number): number {
+  if (!quote.length) return 0;
+  const from = quote[0]!.start - QUOTE_LEAD, to = quote.at(-1)!.end + QUOTE_HOLD;
+  return easeOut((t - from) / QUOTE_LEAD) * (1 - easeOut((t - to) / QUOTE_FADE));
+}
+
+/** A word landing in the pull quote: how visible it is and how big (it starts 60% larger and settles). */
+export function stamp(w: CaptionWord, t: number): { alpha: number; scale: number } {
+  const x = (t - w.start) / 0.2;
+  return { alpha: Math.max(0, Math.min(1, x)), scale: 1 + 0.6 * (1 - easeOut(x)) };
+}
+
+/** Whether a caption word is one of the clip's keywords (stored normalized). */
+export const isKeyword = (w: CaptionWord, keywords: string[]) => keywords.length > 0 && keywords.includes(normalize(w.text));
+
+// ---------------------------------------------------------------------------
+// Lower thirds: a name card when a named speaker starts talking.
+
+export interface NameCard {
+  name: string;
+  role: "Host" | "Guest";
+  /** Seconds from the start of the clip. */
+  start: number;
+  end: number;
+}
+
+/** How long a name card stays up, at most, and the shortest stretch worth one. */
+export const CARD_HOLD = 3.5;
+const CARD_MIN = 1.2;
+/** How long a card takes to slide in, and to slide out. */
+export const CARD_SLIDE = 0.4;
+
+/** A speaker left with the transcript's own label ("Speaker 2") hasn't been named in review. */
+export const isPlaceholderName = (name: string) => /^Speaker \d+$/.test(name);
+
+/** "Host" when the name is one of the show's hosts (the whole name, or the same first name), otherwise "Guest". */
+export function speakerRole(name: string, hosts: string[]): "Host" | "Guest" {
+  const n = name.trim().toLowerCase();
+  const first = (s: string) => s.split(/\s+/)[0]!;
+  return hosts.some((h) => {
+    const host = h.trim().toLowerCase();
+    return !!host && (host === n || first(host) === first(n));
+  })
+    ? "Host"
+    : "Guest";
+}
+
+/**
+ * Name cards for a clip: one per named speaker, the first time they talk long
+ * enough to read it (a "yeah" doesn't count), up for CARD_HOLD seconds or
+ * until shortly before the next speaker, whichever is first. Once a speaker
+ * has had their card they don't get another, so someone else's "mm-hmm"
+ * doesn't bring it back. Speakers not named in review get none.
+ */
+export function nameCards(words: CaptionWord[], hosts: string[]): NameCard[] {
+  const runs: { speaker: string; start: number }[] = [];
+  for (const w of words) if (runs.at(-1)?.speaker !== w.speaker) runs.push({ speaker: w.speaker, start: w.start });
+  const cards: NameCard[] = [];
+  runs.forEach((r, i) => {
+    if (isPlaceholderName(r.speaker) || cards.some((c) => c.name === r.speaker)) return;
+    const next = runs[i + 1]?.start ?? Infinity;
+    const start = Math.max(0, r.start);
+    const end = Math.min(start + CARD_HOLD, next - 0.2);
+    if (end - start >= CARD_MIN) cards.push({ name: r.speaker, role: speakerRole(r.speaker, hosts), start, end });
+  });
+  return cards;
+}
+
+/** How far a card is on screen at `t`: 0 off, 1 fully in; it slides in at its start and out at its end. */
+export function cardIn(card: NameCard, t: number): number {
+  return easeOut((t - card.start) / CARD_SLIDE) * (1 - easeOut((t - card.end + CARD_SLIDE) / CARD_SLIDE));
+}
+
+/** The outro's lines: a small one above, the show (or website) big, the website small below. */
+export function outroLines(showName: string, website: string): { above: string; big: string; below: string } {
+  const name = showName.trim(), site = website.trim();
+  return name ? { above: "Full episode on", big: name, below: site } : { above: "Full episode at", big: site, below: "" };
+}
+
+/** Ease out: fast start, gentle stop. Clamped to 0–1. */
+export function easeOut(x: number): number {
+  const c = Math.max(0, Math.min(1, x));
+  return 1 - (1 - c) ** 3;
+}
+
+/** Ease in and out, for movements that start and stop at rest. Clamped to 0–1. */
+export function easeInOut(x: number): number {
+  const c = Math.max(0, Math.min(1, x));
+  return c < 0.5 ? 4 * c ** 3 : 1 - (-2 * c + 2) ** 3 / 2;
+}
+
+const MIN_HOOK_WORDS = 3;
+const MAX_HOOK_WORDS = 10;
+
+/**
+ * The hook: a short quote shown at the start of the video, word for word from
+ * the clip's captions. Until the clip model picks one (M8d), it's the clip's
+ * shortest whole sentence of 3–10 words by one speaker, not counting the first
+ * sentence (that one is heard straight away, so it wouldn't tease anything).
+ * Ties go to the earlier sentence. Null when no sentence fits.
+ */
+export function hookQuote(words: CaptionWord[]): CaptionWord[] | null {
+  const ends = (w: CaptionWord) => /[.!?]["'”’)]*$/.test(w.text);
+  const sentences: { words: CaptionWord[]; whole: boolean }[] = [];
+  const lastBy = new Map<string, CaptionWord>();
+  let current: CaptionWord[] = [];
+  let clean = true;
+  for (const w of words) {
+    // Someone else cutting in breaks the sentence; what follows picks up mid-sentence.
+    if (current.length && w.speaker !== current[0]!.speaker) {
+      sentences.push({ words: current, whole: false });
+      current = [];
+    }
+    if (!current.length) {
+      const before = lastBy.get(w.speaker);
+      clean = !before || ends(before);
+    }
+    current.push(w);
+    lastBy.set(w.speaker, w);
+    if (ends(w)) {
+      sentences.push({ words: current, whole: clean });
+      current = [];
+    }
+  }
+  let best: CaptionWord[] | null = null;
+  for (const s of sentences.slice(1)) {
+    if (!s.whole || s.words.length < MIN_HOOK_WORDS || s.words.length > MAX_HOOK_WORDS) continue;
+    if (!best || s.words.length < best.length) best = s.words;
+  }
+  return best;
+}
+
+/** How far each hook word has faded in at `t`, times how much of the hook is still up (0–1). */
+export function hookWordAlpha(index: number, t: number): number {
+  return easeOut((t - index * MOTION.hookStagger) / MOTION.hookWordIn) * (1 - hookOut(t));
+}
+
+/** How far the hook has lifted away (0 while it's up, 1 once it's gone). */
+export function hookOut(t: number): number {
+  return easeOut((t - MOTION.hookHold) / MOTION.hookOut);
+}
+
+/** How far the logo and show name have faded back in after the hook (0–1); they start once the quote is mostly gone. */
+export function headerIn(t: number): number {
+  return easeOut((t - MOTION.hookHold - MOTION.headerDelay) / MOTION.headerIn);
+}
+
+/** When the hook is gone and the logo and show name are fully back. */
+export const HOOK_END = MOTION.hookHold + MOTION.headerDelay + MOTION.headerIn;
+
+/** How much bigger the word being said is drawn at `t` (1 = normal size). */
+export function popScale(w: CaptionWord, t: number): number {
+  const x = (t - w.start) / MOTION.popSec;
+  return x < 0 || x > 1 ? 1 : 1 + MOTION.popScale * Math.sin(Math.PI * x);
+}
+
 /** "#14213d" darkened by `amount` (0–1), for the background gradient. */
 export function darken(hex: string, amount: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -160,7 +380,7 @@ export function clipCaptionWords(turns: CleanTurn[], clip: { firstWord: number; 
   for (const turn of turns) {
     for (const w of turn.words) {
       if (w.index < clip.firstWord || w.index > clip.lastWord) continue;
-      out.push({ text: w.text, start: w.start - clip.start, end: w.end - clip.start, speaker: turn.speaker });
+      out.push({ text: w.text, start: w.start - clip.start, end: w.end - clip.start, speaker: turn.speaker, index: w.index });
     }
   }
   return out;
