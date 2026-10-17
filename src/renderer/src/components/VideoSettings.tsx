@@ -145,9 +145,21 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
       <h3>Motion</h3>
       <Toggle
         label="Opening quote"
-        hint="A short line from the clip fades in where the logo and show name go, then lifts away for them. Clips without a short whole sentence go straight to the logo."
+        hint="The clip's pull quote fades in where the logo and show name go, then lifts away for them. A clip without one uses its shortest whole sentence, or goes straight to the logo."
         checked={video.motion.hook}
         onChange={(hook) => setMotion({ hook })}
+      />
+      <Toggle
+        label="Pull quote"
+        hint="When the pull quote is said, it goes big, word by word, and the captions give way. Picked with each clip; change it on the Clips tab."
+        checked={video.motion.pullQuote}
+        onChange={(pullQuote) => setMotion({ pullQuote })}
+      />
+      <Toggle
+        label="Keywords"
+        hint="Up to three words per clip stay in the highlight colour, underlined, once said. Picked with each clip; change them on the Clips tab."
+        checked={video.motion.keywords}
+        onChange={(keywords) => setMotion({ keywords })}
       />
       <Toggle label="Word pop" hint="The word being said grows for a moment." checked={video.motion.pop} onChange={(pop) => setMotion({ pop })} />
       <Toggle label="Background glow" hint="A soft light in the highlight colour drifts across and brightens with the voice." checked={video.motion.glow} onChange={(glow) => setMotion({ glow })} />

@@ -17,6 +17,7 @@ import {
   hookQuote,
   hookWordAlpha,
   hasOutro,
+  isKeyword,
   MOTION,
   nameCards,
   outroIn,
@@ -24,7 +25,10 @@ import {
   pageAt,
   pageLines,
   popScale,
+  quoteMoment,
+  quoteWords,
   scrollAt,
+  stamp,
   VIDEO_FPS,
   videoFont,
   wordState,
@@ -43,6 +47,10 @@ export interface FrameScene {
   website: string;
   /** The show's hosts, so name cards can say Host or Guest. */
   hosts: string[];
+  /** The clip's pull quote (raw word indexes), checked against the transcript; null = none. */
+  quote: { firstWord: number; lastWord: number } | null;
+  /** The clip's keywords, normalized. */
+  keywords: string[];
   logo: CanvasImageSource | null;
   background: CanvasImageSource | null;
   /** Loudness per video frame, 0–1, for the waveform. */
@@ -58,6 +66,17 @@ export interface FrameScene {
   outro: boolean;
   /** Name cards (lower thirds), when they're on. */
   cards: NameCard[];
+  /** The pull-quote moment laid out over the captions; null = none. */
+  pull: PullLayout | null;
+}
+
+interface PullLayout {
+  lines: { word: CaptionWord; width: number }[][];
+  words: CaptionWord[];
+  px: number;
+  lineH: number;
+  /** Baseline of the first line. */
+  top: number;
 }
 
 /** How long the clip's audio is, from its waveform levels (one per frame). */
@@ -86,7 +105,7 @@ const font = (style: VideoSettings, weight: 600 | 700, px: number) => `${weight}
 /** Lay the captions out for this frame size and style. Call once per clip and shape. */
 export function makeScene(
   ctx: Ctx,
-  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro" | "cards"> & { words: CaptionWord[] },
+  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro" | "cards" | "pull"> & { words: CaptionWord[] },
 ): FrameScene {
   const unit = Math.min(input.width, input.height) / 1080;
   const scale = CAPTION_SIZES.find((c) => c.id === input.style.captionSize)?.scale ?? 1;
@@ -96,7 +115,89 @@ export function makeScene(
   const hook = input.style.motion.hook ? layoutHook(ctx, input, unit, captionPx) : null;
   const outro = hasOutro(input.style, input.showName, input.website);
   const cards = input.style.motion.nameCards ? nameCards(input.words, input.hosts) : [];
-  return { ...input, lines, pages: pageLines(lines, pageSize(input)), unit, captionPx, hook, outro, cards };
+  const quote = quoteWords(input.words, input.quote);
+  // Not when the quote is said while the opening quote is still up: it was just shown.
+  const pull = input.style.motion.pullQuote && quote.length && !(hook && quote[0]!.start < HOOK_END + 0.5) ? layoutPull(ctx, input, unit, captionPx, quote) : null;
+  return { ...input, lines, pages: pageLines(lines, pageSize(input)), unit, captionPx, hook, outro, cards, pull };
+}
+
+/** Break `widths` into at most `maxLines` lines no wider than `maxW`, as big as fits in `maxH`, from `px` down to `minPx`. */
+function fit(ctx: Ctx, style: VideoSettings, texts: string[], maxW: number, maxH: number, px: number, minPx: number, maxLines: number) {
+  for (;;) {
+    ctx.font = font(style, 700, px);
+    const space = ctx.measureText(" ").width;
+    const lines: { i: number; width: number }[][] = [];
+    let width = 0;
+    texts.forEach((text, i) => {
+      const w = ctx.measureText(text).width;
+      const line = lines.at(-1);
+      if (line && width + space + w <= maxW) {
+        line.push({ i, width: w });
+        width += space + w;
+      } else {
+        lines.push([{ i, width: w }]);
+        width = w;
+      }
+    });
+    const lineH = px * 1.18;
+    const fits = lines.length <= maxLines && lines.length * lineH <= maxH && lines.every((l) => l.every((w) => w.width <= maxW));
+    if (fits || px * 0.92 < minPx) return { lines, px, lineH };
+    px *= 0.92;
+  }
+}
+
+/**
+ * The pull-quote moment: the quote's words over the caption area (from the
+ * speaker's name down to above the waveform), as big as fits in three lines,
+ * left-aligned under a large opening quote mark.
+ */
+function layoutPull(
+  ctx: Ctx,
+  input: { width: number; height: number; style: VideoSettings },
+  unit: number,
+  captionPx: number,
+  quote: CaptionWord[],
+): PullLayout {
+  const L = layout({ ...input, unit });
+  const areaTop = speakerTop(L, captionPx, unit) - captionPx * 0.5;
+  const areaBottom = L.waveY - L.waveH / 2 - 40 * unit;
+  const maxW = input.width - 2 * margin(input, unit);
+  const startPx = (wide(input) ? 100 : square(input) ? 96 : 120) * unit;
+  const f = fit(ctx, input.style, quote.map((w) => w.text), maxW, (areaBottom - areaTop) * 0.8, startPx, 44 * unit, 3);
+  const block = f.px * 0.8 + f.lines.length * f.lineH;
+  const top = areaTop + (areaBottom - areaTop - block) / 2 + f.px * 0.8 + f.px * 0.9;
+  return { lines: f.lines.map((l) => l.map(({ i, width }) => ({ word: quote[i]!, width }))), words: quote, px: f.px, lineH: f.lineH, top };
+}
+
+/** The pull quote, each word landing as it's said, over the captions. */
+function drawPull(ctx: Ctx, s: FrameScene, pull: PullLayout, t: number, k: number): void {
+  const x0 = margin(s, s.unit);
+  ctx.textAlign = "left";
+  // The opening quote mark, above the first line.
+  ctx.font = font(s.style, 700, pull.px * 2);
+  ctx.fillStyle = withAlpha(s.style.colors.highlight, k);
+  ctx.fillText("\u201C", x0 - pull.px * 0.08, pull.top - pull.px * 0.55);
+  ctx.font = font(s.style, 700, pull.px);
+  const space = ctx.measureText(" ").width;
+  pull.lines.forEach((line, row) => {
+    let x = x0;
+    const y = pull.top + row * pull.lineH;
+    for (const { word, width } of line) {
+      const st = stamp(word, t);
+      if (st.alpha > 0.01) {
+        ctx.save();
+        const cx = x + width / 2, cy = y - pull.px * 0.35;
+        ctx.translate(cx, cy);
+        ctx.scale(st.scale, st.scale);
+        ctx.translate(-cx, -cy);
+        const color = s.style.motion.keywords && isKeyword(word, s.keywords) ? s.style.colors.highlight : s.style.colors.text;
+        ctx.fillStyle = withAlpha(color, st.alpha * k);
+        ctx.fillText(word.text, x, y);
+        ctx.restore();
+      }
+      x += width + space;
+    }
+  });
 }
 
 /**
@@ -106,11 +207,13 @@ export function makeScene(
  */
 function layoutHook(
   ctx: Ctx,
-  input: { width: number; height: number; style: VideoSettings; words: CaptionWord[] },
+  input: { width: number; height: number; style: VideoSettings; words: CaptionWord[]; quote: { firstWord: number; lastWord: number } | null },
   unit: number,
   captionPx: number,
 ): HookLayout | null {
-  const quote = hookQuote(input.words);
+  // The clip's pull quote, picked with the clip; clips without one get the shortest whole sentence.
+  const picked = quoteWords(input.words, input.quote);
+  const quote = picked.length ? picked : hookQuote(input.words);
   if (!quote) return null;
   const texts = quote.map((w, i) => (i === 0 ? "“" : "") + w.text + (i === quote.length - 1 ? "”" : ""));
   const L = layout({ ...input, unit });
@@ -356,16 +459,21 @@ function drawWords(ctx: Ctx, s: FrameScene, line: CaptionLine, x: number, y: num
       ctx.roundRect(x - 12 * s.unit, y - s.captionPx * 0.98, width + 24 * s.unit, s.captionPx * 1.3, 14 * s.unit);
       ctx.fill();
     }
+    // Keywords stay in the highlight colour, underlined, once said.
+    const key = state === "said" && s.style.motion.keywords && isKeyword(w, s.keywords);
     const color =
       state === "now"
         ? boxed
           ? s.style.colors.background
           : s.style.colors.highlight
         : state === "said"
-          ? s.style.colors.text
+          ? key
+            ? s.style.colors.highlight
+            : s.style.colors.text
           : withAlpha(s.style.colors.text, 0.42);
     ctx.fillStyle = alpha < 1 ? withAlpha(color, alpha * (state === "ahead" ? 0.42 : 1)) : color;
     ctx.fillText(w.text, x, y);
+    if (key) ctx.fillRect(x, y + s.captionPx * 0.14, width, 6 * s.unit);
     if (scale !== 1) ctx.restore();
     x += width + space;
   }
@@ -395,7 +503,9 @@ export function drawFrame(ctx: Ctx, s: FrameScene, t: number): void {
   }
   ctx.globalAlpha = 1;
 
-  // Captions.
+  // Captions, giving way to the pull quote while it's up.
+  const pullUp = s.pull ? quoteMoment(s.pull.words, t) : 0;
+  ctx.globalAlpha = 1 - pullUp;
   ctx.textAlign = "left";
   const x = margin(s, s.unit);
   const lineH = s.captionPx * 1.42;
@@ -434,6 +544,8 @@ export function drawFrame(ctx: Ctx, s: FrameScene, t: number): void {
       ctx.restore();
     }
   }
+  ctx.globalAlpha = 1;
+  if (s.pull && pullUp > 0.001) drawPull(ctx, s, s.pull, t, pullUp);
 
   if (s.style.waveform) (s.style.waveformStyle === "pulse" ? drawPulse : drawWaveform)(ctx, s, t, L.waveY, L.waveH);
   if (s.style.motion.progress) drawProgress(ctx, s, t, L.progressY);

@@ -138,6 +138,10 @@ export interface VideoMotion {
   outro: boolean;
   /** A name card (Host or Guest) when a speaker named in review starts talking; it replaces the name above the captions. */
   nameCards: boolean;
+  /** The clip's pull quote goes big, word by word, as it's said; the captions give way to it. */
+  pullQuote: boolean;
+  /** The clip's keywords stay in the highlight colour, underlined, once said. */
+  keywords: boolean;
 }
 
 /** Which provider, model and effort a writing step uses. */
@@ -300,7 +304,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showSpeakers: true,
     waveform: true,
     waveformStyle: "pulse",
-    motion: { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true },
+    motion: { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true },
   },
   template: "full",
   customSections: [],

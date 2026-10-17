@@ -47,7 +47,7 @@ export type BackgroundType = (typeof BACKGROUND_TYPES)[number];
 /** An imported background image's file name (see src/main/background.ts). */
 export const BACKGROUND_FILE = /^background-\d+\.jpg$/;
 
-import type { CleanTurn } from "./cleanup";
+import { normalize, type CleanTurn } from "./cleanup";
 
 // ---------------------------------------------------------------------------
 // Caption layout
@@ -58,6 +58,8 @@ export interface CaptionWord {
   start: number;
   end: number;
   speaker: string;
+  /** Index into the raw transcript's words, to find the pull quote; absent in hand-made captions. */
+  index?: number;
 }
 
 export interface CaptionLine {
@@ -188,6 +190,36 @@ export function outroIn(t: number, audioSec: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Pull quote and keywords (picked with the clip and checked in src/shared/clips.ts)
+
+/** The caption words of a clip's pull quote, from its first to its last word; empty if there's none. */
+export function quoteWords(words: CaptionWord[], quote: { firstWord: number; lastWord: number } | null): CaptionWord[] {
+  if (!quote) return [];
+  return words.filter((w) => w.index !== undefined && w.index >= quote.firstWord && w.index <= quote.lastWord);
+}
+
+/** Pull-quote moment: it comes in just before its first word, and goes this long after its last. */
+export const QUOTE_LEAD = 0.25;
+export const QUOTE_HOLD = 0.7;
+const QUOTE_FADE = 0.3;
+
+/** How far the pull-quote moment is up at `t` (0–1); the captions give way to it. */
+export function quoteMoment(quote: CaptionWord[], t: number): number {
+  if (!quote.length) return 0;
+  const from = quote[0]!.start - QUOTE_LEAD, to = quote.at(-1)!.end + QUOTE_HOLD;
+  return easeOut((t - from) / QUOTE_LEAD) * (1 - easeOut((t - to) / QUOTE_FADE));
+}
+
+/** A word landing in the pull quote: how visible it is and how big (it starts 60% larger and settles). */
+export function stamp(w: CaptionWord, t: number): { alpha: number; scale: number } {
+  const x = (t - w.start) / 0.2;
+  return { alpha: Math.max(0, Math.min(1, x)), scale: 1 + 0.6 * (1 - easeOut(x)) };
+}
+
+/** Whether a caption word is one of the clip's keywords (stored normalized). */
+export const isKeyword = (w: CaptionWord, keywords: string[]) => keywords.length > 0 && keywords.includes(normalize(w.text));
+
+// ---------------------------------------------------------------------------
 // Lower thirds: a name card when a named speaker starts talking.
 
 export interface NameCard {
@@ -220,17 +252,18 @@ export function speakerRole(name: string, hosts: string[]): "Host" | "Guest" {
 }
 
 /**
- * Name cards for a clip: one each time a named speaker starts talking, up for
- * CARD_HOLD seconds or until shortly before the next speaker, whichever is
- * first. Speakers not named in review, and stretches too short to read a card
- * in, get none.
+ * Name cards for a clip: one per named speaker, the first time they talk long
+ * enough to read it (a "yeah" doesn't count), up for CARD_HOLD seconds or
+ * until shortly before the next speaker, whichever is first. Once a speaker
+ * has had their card they don't get another, so someone else's "mm-hmm"
+ * doesn't bring it back. Speakers not named in review get none.
  */
 export function nameCards(words: CaptionWord[], hosts: string[]): NameCard[] {
   const runs: { speaker: string; start: number }[] = [];
   for (const w of words) if (runs.at(-1)?.speaker !== w.speaker) runs.push({ speaker: w.speaker, start: w.start });
   const cards: NameCard[] = [];
   runs.forEach((r, i) => {
-    if (isPlaceholderName(r.speaker)) return;
+    if (isPlaceholderName(r.speaker) || cards.some((c) => c.name === r.speaker)) return;
     const next = runs[i + 1]?.start ?? Infinity;
     const start = Math.max(0, r.start);
     const end = Math.min(start + CARD_HOLD, next - 0.2);
@@ -347,7 +380,7 @@ export function clipCaptionWords(turns: CleanTurn[], clip: { firstWord: number; 
   for (const turn of turns) {
     for (const w of turn.words) {
       if (w.index < clip.firstWord || w.index > clip.lastWord) continue;
-      out.push({ text: w.text, start: w.start - clip.start, end: w.end - clip.start, speaker: turn.speaker });
+      out.push({ text: w.text, start: w.start - clip.start, end: w.end - clip.start, speaker: turn.speaker, index: w.index });
     }
   }
   return out;

@@ -315,8 +315,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       })()`);
       await click(".clip-card button", "Show more");
       await pause(300);
-      const clipsView = await js<{ cards: number; text: string; captions: number; fullWidth: boolean }>(`({
+      const clipsView = await js<{ cards: number; text: string; highlights: string; captions: number; fullWidth: boolean }>(`({
         cards: document.querySelectorAll(".clip-card").length,
+        highlights: document.querySelector(".clip-highlights-head")?.innerText ?? "",
         text: document.querySelector(".clip-lines")?.innerText ?? "",
         captions: document.querySelectorAll(".caption-editor").length,
         // Caption boxes fill their editor.
@@ -377,6 +378,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(200);
       await js(`document.querySelector("button[aria-label='End one word earlier']").click()`);
       await pause(200);
+      // Click a word to make it a keyword too.
+      await js(`[...document.querySelectorAll(".clip-word")].find((b) => b.textContent === "Thanks,").click()`);
+      await pause(200);
       await js(`(() => {
         const box = document.querySelector("textarea[aria-label='X / Threads caption']");
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(box, "Pete joins the show, in 2031.");
@@ -385,9 +389,14 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await pause(1200);
       await shot("clips-edited.png");
       const jobId = await js<string>(`window.api.listJobs().then((j) => j[0].id)`);
-      const savedClip = await js<{ kept: boolean; lines: { text: string }[]; captions: { x?: { text: string; problems: string[] } } } | null>(
-        `window.api.getSocial(${JSON.stringify(jobId)}).then((s) => s?.clips[0] ?? null)`,
-      );
+      const savedClip = await js<{
+        kept: boolean;
+        lines: { text: string }[];
+        captions: { x?: { text: string; problems: string[] } };
+        quote?: { firstWord: number; lastWord: number } | null;
+        keywords?: string[];
+      } | null>(`window.api.getSocial(${JSON.stringify(jobId)}).then((s) => s?.clips[0] ?? null)`);
+      const highlightsDropped = await js<number | undefined>(`window.api.getSocial(${JSON.stringify(jobId)}).then((s) => s?.checks.highlightsDropped)`);
       const clipsReview =
         clipsView.cards === 1 &&
         clipsView.text.includes("Pete: Thanks, glad to be here.") &&
@@ -410,6 +419,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipPlayback.label === "Stop" &&
         savedClip?.kept === true &&
         savedClip.lines.at(-1)?.text === "Thanks, glad to be" &&
+        // The model's pull quote and keywords, checked against the clip; the quote survives the trim.
+        clipsView.highlights.includes("Pull quote: “Welcome to the show, Pete.”") &&
+        clipsView.highlights.includes("Keywords: welcome, glad") &&
+        highlightsDropped === 1 &&
+        !!savedClip.quote &&
+        JSON.stringify(savedClip.keywords) === JSON.stringify(["welcome", "glad", "thanks"]) &&
         savedClip.captions.x?.text === "Pete joins the show, in 2031." &&
         savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
 
@@ -634,7 +649,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         JSON.stringify(videoControls.fonts) === JSON.stringify(["Inter", "Atkinson Hyperlegible Next", "Lexend"]) &&
         JSON.stringify(videoControls.styles) === JSON.stringify(["Word by word", "Scrolling lines"]) &&
         JSON.stringify(videoControls.waveStyles) === JSON.stringify(["Pulse", "Rolling"]) &&
-        JSON.stringify(videoControls.motion) === JSON.stringify(["Opening quote", "Word pop", "Background glow", "Name cards", "Progress bar", "Outro card"]) &&
+        JSON.stringify(videoControls.motion) === JSON.stringify(["Opening quote", "Pull quote", "Keywords", "Word pop", "Background glow", "Name cards", "Progress bar", "Outro card"]) &&
         videoControls.motionOn &&
         !videoControls.enabled &&
         videoControls.captionsTwoCol &&
@@ -1001,6 +1016,9 @@ const SMOKE_CLIPS = {
       why: "Short and friendly.",
       first_words: "Hey, I'm Nigel. Welcome to",
       last_words: "Thanks, glad to be here.",
+      // Copied without the comma; "calendar" isn't said in the clip, so it's left out.
+      pull_quote: "Welcome to the show Pete",
+      keywords: ["welcome", "Glad", "calendar"],
       captions: { instagram: { text: "Pete joins the show.", hashtags: ["podcast"] }, x: { text: "Pete joins the show.", hashtags: [] } },
     },
   ],

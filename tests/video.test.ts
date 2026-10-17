@@ -16,6 +16,7 @@ import {
   hookQuote,
   hasOutro,
   hookWordAlpha,
+  isKeyword,
   isPlaceholderName,
   MOTION,
   nameCards,
@@ -24,7 +25,12 @@ import {
   pageAt,
   pageLines,
   popScale,
+  QUOTE_HOLD,
+  QUOTE_LEAD,
+  quoteMoment,
+  quoteWords,
   scrollAt,
+  stamp,
   speakerRole,
   videoSeconds,
   wordState,
@@ -140,8 +146,8 @@ test("a clip's caption words: cleaned words between its first and last word, tim
     { speaker: "Nigel T.", start: 12, words: [{ index: 13, text: "After.", start: 12, end: 12.5 }] },
   ];
   assert.deepEqual(clipCaptionWords(turns, { firstWord: 10, lastWord: 12, start: 10 }), [
-    { text: "So", start: 10.2 - 10, end: 10.4 - 10, speaker: "Pete" },
-    { text: "listen.", start: 1, end: 11.4 - 10, speaker: "Pete" },
+    { text: "So", start: 10.2 - 10, end: 10.4 - 10, speaker: "Pete", index: 10 },
+    { text: "listen.", start: 1, end: 11.4 - 10, speaker: "Pete", index: 12 },
   ]);
 });
 
@@ -162,7 +168,7 @@ test("waveform levels: one per video frame, loud parts reach 1, silence is 0", (
 });
 
 test("motion settings: on by default, kept when saved, and bad values fall back", () => {
-  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true });
+  assert.deepEqual(DEFAULT_SETTINGS.video.motion, { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true });
   assert.equal(DEFAULT_SETTINGS.video.waveformStyle, "pulse");
   // A settings file from before motion gets the defaults.
   const old = mergeSettings(DEFAULT_SETTINGS, { video: { enabled: true, waveform: true } });
@@ -170,7 +176,7 @@ test("motion settings: on by default, kept when saved, and bad values fall back"
   assert.equal(old.video.waveformStyle, "pulse");
   const next = mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "history", motion: { glow: false, sparkle: true } } });
   assert.equal(next.video.waveformStyle, "history");
-  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true, nameCards: true });
+  assert.deepEqual(next.video.motion, { hook: true, pop: true, glow: false, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true });
   assert.equal(mergeSettings(DEFAULT_SETTINGS, { video: { waveformStyle: "spiral" } }).video.waveformStyle, "pulse");
 });
 
@@ -236,9 +242,16 @@ test("name cards: one when a named speaker starts, Host or Guest, none for unnam
   const cards = nameCards(ws, ["Nigel"]);
   assert.deepEqual(
     cards.map((c) => [c.name, c.role, c.start, +c.end.toFixed(2)]),
+    // Pete's card once; coming back after Nigel's short turn doesn't bring it back.
+    [["Pete", "Guest", 0, CARD_HOLD]],
+  );
+  // Nigel's first turn was too short for a card; his next, longer one gets it.
+  const later = nameCards([...words("k l", "Nigel", 0), ...words("a b c d e f", "Pete", 1), ...words("m n o p q r", "Nigel", 4)], ["Nigel"]);
+  assert.deepEqual(
+    later.map((c) => [c.name, c.role, c.start]),
     [
-      ["Pete", "Guest", 0, CARD_HOLD],
-      ["Pete", "Guest", 5.2, 7.8],
+      ["Pete", "Guest", 1],
+      ["Nigel", "Host", 4],
     ],
   );
   // Slides in, holds, slides out.
@@ -247,4 +260,27 @@ test("name cards: one when a named speaker starts, Host or Guest, none for unnam
   assert.equal(cardIn(card, 1.5), 1);
   assert.equal(cardIn(card, card.end), 0);
   assert.deepEqual(nameCards([], ["Nigel"]), []);
+});
+
+test("pull quote in the video: its words by index, a moment around them, words landing, keywords", () => {
+  const ws = words("So the thing is we're not tech-averse at all").map((w, i) => ({ ...w, index: 100 + i }));
+  const quote = quoteWords(ws, { firstWord: 104, lastWord: 106 });
+  assert.deepEqual(
+    quote.map((w) => w.text),
+    ["we're", "not", "tech-averse"],
+  );
+  assert.deepEqual(quoteWords(ws, null), []);
+  // Captions without indexes (made by hand) have no quote.
+  assert.deepEqual(quoteWords(words("we're not tech-averse"), { firstWord: 0, lastWord: 2 }), []);
+  const first = quote[0]!.start, last = quote.at(-1)!.end;
+  assert.equal(quoteMoment(quote, first - QUOTE_LEAD), 0);
+  assert.equal(quoteMoment(quote, first), 1);
+  assert.equal(quoteMoment(quote, last + QUOTE_HOLD), 1);
+  assert.equal(quoteMoment(quote, last + QUOTE_HOLD + 1), 0);
+  assert.equal(quoteMoment([], 1), 0);
+  assert.deepEqual(stamp(quote[0]!, first - 0.1), { alpha: 0, scale: 1.6 });
+  assert.deepEqual(stamp(quote[0]!, first + 0.25), { alpha: 1, scale: 1 });
+  assert.equal(isKeyword({ ...quote[2]!, text: "Tech-averse." }, ["tech-averse"]), true);
+  assert.equal(isKeyword(quote[0]!, ["tech-averse"]), false);
+  assert.equal(isKeyword(quote[0]!, []), false);
 });

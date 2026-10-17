@@ -63,10 +63,13 @@ see [INSTALL.md](INSTALL.md).
    either highlighted word by word or as scrolling lines, plus the logo, show
    name, speaker names and a waveform that moves with the audio, in your
    colours over a colour or an image of your own. Motion, each part with its
-   own switch: an opening quote (a short whole sentence from later in the
-   clip, word for word) where the logo goes for the first few seconds, the
+   own switch: an opening quote (the clip's pull quote, word for word) where
+   the logo goes for the first few seconds, the
    word being said popping, a background glow that drifts and swells with the
-   voice, name cards (the speaker's name from review, and Host or Guest)
+   voice, the clip's pull quote going big as it's said and its keywords
+   highlighted in the captions (both picked with the clip, checked against
+   the transcript and changeable on the Clips tab), name cards (the
+   speaker's name from review, and Host or Guest)
    when someone starts talking, a pulsing or rolling waveform, a progress bar, and an outro card
    after the audio (the logo, "Full episode on" the show, and its website,
    2.5 seconds with silence under it). Three bundled fonts (Inter,
@@ -99,7 +102,7 @@ Built in milestones:
 | M5 | Drive folder watching (Drive for Desktop; the Google sign-in version is switched off) | Done |
 | M6 | Social clips: suggested clips and captions, review, WAV export | Done |
 | M7 | Video clips: MP4s of kept clips with captions, in three shapes | Done |
-| M8 | Motion graphics for video clips: a) motion from what the app already has, b) outro card, c) lower thirds, d) AI-picked pull quote and keywords | a, b, c done (unreleased) |
+| M8 | Motion graphics for video clips: a) motion from what the app already has, b) outro card, c) lower thirds, d) AI-picked pull quote and keywords | Done (unreleased) |
 
 Now in beta. Before a stable 2.0.0: code signing (Windows and macOS builds are
 currently unsigned) and real-episode testing across the team.

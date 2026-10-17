@@ -20,15 +20,23 @@ the owner before the next:
   with silence padded under it (`cutter.ts`); frame totals and the cutter
   timeout include it; the Clips tab preview plays it when a clip plays to its
   end. The `video-sync-check` branch has the M8a/b sync check (outro length, silence, frames of the hook and the outro coming in); passed locally and on the macOS and Windows CI runners (run 38911087462, 2026-10-16).
-- **M8c (done, unreleased, same branch):** name cards (`nameCards`): when
-  a speaker named in review starts talking (not "Speaker N"), for up to
-  3.5 s; Host if the name matches `show.hosts` (whole or first name), else
-  Guest; stretches under 1.2 s get none. A card replaces the name above
-  the captions for that speaker. The Clips tab says which speakers aren't named.
-- **M8d:** the clip model also gives a pull quote (first/last words, ≤10
-  words, one speaker) and up to 3 keywords, checked in code like clips and
-  editable on the Clips tab. The opening quote then uses the model's pick
-  (the owner wants the hook to be a short quote, not the title).
+- **M8c (done, unreleased, same branch):** name cards (`nameCards`): once
+  per named speaker (not "Speaker N"), the first time they talk for 1.2 s or
+  more, for up to 3.5 s; Host if the name matches `show.hosts` (whole or
+  first name), else Guest. A card replaces the name above the captions for
+  that speaker. The Clips tab says which speakers aren't named.
+- **M8d (done, unreleased, same branch):** the clip model also gives a
+  `pull_quote` (copied text) and `keywords`; `checkClips` keeps the quote
+  only if it's 3–10 words by one speaker inside the clip (stored as raw word
+  indexes, `SocialClip.quote`) and keywords only if they're single words said
+  in the clip (normalized, ≤3); `reviseClip` re-checks both after edits and
+  trims. The Clips tab edits them by clicking the clip's words. The opening
+  quote uses the pull quote (else `hookQuote`); the pull-quote moment shows it
+  big when it's said (not when it's said while the opening quote is up);
+  keywords stay highlighted in the captions. Clips suggested before this have
+  neither until picked on the Clips tab or suggested again.
+
+Next: the owner tries M8 in `npm run dev`; then merge and, when asked, a release.
 
 Earlier: 2.0.0-beta.7 added crosstalk handling for clips, untested on macOS.
 Untested: a Windows N edition, and the Drive for Desktop watcher on a real Drive.
@@ -98,7 +106,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   last words, and `checkClips`/`reviseClip` take the text and times from the
   transcript, including after edits in review. Other speakers in a clip are
   found from the raw words (removed fillers are still in the audio), named
-  as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them.
+  as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them. A
+  clip's pull quote and keywords are checked the same way (`checkQuote`,
+  `checkKeywords`): their text always comes from the transcript.
 - **Third-party notices.** mediabunny (MPL-2.0) and the three video fonts
   (Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
   Add an entry there for any new bundled code whose license asks for one.

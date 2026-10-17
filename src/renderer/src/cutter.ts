@@ -21,7 +21,7 @@ import {
   StreamSource,
 } from "mediabunny";
 import type { CutJob, CutProgress, CutResult, VideoJob } from "../../shared/cutter";
-import { audioLevels, hasOutro, SHAPES, VIDEO_FPS, videoSeconds, type CaptionWord, type ShapeId } from "../../shared/video";
+import { audioLevels, hasOutro, SHAPES, VIDEO_FPS, videoSeconds, type ShapeId } from "../../shared/video";
 import { ClipAssembler, fadeEdges, wavFile } from "../../shared/wav";
 import { drawFrame, makeScene } from "./video/drawFrame";
 import { loadVideoFont } from "./video/fonts";
@@ -118,7 +118,7 @@ async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<
     const levels = audioLevels(pcm.pcm, pcm.channels, pcm.sampleRate);
     const perShape: Uint8Array[] = [];
     for (const shape of clip.shapes) {
-      perShape.push(await renderOne(jobId, video, shape, clip.words, pcm, levels, logo, background, progress));
+      perShape.push(await renderOne(jobId, video, shape, clip, pcm, levels, logo, background, progress));
     }
     out.push(perShape);
   }
@@ -129,7 +129,7 @@ async function renderOne(
   jobId: string,
   video: VideoJob,
   shape: ShapeId,
-  words: CaptionWord[],
+  clip: VideoJob["clips"][number],
   pcm: Pcm,
   levels: number[],
   logo: ImageBitmap | null,
@@ -146,10 +146,12 @@ async function renderOne(
     showName: video.showName,
     website: video.website,
     hosts: video.hosts,
+    quote: clip.quote,
+    keywords: clip.keywords,
     logo,
     background,
     levels,
-    words,
+    words: clip.words,
   });
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
   // Hardware where the computer has it, Chromium's own encoder where it doesn't.

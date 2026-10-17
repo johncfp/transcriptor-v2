@@ -84,13 +84,15 @@ export function ClipVideoPreview(props: {
       showName: settings.show.name,
       website: settings.show.website,
       hosts: settings.show.hosts,
+      quote: clip.quote ?? null,
+      keywords: clip.keywords ?? [],
       logo,
       background,
       levels,
       words,
     });
     // `shape` re-creates the canvas, so the scene follows it.
-  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, logo, background, levels, words, shape]);
+  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, clip.quote, clip.keywords, logo, background, levels, words, shape]);
 
   // A still partway in when not playing; frames following the audio while it plays.
   // When a clip plays to its end, the outro card follows (on the clock, as the audio

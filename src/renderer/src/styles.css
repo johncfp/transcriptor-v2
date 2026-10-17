@@ -1148,6 +1148,40 @@ textarea.input {
 .clip-lines p {
   margin: 4px 0;
 }
+.clip-highlights-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+/* The clip's words, clickable for the pull quote and keywords; they read as plain text. */
+.clip-word {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0 1px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.clip-word:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.clip-word.in-quote {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.clip-word.keyword {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.clip-word.pick-start {
+  outline: 2px solid var(--accent);
+}
+.clip-lines.picking {
+  border-left-color: var(--accent);
+}
 .caption-editor {
   display: flex;
   flex-direction: column;

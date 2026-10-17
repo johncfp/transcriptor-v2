@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { normalize } from "../../../shared/cleanup";
 import {
   captionWithHashtags,
+  checkQuote,
   clipContext,
+  MAX_KEYWORDS,
+  MAX_QUOTE_WORDS,
+  MIN_QUOTE_WORDS,
   nudgeClip,
+  quoteText,
   reviseClip,
   type ClipContext,
   type ClipEdit,
@@ -29,6 +35,8 @@ const editOf = (c: SocialClip): ClipEdit => ({
   firstWord: c.firstWord,
   lastWord: c.lastWord,
   captions: Object.fromEntries(Object.entries(c.captions).map(([id, cap]) => [id, { text: cap.text, hashtags: cap.hashtags }])),
+  quote: c.quote ?? null,
+  keywords: c.keywords ?? [],
 });
 
 /** "#focus, deep work #habits" → ["focus", "deep", "work", "habits"] */
@@ -322,6 +330,12 @@ function ClipChecks({ result, keptCount }: { result: SocialResult; keptCount: nu
           </li>
         </ul>
       )}
+      {!!checks.highlightsDropped && (
+        <p className="hint">
+          {checks.highlightsDropped} suggested pull quote{checks.highlightsDropped === 1 ? " or keyword wasn't" : "s or keywords weren't"} in the clip as
+          given, so {checks.highlightsDropped === 1 ? "it was" : "they were"} left out.
+        </p>
+      )}
       {checks.hashtagsDropped > 0 && (
         <p className="hint">
           {checks.hashtagsDropped} extra hashtag{checks.hashtagsDropped === 1 ? "" : "s"} removed to stay within each platform's count.
@@ -409,13 +423,7 @@ function ClipCard(props: {
             <span className="muted">{(clip.end - clip.start).toFixed(1)} s</span>
           </div>
 
-          <blockquote className="clip-lines">
-            {clip.lines.map((l, i) => (
-              <p key={i}>
-                <strong>{l.speaker}:</strong> {l.text}
-              </p>
-            ))}
-          </blockquote>
+          <ClipHighlights clip={clip} ctx={ctx} onChange={props.onChange} />
 
           {(Object.keys(clip.captions) as PlatformId[]).map((id) => (
             <CaptionEditor key={id} platform={id} caption={clip.captions[id]!} onChange={(c) => props.onChange({ captions: { ...editOf(clip).captions, [id]: c } })} />
@@ -482,6 +490,104 @@ function CaptionEditor(props: {
           {p}
         </p>
       ))}
+    </div>
+  );
+}
+
+/**
+ * What's said in the clip, word by word, with its pull quote and keywords
+ * marked. Click a word to make it a keyword or not; to set the pull quote,
+ * choose Pick quote, then click its first and last words. Both are checked
+ * against the transcript like the model's picks (reviseClip).
+ */
+function ClipHighlights(props: { clip: SocialClip; ctx: ClipContext; onChange: (change: Partial<ClipEdit>) => void }) {
+  const { clip, ctx } = props;
+  /** null: clicks toggle keywords; "quote": the next click is the quote's first word; a number: its first word, waiting for the last. */
+  const [pick, setPick] = useState<null | "quote" | number>(null);
+  const [note, setNote] = useState("");
+  const keywords = clip.keywords ?? [];
+  const quote = clip.quote ?? null;
+  // The clip's words by speaker, from the cleaned transcript (as clip.lines).
+  const runs = useMemo(() => {
+    const out: { speaker: string; words: { text: string; index: number }[] }[] = [];
+    for (const t of ctx.turns) {
+      for (const w of t.words) {
+        if (w.index < clip.firstWord || w.index > clip.lastWord) continue;
+        const run = out.at(-1);
+        if (run && run.speaker === t.speaker) run.words.push(w);
+        else out.push({ speaker: t.speaker, words: [w] });
+      }
+    }
+    return out;
+  }, [ctx.turns, clip.firstWord, clip.lastWord]);
+
+  const click = (w: { text: string; index: number }) => {
+    setNote("");
+    if (pick === "quote") return setPick(w.index);
+    if (typeof pick === "number") {
+      const next = checkQuote(ctx.turns, clip, { firstWord: Math.min(pick, w.index), lastWord: Math.max(pick, w.index) });
+      setPick(null);
+      if (next) props.onChange({ quote: next });
+      else setNote(`A pull quote is ${MIN_QUOTE_WORDS} to ${MAX_QUOTE_WORDS} words said by one person. Choose Pick quote to try again.`);
+      return;
+    }
+    const key = normalize(w.text);
+    if (!key) return;
+    if (keywords.includes(key)) props.onChange({ keywords: keywords.filter((k) => k !== key) });
+    else if (keywords.length >= MAX_KEYWORDS) setNote(`Up to ${MAX_KEYWORDS} keywords. Click one to remove it first.`);
+    else props.onChange({ keywords: [...keywords, key] });
+  };
+
+  return (
+    <div className="clip-highlights">
+      <div className="clip-highlights-head">
+        <span>
+          <strong>Pull quote:</strong> {quote ? `“${quoteText(ctx.turns, quote)}”` : <span className="muted">none</span>}
+        </span>
+        <button className={`button ghost${pick !== null ? " active" : ""}`} aria-pressed={pick !== null} onClick={() => setPick(pick === null ? "quote" : null)}>
+          {pick === null ? "Pick quote" : "Cancel"}
+        </button>
+        {quote && (
+          <button className="button ghost" onClick={() => props.onChange({ quote: null })}>
+            Clear quote
+          </button>
+        )}
+        <span>
+          <strong>Keywords:</strong> {keywords.length ? keywords.join(", ") : <span className="muted">none</span>}
+        </span>
+      </div>
+      <p className="hint">
+        {pick === "quote"
+          ? "Click the quote's first word."
+          : typeof pick === "number"
+            ? "Now click its last word."
+            : `Click a word to make it a keyword (up to ${MAX_KEYWORDS}), or again to remove it. Both show in the clip's video.`}
+      </p>
+      {note && <p className="hint warn">{note}</p>}
+      <blockquote className={`clip-lines${pick !== null ? " picking" : ""}`}>
+        {runs.map((r, i) => (
+          <p key={i}>
+            <strong>{r.speaker}:</strong>{" "}
+            {r.words.map((w, j) => {
+              const inQuote = !!quote && w.index >= quote.firstWord && w.index <= quote.lastWord;
+              const key = keywords.includes(normalize(w.text));
+              const start = typeof pick === "number" && w.index === pick;
+              return (
+                <span key={w.index}>
+                  <button
+                    className={`clip-word${inQuote ? " in-quote" : ""}${key ? " keyword" : ""}${start ? " pick-start" : ""}`}
+                    aria-pressed={key}
+                    onClick={() => click(w)}
+                  >
+                    {w.text}
+                  </button>
+                  {j < r.words.length - 1 ? " " : ""}
+                </span>
+              );
+            })}
+          </p>
+        ))}
+      </blockquote>
     </div>
   );
 }

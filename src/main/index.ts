@@ -220,7 +220,7 @@ function start(): void {
                     hosts: s.show.hosts,
                     logo: s.video.showLogo && branding.logo ? (loadLogo(userData, branding.logo)?.png ?? null) : null,
                     background: background ? readFileSync(background) : null,
-                    clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes })),
+                    clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes, quote: c.quote ?? null, keywords: c.keywords ?? [] })),
                   }
                 : undefined,
             },
