@@ -70,7 +70,7 @@ export interface SocialState {
   /** While the kept clips are being exported with videos: frames rendered so far, of all. */
   exporting?: { done: number; total: number };
   /** The last export of just the kept clips (from the Clips tab). */
-  exported?: { at: string; folder: string; files: string[] };
+  exported?: { at: string; folder: string; files: string[]; notes?: string[] };
   /** Why the last clips export failed. */
   exportError?: string;
 }

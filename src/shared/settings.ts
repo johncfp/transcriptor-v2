@@ -127,6 +127,8 @@ export interface VideoSettings {
   showSpeakers: boolean;
   waveform: boolean;
   waveformStyle: WaveformStyle;
+  /** Also make each video with its captions in these languages (the subtitle translations; subtitles S3). */
+  languages: Record<TranslationLanguage, boolean>;
   /** Animation, each part on its own (see MOTION in src/shared/video.ts). */
   motion: VideoMotion;
 }
@@ -311,6 +313,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showSpeakers: true,
     waveform: true,
     waveformStyle: "pulse",
+    languages: { es: false, pt: false, fr: false, de: false, zh: false },
     motion: { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true },
   },
   template: "full",

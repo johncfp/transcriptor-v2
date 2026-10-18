@@ -195,6 +195,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await js(`window.api.updateSettings({
         show: { name: "This Is A Test Show", hosts: ["Nigel T."] },
         output: { folder: ${JSON.stringify(exportRoot)} },
+        // Spanish captions on the clip videos (made when video clips are turned on, further down). Set before
+        // the episode opens, which reads the settings once, as it does after a visit to Settings.
+        video: { languages: { es: true } },
       })`);
 
       // Pipeline: queue a file (plus one that must be rejected) and wait for the transcript.
@@ -436,7 +439,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
 
       // Export the kept clip: its WAV, cut by the hidden mediabunny page, the Social Clips document,
-      // and with video clips on, an MP4 per chosen shape (vertical and square here).
+      // and with video clips on, an MP4 per chosen shape (vertical and square here), each again with
+      // Spanish captions (translated by the fake Claude on the way).
       await js(`window.api.updateSettings({ video: { enabled: true, shapes: { vertical: true, square: true, wide: false } } })`);
       await click("button", "Export 1 kept clip");
       let clipsExport: { folder: string; files: string[] } | null = null;
@@ -466,13 +470,34 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       // The videos: an MP4 per shape, 7.5 s long, with H.264 video and AAC audio (resampled from 16 kHz).
       const videoPaths = clipsExport?.files.filter((f) => f.endsWith(".mp4")) ?? [];
       const videos = videoPaths.map((f) => ({ name: f.split(/[\\/]/).pop(), ...mp4Info(f) }));
+      // With Spanish captions on, the preview can show them too: pick Spanish and the frame changes.
+      await click("[aria-label='Clip preview language'] .segment", "Spanish");
+      await pause(800);
+      const previewSpanish = await js<{ hash: string; hint: boolean }>(`(() => {
+        const c = document.querySelector("canvas[aria-label='Clip video preview']");
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let h = 0;
+        for (let i = 0; i < d.length; i += 4 * 53) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
+        return { hash: c.width + "x" + c.height + ":" + h, hint: document.body.innerText.includes("isn't translated yet") };
+      })()`);
+      writeFileSync(
+        join(dir, "clip-preview-spanish.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
+      await click("[aria-label='Clip preview language'] .segment", "Original");
+      await pause(500);
+      const previewOriginal = await previewHash();
       const clipVideos =
-        videos.length === 2 &&
+        videos.length === 4 &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical).mp4") &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square).mp4") &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical, Spanish).mp4") &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square, Spanish).mp4") &&
         // The 7.5 s clip plus the 2.5 s outro card (the show has a name).
         videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 10) < 0.1) &&
-        videoProgress?.total === 2 * Math.ceil(10 * 30);
+        videoProgress?.total === 4 * Math.ceil(10 * 30) &&
+        !previewSpanish.hint &&
+        previewSpanish.hash !== previewOriginal;
 
       // Cancelling an export stops it, says so, and leaves the earlier files alone.
       await click("button", "Export 1 kept clip");
@@ -526,10 +551,11 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       // A second export uses the saved translations without asking again.
       await js(`window.api.updateSettings({ output: { subtitles: { srt: true, vtt: true, translate: { es: true, zh: true } } } })`);
       const translationRequests = () => claude.requests.filter((r) => JSON.stringify(r.body.output_config ?? {}).includes('"segments"')).length;
+      const askedBefore = translationRequests();
       const subExport = await js<{ files: string[]; notes?: string[] }>(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
-      const askedOnce = translationRequests();
+      const askedOnce = translationRequests() - askedBefore;
       await js(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
-      const askedAgain = translationRequests() - askedOnce;
+      const askedAgain = translationRequests() - askedBefore - askedOnce;
       await js(`window.api.updateSettings({ output: { subtitles: { srt: false, vtt: false, translate: { es: false, zh: false } } } })`);
       const srtOf = (lang: string) => {
         const f = subExport.files.find((x) => x.endsWith(` - Subtitles (${lang}).srt`));
@@ -537,8 +563,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       };
       const timesOf = (text: string) => text.split("\r\n").filter((l) => l.includes(" --> "));
       const spanish = srtOf("Spanish"), mandarin = srtOf("Mandarin");
+      // Spanish was translated for the videos already, so only Mandarin is asked for.
       const translationsOk =
-        askedOnce === 2 &&
+        askedOnce === 1 &&
         askedAgain === 0 &&
         !subExport.notes?.length &&
         spanish.includes("«") &&
@@ -681,7 +708,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
         const checks = document.querySelector(".checks.two-col");
         return {
-          shapes: video.querySelectorAll(".checks input[type=checkbox]").length,
+          shapes: [...video.querySelectorAll(".row")].find((r) => r.querySelector(".row-label span")?.textContent === "Shapes").querySelectorAll("input[type=checkbox]").length,
           fonts: [...video.querySelectorAll("select[aria-label=Font] option")].map((o) => o.textContent),
           styles: [...video.querySelectorAll("[aria-label='Caption style'] .segment")].map((b) => b.textContent),
           waveStyles: [...video.querySelectorAll("[aria-label='Waveform style'] .segment")].map((b) => b.textContent),

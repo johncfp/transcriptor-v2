@@ -66,7 +66,7 @@ const timeoutMs = (clips: { start: number; end: number }[], video?: VideoJob) =>
   60_000 +
   clips.length * 30_000 +
   (video
-    ? clips.reduce((ms, c, i) => ms + videoSeconds(c.end - c.start, hasOutro(video.style, video.showName, video.website)) * 1000 * (video.clips[i]?.shapes.length ?? 0), 0)
+    ? clips.reduce((ms, c, i) => ms + videoSeconds(c.end - c.start, hasOutro(video.style, video.showName, video.website)) * 1000 * (video.clips[i]?.renders.length ?? 0), 0)
     : 0);
 
 export interface CutOptions {

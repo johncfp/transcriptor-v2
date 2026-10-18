@@ -36,6 +36,8 @@ import {
   wordState,
   type CaptionWord,
 } from "../src/shared/video";
+import { clipCues, videoStrings } from "../src/shared/videoLanguages";
+import { clipVideoName } from "../src/shared/exportDocs";
 
 /** Each character is 10 px wide; a space too. */
 const measure = (text: string) => text.length * 10;
@@ -283,4 +285,24 @@ test("pull quote in the video: its words by index, a moment around them, words l
   assert.equal(isKeyword({ ...quote[2]!, text: "Tech-averse." }, ["tech-averse"]), true);
   assert.equal(isKeyword(quote[0]!, ["tech-averse"]), false);
   assert.equal(isKeyword(quote[0]!, []), false);
+});
+
+test("translated captions in a clip: its cues from the clip's start, cut to fit; the video's own words per language", () => {
+  const cues = [
+    { start: 8, end: 10.1, lines: ["Antes del clip."] },
+    { start: 10.4, end: 12, lines: ["Primera línea."] },
+    { start: 12.1, end: 15, lines: ["- Y yo le decía,", "- Sí."] },
+    { start: 19.9, end: 22, lines: ["Casi fuera."] },
+  ];
+  assert.deepEqual(clipCues(cues, { start: 10, end: 20 }), [
+    { start: 0.4, end: 2, lines: ["Primera línea."] },
+    { start: 2.1, end: 5, lines: ["- Y yo le decía,", "- Sí."] },
+  ]);
+  assert.equal(videoStrings(null).fullEpisodeOn, "Full episode on");
+  assert.equal(videoStrings("es").guest, "Invitado");
+  assert.equal(videoStrings("de").host, "Moderation");
+  assert.equal(outroLines("LOL a Podcast", "", videoStrings("fr")).above, "Épisode complet sur");
+  assert.equal(clipVideoName("Episode 386", 2, "Tools", "vertical", "Spanish"), "Episode 386 - Clip 2 - Tools (vertical, Spanish).mp4");
+  assert.equal(clipVideoName("Episode 386", 2, "Tools", "square"), "Episode 386 - Clip 2 - Tools (square).mp4");
+  assert.deepEqual(DEFAULT_SETTINGS.video.languages, { es: false, pt: false, fr: false, de: false, zh: false });
 });

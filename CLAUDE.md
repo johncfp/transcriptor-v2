@@ -34,7 +34,16 @@ the original and counted; changed numbers noted. A failed language is a
 note on the export (`ExportResult.notes`), not a failed export. Not yet run
 against the real Claude API on a real episode (needs the owner's key in
 the app).
-**S3:** translated captions burned into clip videos. **S4:** a bundled CJK
+**S3 (done, unreleased):** Settings > Video > Caption languages
+makes each clip video again per language ("(vertical, Spanish).mp4";
+`VideoJob.clips[].renders` = shape + language). Captions are the episode's
+translated cues inside the clip (`clipCues`), a cue at a time with no word
+highlight or pop; the opening and pull quotes use the clip's quote
+translated (saved in `subtitles.json` `quotes`); keywords are off; the
+outro and name-card words come from `VIDEO_STRINGS` (written by hand, not
+by the model). Translation happens when the kept clips are exported; the
+Clips tab preview can show a language once it's saved. Mandarin is greyed
+out until S4. **S4:** a bundled CJK
 font and Chinese line breaking for Mandarin captions. The owner picked
 these six languages (English plus five) on 2026-10-18.
 

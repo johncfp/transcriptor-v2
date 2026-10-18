@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Settings, SettingsPatch, VideoSettings as Video } from "../../../shared/settings";
 import { CAPTION_SIZES, CAPTION_STYLES, MOTION, SHAPES, VIDEO_FONTS, videoFont, WAVEFORM_STYLES } from "../../../shared/video";
+import { TRANSLATION_LANGUAGES } from "../../../shared/subtitleTranslation";
 import { Section } from "./Section";
 
 const cleanError = (err: unknown) =>
@@ -53,6 +54,25 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
 
       <Row label="Caption style" hint={CAPTION_STYLES.find((c) => c.id === video.captionStyle)?.hint}>
         <Segmented label="Caption style" value={video.captionStyle} options={CAPTION_STYLES} onChange={(captionStyle) => set({ captionStyle })} />
+      </Row>
+
+      <Row
+        label="Caption languages"
+        hint="Each clip is also made with its captions in these languages, from the subtitle translations (translated when the clips are exported, by the Social model). Shown a line at a time, without the word highlight. Mandarin needs its own font, coming next."
+      >
+        <div className="checks">
+          {TRANSLATION_LANGUAGES.map((l) => (
+            <label key={l.id} className={`check${l.id === "zh" ? " disabled" : ""}`}>
+              <input
+                type="checkbox"
+                disabled={l.id === "zh"}
+                checked={l.id !== "zh" && video.languages[l.id]}
+                onChange={(e) => set({ languages: { ...video.languages, [l.id]: e.target.checked } })}
+              />
+              {l.prompt}
+            </label>
+          ))}
+        </div>
       </Row>
 
       <Row label="Font" hint={videoFont(video.font).hint}>

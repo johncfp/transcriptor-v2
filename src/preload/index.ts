@@ -42,6 +42,7 @@ const api: Api = {
   writeNotes: (id, details) => ipcRenderer.invoke(IPC.writeNotes, id, details),
   getWriting: (id) => ipcRenderer.invoke(IPC.getWriting, id),
   getSocial: (id) => ipcRenderer.invoke(IPC.getSocial, id),
+  getSubtitleTranslations: (id) => ipcRenderer.invoke(IPC.getSubtitleTranslations, id),
   saveClips: (id, edits) => ipcRenderer.invoke(IPC.saveClips, id, edits),
   suggestClips: (id) => ipcRenderer.invoke(IPC.suggestClips, id),
   cancelClips: (id) => ipcRenderer.invoke(IPC.cancelClips, id),

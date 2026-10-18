@@ -277,10 +277,14 @@ export function cardIn(card: NameCard, t: number): number {
   return easeOut((t - card.start) / CARD_SLIDE) * (1 - easeOut((t - card.end + CARD_SLIDE) / CARD_SLIDE));
 }
 
-/** The outro's lines: a small one above, the show (or website) big, the website small below. */
-export function outroLines(showName: string, website: string): { above: string; big: string; below: string } {
+/** The outro's lines: a small one above, the show (or website) big, the website small below; `words` for a translated video. */
+export function outroLines(
+  showName: string,
+  website: string,
+  words: { fullEpisodeOn: string; fullEpisodeAt: string } = { fullEpisodeOn: "Full episode on", fullEpisodeAt: "Full episode at" },
+): { above: string; big: string; below: string } {
   const name = showName.trim(), site = website.trim();
-  return name ? { above: "Full episode on", big: name, below: site } : { above: "Full episode at", big: site, below: "" };
+  return name ? { above: words.fullEpisodeOn, big: name, below: site } : { above: words.fullEpisodeAt, big: site, below: "" };
 }
 
 /** Ease out: fast start, gentle stop. Clamped to 0–1. */

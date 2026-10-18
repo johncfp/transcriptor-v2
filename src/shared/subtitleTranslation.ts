@@ -21,6 +21,8 @@ export interface SubtitleTranslations {
   version: 1;
   source: string;
   languages: Partial<Record<TranslationLanguage, { provider: string; model: string; at: string; texts: string[]; problems: string[] }>>;
+  /** Clips' pull quotes, by language, original text → translation, for translated videos. */
+  quotes?: Partial<Record<TranslationLanguage, Record<string, string>>>;
 }
 
 /** Chinese subtitle lines are shorter: 16 characters is the usual limit. */

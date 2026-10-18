@@ -1,5 +1,7 @@
 // Messages between the main process and the hidden clip cutter page.
 
+import type { TranslationLanguage } from "./subtitleTranslation";
+import type { ClipTranslation } from "./videoLanguages";
 import type { VideoSettings } from "./settings";
 import type { CaptionWord, ShapeId } from "./video";
 
@@ -38,7 +40,15 @@ export interface VideoJob {
   logo: Uint8Array | null;
   background: Uint8Array | null;
   /** Per clip, in the same order as CutJob.clips. */
-  clips: { words: CaptionWord[]; shapes: ShapeId[]; quote: { firstWord: number; lastWord: number } | null; keywords: string[] }[];
+  clips: {
+    words: CaptionWord[];
+    /** The videos to make: each a shape, with the original captions or a translation's (subtitles S3). */
+    renders: { shape: ShapeId; language: TranslationLanguage | null }[];
+    quote: { firstWord: number; lastWord: number } | null;
+    keywords: string[];
+    /** The clip's captions in each translation its renders ask for. */
+    translations: Partial<Record<TranslationLanguage, ClipTranslation>>;
+  }[];
 }
 
 /** Video frames rendered so far, of all the job's videos. */
@@ -49,7 +59,7 @@ export interface CutProgress {
 
 /**
  * One WAV per clip, in order, and with a video job, one MP4 per clip and
- * shape (videos[clip][shape], shapes in the order asked). Or why it failed.
+ * render (videos[clip][render], renders in the order asked). Or why it failed.
  */
 export type CutResult =
   | { clips: Uint8Array[]; videos?: Uint8Array[][]; error?: undefined }

@@ -128,8 +128,8 @@ export function clipFileName(base: string, n: number, title: string): string {
 }
 
 /** "Episode 386 - Clip 2 - Tools versus reasons (vertical).mp4" */
-export function clipVideoName(base: string, n: number, title: string, shape: ShapeId): string {
-  return `${base} - Clip ${n} - ${safeFileName(title, 60)} (${shape}).mp4`;
+export function clipVideoName(base: string, n: number, title: string, shape: ShapeId, language: string | null = null): string {
+  return `${base} - Clip ${n} - ${safeFileName(title, 60)} (${shape}${language ? `, ${language}` : ""}).mp4`;
 }
 
 /** Whether a file in the clips folder is one of this episode's clips (audio or video), so a new export can replace them all. */

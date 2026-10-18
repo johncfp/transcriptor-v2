@@ -21,7 +21,7 @@ import {
   StreamSource,
 } from "mediabunny";
 import type { CutJob, CutProgress, CutResult, VideoJob } from "../../shared/cutter";
-import { audioLevels, hasOutro, SHAPES, VIDEO_FPS, videoSeconds, type ShapeId } from "../../shared/video";
+import { audioLevels, hasOutro, SHAPES, VIDEO_FPS, videoSeconds } from "../../shared/video";
 import { ClipAssembler, fadeEdges, wavFile } from "../../shared/wav";
 import { drawFrame, makeScene } from "./video/drawFrame";
 import { loadVideoFont } from "./video/fonts";
@@ -97,7 +97,7 @@ const concatPcm = (a: Int16Array, b: Int16Array) => {
 const loadImage = async (bytes: Uint8Array | null) => (bytes ? createImageBitmap(new Blob([bytes as BlobPart])) : null);
 
 async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<Uint8Array[][]> {
-  const sizes = SHAPES.filter((s) => video.clips.some((c) => c.shapes.includes(s.id)));
+  const sizes = SHAPES.filter((s) => video.clips.some((c) => c.renders.some((r) => r.shape === s.id)));
   for (const s of sizes) {
     if (!(await canEncodeVideo("avc", { width: s.width, height: s.height }))) {
       throw new Error("This computer can't make H.264 video, so the videos can't be made. The WAV files are fine.");
@@ -107,7 +107,7 @@ async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<
   const [logo, background] = await Promise.all([loadImage(video.logo), loadImage(video.background)]);
   const outro = hasOutro(video.style, video.showName, video.website);
   const frames = (p: Pcm) => Math.ceil(videoSeconds(p.pcm.length / p.channels / p.sampleRate, outro) * VIDEO_FPS);
-  const total = pcms.reduce((n, p, i) => n + frames(p) * (video.clips[i]?.shapes.length ?? 0), 0);
+  const total = pcms.reduce((n, p, i) => n + frames(p) * (video.clips[i]?.renders.length ?? 0), 0);
   const progress = { done: 0, total };
   window.cutter.progress(jobId, progress);
 
@@ -117,8 +117,8 @@ async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<
     const clip = video.clips[i]!;
     const levels = audioLevels(pcm.pcm, pcm.channels, pcm.sampleRate);
     const perShape: Uint8Array[] = [];
-    for (const shape of clip.shapes) {
-      perShape.push(await renderOne(jobId, video, shape, clip, pcm, levels, logo, background, progress));
+    for (const render of clip.renders) {
+      perShape.push(await renderOne(jobId, video, render, clip, pcm, levels, logo, background, progress));
     }
     out.push(perShape);
   }
@@ -128,7 +128,7 @@ async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<
 async function renderOne(
   jobId: string,
   video: VideoJob,
-  shape: ShapeId,
+  { shape, language }: VideoJob["clips"][number]["renders"][number],
   clip: VideoJob["clips"][number],
   pcm: Pcm,
   levels: number[],
@@ -148,6 +148,7 @@ async function renderOne(
     hosts: video.hosts,
     quote: clip.quote,
     keywords: clip.keywords,
+    translation: language ? (clip.translations[language] ?? null) : null,
     logo,
     background,
     levels,
