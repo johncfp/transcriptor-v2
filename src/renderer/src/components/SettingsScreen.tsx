@@ -10,6 +10,8 @@ import {
   type SettingsPatch,
   type SpeakerFormat,
 } from "../../../shared/settings";
+import { socialDefaultModel } from "../../../shared/social";
+import { TRANSLATION_LANGUAGES } from "../../../shared/subtitleTranslation";
 import { ApiKeysSection } from "./ApiKeysSection";
 import { Section } from "./Section";
 import { ShowNotesSettings, ShowNotesTemplateSection } from "./ShowNotesSettings";
@@ -113,6 +115,7 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
 
   const update = (patch: SettingsPatch) => setSettings((d) => (d ? mergeSettings(d, patch) : d));
   const { general, processing, output, show } = settings;
+  const socialModelLabel = settings.social.model.trim() || socialDefaultModel(settings.social.provider) || "its default";
 
   return (
     <>
@@ -258,6 +261,22 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
                     checked={output.subtitles.vtt}
                     onChange={(v) => update({ output: { subtitles: { ...output.subtitles, vtt: v } } })}
                   />
+                </div>
+              </Row>
+              <Row
+                label="Translated subtitles"
+                hint={`Also in these languages, translated by the Social tab's model (${socialModelLabel}) when the episode is exported. Each language is translated once and kept; it's done again only if the transcript changes. Times stay those of the original.`}
+              >
+                <div className="checks">
+                  {TRANSLATION_LANGUAGES.map((l) => (
+                    <Check
+                      key={l.id}
+                      label={l.prompt}
+                      checked={output.subtitles.translate[l.id]}
+                      disabled={!output.subtitles.srt && !output.subtitles.vtt}
+                      onChange={(v) => update({ output: { subtitles: { ...output.subtitles, translate: { ...output.subtitles.translate, [l.id]: v } } } })}
+                    />
+                  ))}
                 </div>
               </Row>
               <Toggle

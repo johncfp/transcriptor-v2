@@ -74,6 +74,11 @@ export function ExportCard({ job, settings, hasNotes }: { job: Job; settings: Se
           Exported {exported.files.length} file{exported.files.length === 1 ? "" : "s"} on {new Date(exported.at).toLocaleString()}.
         </p>
       )}
+      {exported?.notes?.map((n) => (
+        <p key={n} className="hint warn">
+          {n}
+        </p>
+      ))}
     </Section>
   );
 }

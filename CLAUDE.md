@@ -21,9 +21,19 @@ In progress (branch `claude/subtitles`, from main after beta.8): subtitles,
 in milestones checked in with the owner. **S1 (done, unreleased):** SRT/VTT
 of the reviewed transcript (`src/shared/subtitles.ts`, `buildCues`: words and
 times from the cleaned transcript, no AI), exported with the documents when
-Settings > Output > Subtitles is on (off by default). **S2:** Claude
-translates the cues to Spanish, Portuguese, French, German and Mandarin
-(Simplified), keeping each cue's times; code checks every cue comes back.
+Settings > Output > Subtitles is on (off by default). **S2 (done,
+unreleased):** the Social clips model (Sonnet by default) translates the
+cues into the languages ticked under Translated subtitles (Latin American
+Spanish, Brazilian Portuguese, French, German, Simplified Chinese), at
+export, one segment per cue (per speaker in a dash cue), batches of 100
+with context; each cue keeps its times. Saved per episode in
+`subtitles.json`, keyed by the source cues (`sourceKey`), so a language is
+translated once until the transcript changes. Checks
+(`checkTranslation`): every segment back once (one retry), else left in
+the original and counted; changed numbers noted. A failed language is a
+note on the export (`ExportResult.notes`), not a failed export. Not yet run
+against the real Claude API on a real episode (needs the owner's key in
+the app).
 **S3:** translated captions burned into clip videos. **S4:** a bundled CJK
 font and Chinese line breaking for Mandarin captions. The owner picked
 these six languages (English plus five) on 2026-10-18.
@@ -106,7 +116,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   found from the raw words (removed fillers are still in the audio), named
   as in review (`rawSpeakerNames`); `social.oneSpeaker` trims to them. A
   clip's pull quote and keywords are checked the same way (`checkQuote`,
-  `checkKeywords`): their text always comes from the transcript.
+  `checkKeywords`): their text always comes from the transcript. Subtitle
+  translations keep the source cues' times and are checked cue by cue
+  (`checkTranslation`).
 - **Third-party notices.** mediabunny (MPL-2.0) and the three video fonts
   (Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
   Add an entry there for any new bundled code whose license asks for one.

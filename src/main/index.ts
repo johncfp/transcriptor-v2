@@ -43,7 +43,9 @@ import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { EXPORTS_FOLDER, FolderWatcher } from "./watch/folderWatcher";
 import { findDriveForDesktop } from "./watch/driveFolder";
-import { buildCues, languageName, subtitleFileName, SUBTITLE_FORMATS, toSrt, toVtt } from "../shared/subtitles";
+import { buildCues, languageName, subtitleFileName, SUBTITLE_FORMATS, toSrt, toVtt, type Cue } from "../shared/subtitles";
+import { segmentsOf, sourceKey, translatedCues, translationLanguage, TRANSLATION_LANGUAGES, type SubtitleTranslations } from "../shared/subtitleTranslation";
+import { translateSubtitles } from "./writing/subtitles";
 
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
@@ -236,11 +238,51 @@ function start(): void {
       // Subtitles of the reviewed transcript, with the episode's documents (not with the clips' own export).
       const subtitleFormats = opts?.clipsOnly ? [] : SUBTITLE_FORMATS.filter((f) => s.output.subtitles[f]);
       const cues = subtitleFormats.length ? buildCues(turns) : [];
-      const subtitleFiles = subtitleFormats.map((f) => ({
-        name: subtitleFileName(base, languageName(data.transcript.language), f),
-        data: f === "srt" ? toSrt(cues) : toVtt(cues),
-      }));
-      return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+      const sourceLanguage = languageName(data.transcript.language);
+      const subtitleFiles: { name: string; data: string }[] = [];
+      const addSubtitles = (language: string, list: Cue[]) => {
+        for (const f of subtitleFormats) subtitleFiles.push({ name: subtitleFileName(base, language, f), data: f === "srt" ? toSrt(list) : toVtt(list) });
+      };
+      addSubtitles(sourceLanguage, cues);
+      // Translations: each language once per version of the subtitles, saved with the episode. One
+      // that can't be made is a note on the export rather than a failed export.
+      const notes: string[] = [];
+      const languages = subtitleFormats.length ? TRANSLATION_LANGUAGES.filter((l) => s.output.subtitles.translate[l.id]) : [];
+      if (languages.length) {
+        const segments = segmentsOf(cues);
+        const key = sourceKey(segments);
+        const saved = queue!.subtitleTranslations(data.job.id);
+        const store: SubtitleTranslations = saved?.source === key ? saved : { version: 1, source: key, languages: {} };
+        const setup = socialSetup();
+        for (const lang of languages) {
+          if (lang.name === sourceLanguage) continue;
+          let done = store.languages[lang.id];
+          if (!done) {
+            if (!setup.apiKey) {
+              notes.push(`${lang.name} subtitles weren't made: add a ${setup.writer.label} key in Settings › API keys.`);
+              continue;
+            }
+            try {
+              const result = await translateSubtitles({
+                segments,
+                source: sourceLanguage,
+                target: lang.id,
+                writer: setup.writer,
+                call: { apiKey: setup.apiKey, model: setup.model, baseUrl: setup.baseUrl, effort: setup.effort, signal: opts?.signal },
+              });
+              done = { provider: setup.writer.id, model: setup.model, at: new Date().toISOString(), ...result };
+              store.languages[lang.id] = done;
+              queue!.saveSubtitleTranslations(data.job.id, store);
+            } catch (err) {
+              notes.push(`${lang.name} subtitles couldn't be translated: ${err instanceof Error ? err.message : String(err)}`);
+              continue;
+            }
+          }
+          notes.push(...done.problems.map((p) => `${translationLanguage(lang.id).name} subtitles: ${p}`));
+          addSubtitles(lang.name, translatedCues(cues, segments, done.texts, lang.id));
+        }
+      }
+      const result = await writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
         files: subtitleFiles,
         clips,
         // The episode's own export makes no videos, so it leaves those from the Clips tab in place.
@@ -253,6 +295,7 @@ function start(): void {
           logo: branding.logo ? loadLogo(userData, branding.logo) : undefined,
         },
       });
+      return notes.length ? { ...result, notes } : result;
     },
     autoExport: () => settings.get().output.autoExport,
     reviewOptions: () => {

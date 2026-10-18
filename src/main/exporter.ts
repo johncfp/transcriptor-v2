@@ -12,6 +12,8 @@ export type PdfRenderer = (html: string, folder: string) => Promise<Uint8Array>;
 export interface ExportResult {
   folder: string;
   files: string[];
+  /** Things to know that didn't stop the export (a subtitle translation that failed, say). */
+  notes?: string[];
 }
 
 /**

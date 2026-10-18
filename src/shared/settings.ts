@@ -1,6 +1,7 @@
 import { EFFORTS, type Effort } from "./providers";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
 import { VOICE_IDS, type VoiceId } from "./voices";
+import type { TranslationLanguage } from "./subtitleTranslation";
 import type { PlatformId } from "./social";
 import {
   BACKGROUND_FILE,
@@ -47,8 +48,11 @@ export interface Settings {
     /** Empty means the default: Documents/Transcriptor 2. */
     folder: string;
     formats: { docx: boolean; txt: boolean; pdf: boolean; googleDoc: boolean };
-    /** Subtitle files of the transcript (src/shared/subtitles.ts), exported with the documents. */
-    subtitles: { srt: boolean; vtt: boolean };
+    /**
+     * Subtitle files of the transcript (src/shared/subtitles.ts), exported with the documents;
+     * `translate`: also in these languages, translated by the Social clips model (src/shared/subtitleTranslation.ts).
+     */
+    subtitles: { srt: boolean; vtt: boolean; translate: Record<TranslationLanguage, boolean> };
     /** Export as soon as show notes are written. */
     autoExport: boolean;
     /** Each turn's start time in the exported transcript. */
@@ -250,7 +254,7 @@ export const DEFAULT_SETTINGS: Settings = {
   output: {
     folder: "",
     formats: { docx: true, txt: false, pdf: false, googleDoc: false },
-    subtitles: { srt: false, vtt: false },
+    subtitles: { srt: false, vtt: false, translate: { es: false, pt: false, fr: false, de: false, zh: false } },
     autoExport: true,
     transcriptTimestamps: true,
     speakerFormat: "stacked",

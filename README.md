@@ -36,7 +36,10 @@ see [INSTALL.md](INSTALL.md).
    (Documents/Transcriptor 2 unless you pick another), with a choice of five
    speaker formats. Optionally, subtitles of the reviewed transcript too, as
    SRT and/or WebVTT, timed to the episode's audio (two lines of at most 42
-   characters, a dash per speaker when a quick reply shares a cue). Runs automatically when the notes are written, or from the
+   characters, a dash per speaker when a quick reply shares a cue), and
+   translated into any of Spanish, Portuguese, French, German and
+   Mandarin by the Social clips model, keeping the original's timing; each
+   language is translated once per episode and checked cue by cue. Runs automatically when the notes are written, or from the
    episode's Export card. The Word files use real heading and list styles, so
    they convert cleanly to Google Docs. PDF is also available, and Word and
    PDF can have a cover page, a logo, and header and footer text.

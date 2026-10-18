@@ -262,6 +262,13 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const claude = await startFakeAnthropic({
         draft: SMOKE_DRAFT,
         social: SMOKE_CLIPS,
+        // Subtitle translation: each asked-for segment back, marked, so the files can be told apart.
+        subtitles: (prompt) => ({
+          segments: [...(prompt.split("Translate these segments:\n")[1] ?? "").split("\n\nContext after")[0]!.matchAll(/^(\d+): (.*)$/gm)].map((m) => ({
+            id: Number(m[1]),
+            text: `«${m[2]}»`,
+          })),
+        }),
         research: {
           searched: ["https://pete.example/"],
           input: {
@@ -515,9 +522,30 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         !readdirSync(pdfExport.folder).some((f) => f.startsWith(".t2-print"));
       // Subtitles: with SRT and WebVTT on, the episode's export adds both, named for the transcript's language
       // ("en"), and their words are the reviewed transcript's, in order.
-      await js(`window.api.updateSettings({ output: { subtitles: { srt: true, vtt: true } } })`);
-      const subExport = await js<{ files: string[] }>(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
-      await js(`window.api.updateSettings({ output: { subtitles: { srt: false, vtt: false } } })`);
+      // Spanish and Mandarin too: translated by the Social model (the fake Claude), with the English cues' times.
+      // A second export uses the saved translations without asking again.
+      await js(`window.api.updateSettings({ output: { subtitles: { srt: true, vtt: true, translate: { es: true, zh: true } } } })`);
+      const translationRequests = () => claude.requests.filter((r) => JSON.stringify(r.body.output_config ?? {}).includes('"segments"')).length;
+      const subExport = await js<{ files: string[]; notes?: string[] }>(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
+      const askedOnce = translationRequests();
+      await js(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
+      const askedAgain = translationRequests() - askedOnce;
+      await js(`window.api.updateSettings({ output: { subtitles: { srt: false, vtt: false, translate: { es: false, zh: false } } } })`);
+      const srtOf = (lang: string) => {
+        const f = subExport.files.find((x) => x.endsWith(` - Subtitles (${lang}).srt`));
+        return f ? readFileSync(f, "utf8") : "";
+      };
+      const timesOf = (text: string) => text.split("\r\n").filter((l) => l.includes(" --> "));
+      const spanish = srtOf("Spanish"), mandarin = srtOf("Mandarin");
+      const translationsOk =
+        askedOnce === 2 &&
+        askedAgain === 0 &&
+        !subExport.notes?.length &&
+        spanish.includes("«") &&
+        mandarin.includes("«") &&
+        subExport.files.some((f) => f.endsWith(" - Subtitles (Spanish).vtt")) &&
+        JSON.stringify(timesOf(spanish)) === JSON.stringify(timesOf(srtOf("English"))) &&
+        JSON.stringify(timesOf(mandarin)) === JSON.stringify(timesOf(srtOf("English")));
       const srtPath = subExport.files.find((f) => f.endsWith(" - Subtitles (English).srt"));
       const vttPath = subExport.files.find((f) => f.endsWith(" - Subtitles (English).vtt"));
       const srt = srtPath ? readFileSync(srtPath, "utf8") : "";
@@ -527,6 +555,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         .filter((l) => l && !/^\d+$/.test(l) && !l.includes(" --> "))
         .join(" ");
       const subtitlesOk =
+        translationsOk &&
         srt.startsWith("1\r\n00:00:") &&
         vtt.startsWith("WEBVTT\n\n00:00:") &&
         srtWords.startsWith("Hey, I'm Nigel. Welcome to the show, Pete. Thanks, glad to be here.") &&
@@ -951,6 +980,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipsView,
         clipPlayback,
         clipsCollapsed,
+        subtitles: { files: subExport.files.filter((f) => f.includes("Subtitles")).map((f) => f.split(/[\\/]/).pop()), notes: subExport.notes ?? [], askedOnce, askedAgain },
         clipPreview: { still: clipPreviewStill, early: clipPreviewEarly, later: clipPreviewLater, stopped: clipPreviewStopped, outro: clipPreviewOutro, afterOutro: clipPreviewAfterOutro, levels: clipLevels.length },
         savedClip,
         clipsExport,
