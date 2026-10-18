@@ -243,6 +243,23 @@ export function SettingsScreen({ guard }: { guard: MutableRefObject<SettingsGuar
                   <Check label="Google Doc (not set up yet)" checked={false} disabled onChange={() => {}} />
                 </div>
               </Row>
+              <Row
+                label="Subtitles"
+                hint="Subtitle files of the reviewed transcript, timed to the episode's audio, saved with the documents. SRT suits most video editors and players; WebVTT suits YouTube and the web."
+              >
+                <div className="checks">
+                  <Check
+                    label="SubRip (.srt)"
+                    checked={output.subtitles.srt}
+                    onChange={(v) => update({ output: { subtitles: { ...output.subtitles, srt: v } } })}
+                  />
+                  <Check
+                    label="WebVTT (.vtt)"
+                    checked={output.subtitles.vtt}
+                    onChange={(v) => update({ output: { subtitles: { ...output.subtitles, vtt: v } } })}
+                  />
+                </div>
+              </Row>
               <Toggle
                 label="Export automatically when show notes are ready"
                 hint="Saves the transcript, show notes and reference file in a folder for the episode. You can also export from the episode at any time."

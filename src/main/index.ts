@@ -43,6 +43,7 @@ import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { EXPORTS_FOLDER, FolderWatcher } from "./watch/folderWatcher";
 import { findDriveForDesktop } from "./watch/driveFolder";
+import { buildCues, languageName, subtitleFileName, SUBTITLE_FORMATS, toSrt, toVtt } from "../shared/subtitles";
 
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
@@ -232,7 +233,15 @@ function start(): void {
             ...cut.videos.flatMap((perShape, i) => perShape.map((mp4, j) => ({ name: clipVideoName(base, i + 1, kept[i]!.title, shapes[j]!), data: mp4 }))),
           ]
         : undefined;
+      // Subtitles of the reviewed transcript, with the episode's documents (not with the clips' own export).
+      const subtitleFormats = opts?.clipsOnly ? [] : SUBTITLE_FORMATS.filter((f) => s.output.subtitles[f]);
+      const cues = subtitleFormats.length ? buildCues(turns) : [];
+      const subtitleFiles = subtitleFormats.map((f) => ({
+        name: subtitleFileName(base, languageName(data.transcript.language), f),
+        data: f === "srt" ? toSrt(cues) : toVtt(cues),
+      }));
       return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+        files: subtitleFiles,
         clips,
         // The episode's own export makes no videos, so it leaves those from the Clips tab in place.
         replaceClips: opts?.clipsOnly ? ["wav", "mp4"] : ["wav"],

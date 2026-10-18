@@ -513,6 +513,25 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         pdfExport.files.filter((f) => f.endsWith(".wav")).length === 1 &&
         pdfFiles.every((f) => readFileSync(f).subarray(0, 5).toString() === "%PDF-") &&
         !readdirSync(pdfExport.folder).some((f) => f.startsWith(".t2-print"));
+      // Subtitles: with SRT and WebVTT on, the episode's export adds both, named for the transcript's language
+      // ("en"), and their words are the reviewed transcript's, in order.
+      await js(`window.api.updateSettings({ output: { subtitles: { srt: true, vtt: true } } })`);
+      const subExport = await js<{ files: string[] }>(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
+      await js(`window.api.updateSettings({ output: { subtitles: { srt: false, vtt: false } } })`);
+      const srtPath = subExport.files.find((f) => f.endsWith(" - Subtitles (English).srt"));
+      const vttPath = subExport.files.find((f) => f.endsWith(" - Subtitles (English).vtt"));
+      const srt = srtPath ? readFileSync(srtPath, "utf8") : "";
+      const vtt = vttPath ? readFileSync(vttPath, "utf8") : "";
+      const srtWords = srt
+        .split("\r\n")
+        .filter((l) => l && !/^\d+$/.test(l) && !l.includes(" --> "))
+        .join(" ");
+      const subtitlesOk =
+        srt.startsWith("1\r\n00:00:") &&
+        vtt.startsWith("WEBVTT\n\n00:00:") &&
+        srtWords.startsWith("Hey, I'm Nigel. Welcome to the show, Pete. Thanks, glad to be here.") &&
+        // The clips' own export doesn't write subtitles.
+        !subExport.files.some((f) => f.includes("Subtitles") && f.includes("Clips"));
       // Branding: the app icon as the logo, then a Word and PDF export with a cover, header and footer.
       const logo = importLogo(app.getPath("userData"), join(__dirname, "..", "icon.png"));
       await js(`window.api.updateSettings({ output: { branding: {
@@ -544,6 +563,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         notesText.includes("https://pete.example/") &&
         exportOk &&
         pdfOk &&
+        subtitlesOk &&
         brandingOk &&
         checksText.includes("1 quote left out") &&
         referenceText.includes("Thanks, glad to be here.") &&
@@ -920,7 +940,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, clipVideos, exportCancel, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, subtitlesOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, clipVideos, exportCancel, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,

@@ -15,7 +15,19 @@ keywords per clip, picked by the clip model, checked against the transcript
 and editable on the Clips tab. Video sync with the outro was checked on macOS
 and Windows CI (`video-sync-check`, run 38911087462). Clips suggested before
 beta.8 have no pull quote or keywords until picked on the Clips tab or
-suggested again. Nothing planned next; wait for the owner's feedback.
+suggested again.
+
+In progress (branch `claude/subtitles`, from main after beta.8): subtitles,
+in milestones checked in with the owner. **S1 (done, unreleased):** SRT/VTT
+of the reviewed transcript (`src/shared/subtitles.ts`, `buildCues`: words and
+times from the cleaned transcript, no AI), exported with the documents when
+Settings > Output > Subtitles is on (off by default). **S2:** Claude
+translates the cues to Spanish, Portuguese, French, German and Mandarin
+(Simplified), keeping each cue's times; code checks every cue comes back.
+**S3:** translated captions burned into clip videos. **S4:** a bundled CJK
+font and Chinese line breaking for Mandarin captions. The owner picked
+these six languages (English plus five) on 2026-10-18.
+
 Untested: macOS for beta.7's crosstalk handling and beta.8's motion in the
 app itself, a Windows N edition, and the Drive for Desktop watcher on a real
 Drive.

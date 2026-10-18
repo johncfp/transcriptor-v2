@@ -16,6 +16,7 @@ export function ExportCard({ job, settings, hasNotes }: { job: Job; settings: Se
   useEffect(() => setError(job.exportError ?? ""), [job.exportError]);
 
   const chosen = (Object.keys(formats) as ExportFormat[]).filter((f) => formats[f]);
+  const subtitles = (["srt", "vtt"] as const).filter((f) => settings.output.subtitles[f]).map((f) => `.${f}`);
   const exported = job.exported;
 
   return (
@@ -40,6 +41,7 @@ export function ExportCard({ job, settings, hasNotes }: { job: Job; settings: Se
       </div>
       <p className="hint">
         {hasNotes ? "Transcript, show notes and reference file." : "The transcript now; show notes and the reference file once they're written."}{" "}
+        {subtitles.length > 0 && `Subtitles too (${subtitles.join(", ")}), as set in Settings › Output. `}
         Saved to {job.exportRoot || settings.output.folder || "Documents › Transcriptor 2"}, in a folder for this episode.
       </p>
       <div className="notes-actions">

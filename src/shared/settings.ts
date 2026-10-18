@@ -47,6 +47,8 @@ export interface Settings {
     /** Empty means the default: Documents/Transcriptor 2. */
     folder: string;
     formats: { docx: boolean; txt: boolean; pdf: boolean; googleDoc: boolean };
+    /** Subtitle files of the transcript (src/shared/subtitles.ts), exported with the documents. */
+    subtitles: { srt: boolean; vtt: boolean };
     /** Export as soon as show notes are written. */
     autoExport: boolean;
     /** Each turn's start time in the exported transcript. */
@@ -248,6 +250,7 @@ export const DEFAULT_SETTINGS: Settings = {
   output: {
     folder: "",
     formats: { docx: true, txt: false, pdf: false, googleDoc: false },
+    subtitles: { srt: false, vtt: false },
     autoExport: true,
     transcriptTimestamps: true,
     speakerFormat: "stacked",
