@@ -1,6 +1,7 @@
 import { EFFORTS, type Effort } from "./providers";
 import { DEFAULT_CONFIDENCE_THRESHOLDS } from "./confidence";
 import { VOICE_IDS, type VoiceId } from "./voices";
+import type { TranslationLanguage } from "./subtitleTranslation";
 import type { PlatformId } from "./social";
 import {
   BACKGROUND_FILE,
@@ -47,6 +48,11 @@ export interface Settings {
     /** Empty means the default: Documents/Transcriptor 2. */
     folder: string;
     formats: { docx: boolean; txt: boolean; pdf: boolean; googleDoc: boolean };
+    /**
+     * Subtitle files of the transcript (src/shared/subtitles.ts), exported with the documents;
+     * `translate`: also in these languages, translated by the Social clips model (src/shared/subtitleTranslation.ts).
+     */
+    subtitles: { srt: boolean; vtt: boolean; translate: Record<TranslationLanguage, boolean> };
     /** Export as soon as show notes are written. */
     autoExport: boolean;
     /** Each turn's start time in the exported transcript. */
@@ -121,6 +127,8 @@ export interface VideoSettings {
   showSpeakers: boolean;
   waveform: boolean;
   waveformStyle: WaveformStyle;
+  /** Also make each video with its captions in these languages (the subtitle translations; subtitles S3). */
+  languages: Record<TranslationLanguage, boolean>;
   /** Animation, each part on its own (see MOTION in src/shared/video.ts). */
   motion: VideoMotion;
 }
@@ -248,6 +256,7 @@ export const DEFAULT_SETTINGS: Settings = {
   output: {
     folder: "",
     formats: { docx: true, txt: false, pdf: false, googleDoc: false },
+    subtitles: { srt: false, vtt: false, translate: { es: false, pt: false, fr: false, de: false, zh: false } },
     autoExport: true,
     transcriptTimestamps: true,
     speakerFormat: "stacked",
@@ -304,6 +313,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showSpeakers: true,
     waveform: true,
     waveformStyle: "pulse",
+    languages: { es: false, pt: false, fr: false, de: false, zh: false },
     motion: { hook: true, pop: true, glow: true, progress: true, outro: true, nameCards: true, pullQuote: true, keywords: true },
   },
   template: "full",

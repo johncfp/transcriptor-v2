@@ -5,6 +5,7 @@ import { defaultEdits, type CleanupOptions, type EpisodeEdits } from "../shared/
 import { formatBytes, isAudioFile, SETTLED, type AddFilesResult, type Job, type JobSource } from "../shared/jobs";
 import { providerById } from "../shared/providers";
 import type { SocialResult } from "../shared/clips";
+import type { SubtitleTranslations } from "../shared/subtitleTranslation";
 import { EMPTY_DETAILS, episodeNumberFromFileName, type EpisodeDetails, type WritingResult } from "../shared/showNotes";
 import { suggestSpeakers } from "../shared/speakerNames";
 import type { Transcript } from "../shared/transcript";
@@ -264,6 +265,16 @@ export class JobQueue {
   social(id: string): SocialResult | null {
     const saved = this.readEpisodeFile<SocialResult>(id, "social.json");
     return saved?.version === 1 ? saved : null;
+  }
+
+  /** The episode's translated subtitles, kept so each language is translated once (see src/shared/subtitleTranslation.ts). */
+  subtitleTranslations(id: string): SubtitleTranslations | null {
+    const saved = this.readEpisodeFile<SubtitleTranslations>(id, "subtitles.json");
+    return saved?.version === 1 ? saved : null;
+  }
+
+  saveSubtitleTranslations(id: string, saved: SubtitleTranslations): void {
+    if (this.find(id)) writeJsonAtomic(join(this.episodeDir(id), "subtitles.json"), saved);
   }
 
   /** Save clips changed in review; ignored while new ones are being suggested. */

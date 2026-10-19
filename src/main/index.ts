@@ -21,7 +21,7 @@ import { anthropicWriter } from "./writing/anthropic";
 import { writeEpisode, writerById } from "./writing";
 import { suggestClips } from "./writing/social";
 import { clipLimits, PLATFORMS, socialDefaultModel } from "../shared/social";
-import { clipContext, reviseClip, type ClipEdit } from "../shared/clips";
+import { clipContext, quoteText, reviseClip, type ClipEdit } from "../shared/clips";
 import { cutClips, type CutterOptions } from "./clipCutter";
 import { audioLevels, clipCaptionWords, SHAPES } from "../shared/video";
 import { readWav } from "../shared/wav";
@@ -43,6 +43,10 @@ import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { EXPORTS_FOLDER, FolderWatcher } from "./watch/folderWatcher";
 import { findDriveForDesktop } from "./watch/driveFolder";
+import { buildCues, languageName, subtitleFileName, SUBTITLE_FORMATS, toSrt, toVtt, type Cue } from "../shared/subtitles";
+import { segmentsOf, sourceKey, translatedCues, translationLanguage, TRANSLATION_LANGUAGES, type SubtitleTranslations, type TranslationLanguage } from "../shared/subtitleTranslation";
+import { clipCues } from "../shared/videoLanguages";
+import { translateSubtitles } from "./writing/subtitles";
 
 // The smoke test must not touch the real profile, so it swaps userData
 // before anything reads it.
@@ -198,11 +202,72 @@ function start(): void {
       const documents = opts?.clipsOnly ? all.filter((d) => d.kind === "Social Clips") : all;
       const chosen = formats ?? EXPORT_FORMATS.filter((f) => s.output.formats[f]);
       const { branding } = s.output;
-      // Kept clips' audio, cut from the episode. With clips but none kept, earlier clip files are cleared.
-      // Exporting the kept clips (Clips tab) also makes their videos, when video clips are on.
       const base = safeFileName(label);
+      const notes: string[] = [];
+      const sourceLanguage = languageName(data.transcript.language);
+      const setup = socialSetup();
+      // Translated subtitles: each language once per version of the subtitles, saved with the episode
+      // (and the clips' pull quotes, for translated videos). One that can't be made is a note on the
+      // export rather than a failed export.
+      const translate = async (wanted: TranslationLanguage[], cues: Cue[], quotes: string[]) => {
+        const segments = segmentsOf(cues);
+        const key = sourceKey(segments);
+        const saved = queue!.subtitleTranslations(data.job.id);
+        const store: SubtitleTranslations = saved?.source === key ? saved : { version: 1, source: key, languages: {} };
+        const out = new Map<TranslationLanguage, { cues: Cue[]; quotes: Record<string, string> }>();
+        const call = { apiKey: setup.apiKey ?? "", model: setup.model, baseUrl: setup.baseUrl, effort: setup.effort, signal: opts?.signal };
+        for (const lang of wanted) {
+          const { name } = translationLanguage(lang);
+          if (name === sourceLanguage) continue;
+          let done = store.languages[lang];
+          if (!done) {
+            if (!setup.apiKey) {
+              notes.push(`${name} wasn't made: add a ${setup.writer.label} key in Settings › API keys.`);
+              continue;
+            }
+            try {
+              const result = await translateSubtitles({ segments, source: sourceLanguage, target: lang, writer: setup.writer, call });
+              done = { provider: setup.writer.id, model: setup.model, at: new Date().toISOString(), ...result };
+              store.languages[lang] = done;
+              queue!.saveSubtitleTranslations(data.job.id, store);
+            } catch (err) {
+              notes.push(`${name} couldn't be translated: ${err instanceof Error ? err.message : String(err)}`);
+              continue;
+            }
+          }
+          notes.push(...done.problems.map((p) => `${name} subtitles: ${p}`));
+          const have = { ...(store.quotes?.[lang] ?? {}) };
+          const missing = [...new Set(quotes)].filter((q) => !have[q]);
+          if (missing.length && setup.apiKey) {
+            try {
+              const r = await translateSubtitles({ segments: missing.map((text, i) => ({ id: i, cue: i, text })), source: sourceLanguage, target: lang, writer: setup.writer, call });
+              // A quote that came back untranslated isn't kept, so it's asked for again next time.
+              missing.forEach((q, i) => r.texts[i] !== q && (have[q] = r.texts[i]!));
+              store.quotes = { ...store.quotes, [lang]: have };
+              queue!.saveSubtitleTranslations(data.job.id, store);
+            } catch (err) {
+              notes.push(`${name} pull quotes couldn't be translated: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          out.set(lang, { cues: translatedCues(cues, segments, done.texts, lang), quotes: have });
+        }
+        return out;
+      };
+
+      // Kept clips' audio, cut from the episode. With clips but none kept, earlier clip files are cleared.
+      // Exporting the kept clips (Clips tab) also makes their videos, when video clips are on: each
+      // shape with the original captions, and again in each caption language chosen (subtitles S3).
       const shapes = SHAPES.map((sh) => sh.id).filter((id) => s.video.shapes[id]);
       const withVideo = opts?.clipsOnly && s.video.enabled && shapes.length > 0 && kept.length > 0;
+      const videoLanguages = withVideo ? TRANSLATION_LANGUAGES.filter((l) => s.video.languages[l.id]).map((l) => l.id) : [];
+      const quoteOf = (c: (typeof kept)[number]) => (c.quote ? quoteText(turns, c.quote) : null);
+      const videoTranslations = videoLanguages.length
+        ? await translate(videoLanguages, buildCues(turns), kept.map(quoteOf).filter((q): q is string => !!q))
+        : new Map<TranslationLanguage, { cues: Cue[]; quotes: Record<string, string> }>();
+      const renders = shapes.flatMap((shape) => [
+        { shape, language: null },
+        ...videoLanguages.filter((l) => videoTranslations.has(l)).map((language) => ({ shape, language })),
+      ]);
       const background = s.video.backgroundType === "image" && s.video.backgroundImage ? backgroundPath(userData, s.video.backgroundImage) : null;
       const cut = data.social
         ? await cutClips(
@@ -220,7 +285,18 @@ function start(): void {
                     hosts: s.show.hosts,
                     logo: s.video.showLogo && branding.logo ? (loadLogo(userData, branding.logo)?.png ?? null) : null,
                     background: background ? readFileSync(background) : null,
-                    clips: kept.map((c) => ({ words: clipCaptionWords(turns, c), shapes, quote: c.quote ?? null, keywords: c.keywords ?? [] })),
+                    clips: kept.map((c) => ({
+                      words: clipCaptionWords(turns, c),
+                      renders,
+                      quote: c.quote ?? null,
+                      keywords: c.keywords ?? [],
+                      translations: Object.fromEntries(
+                        [...videoTranslations].map(([language, t]) => {
+                          const q = quoteOf(c);
+                          return [language, { language, cues: clipCues(t.cues, c), quote: (q && t.quotes[q]) || null }];
+                        }),
+                      ),
+                    })),
                   }
                 : undefined,
             },
@@ -229,10 +305,28 @@ function start(): void {
       const clips = cut
         ? [
             ...cut.wavs.map((wav, i) => ({ name: clipFileName(base, i + 1, kept[i]!.title), data: wav })),
-            ...cut.videos.flatMap((perShape, i) => perShape.map((mp4, j) => ({ name: clipVideoName(base, i + 1, kept[i]!.title, shapes[j]!), data: mp4 }))),
+            ...cut.videos.flatMap((perRender, i) =>
+              perRender.map((mp4, j) => {
+                const r = renders[j]!;
+                return { name: clipVideoName(base, i + 1, kept[i]!.title, r.shape, r.language ? translationLanguage(r.language).name : null), data: mp4 };
+              }),
+            ),
           ]
         : undefined;
-      return writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+      // Subtitles of the reviewed transcript, with the episode's documents (not with the clips' own export).
+      const subtitleFormats = opts?.clipsOnly ? [] : SUBTITLE_FORMATS.filter((f) => s.output.subtitles[f]);
+      const cues = subtitleFormats.length ? buildCues(turns) : [];
+      const subtitleFiles: { name: string; data: string }[] = [];
+      const addSubtitles = (language: string, list: Cue[]) => {
+        for (const f of subtitleFormats) subtitleFiles.push({ name: subtitleFileName(base, language, f), data: f === "srt" ? toSrt(list) : toVtt(list) });
+      };
+      addSubtitles(sourceLanguage, cues);
+      const subtitleLanguages = subtitleFormats.length ? TRANSLATION_LANGUAGES.filter((l) => s.output.subtitles.translate[l.id]).map((l) => l.id) : [];
+      if (subtitleLanguages.length) {
+        for (const [lang, t] of await translate(subtitleLanguages, cues, [])) addSubtitles(translationLanguage(lang).name, t.cues);
+      }
+      const result = await writeExport(data.job.exportRoot || s.output.folder || defaultOutputFolder(), label, documents, chosen, {
+        files: subtitleFiles,
         clips,
         // The episode's own export makes no videos, so it leaves those from the Clips tab in place.
         replaceClips: opts?.clipsOnly ? ["wav", "mp4"] : ["wav"],
@@ -244,6 +338,7 @@ function start(): void {
           logo: branding.logo ? loadLogo(userData, branding.logo) : undefined,
         },
       });
+      return notes.length ? { ...result, notes } : result;
     },
     autoExport: () => settings.get().output.autoExport,
     reviewOptions: () => {
@@ -623,6 +718,7 @@ function registerIpc(settings: SettingsStore, keys: KeyStore, jobs: JobQueue, up
   ipcMain.handle(IPC.writeNotes, (_e, id: string, details: EpisodeDetails) => jobs.write(id, sanitizeDetails(details)));
   ipcMain.handle(IPC.getWriting, (_e, id: string) => jobs.writing(id));
   ipcMain.handle(IPC.getSocial, (_e, id: string) => jobs.social(id));
+  ipcMain.handle(IPC.getSubtitleTranslations, (_e, id: string) => jobs.subtitleTranslations(id));
   // Each changed clip is checked again here, against the transcript, before it's saved.
   ipcMain.handle(IPC.saveClips, (_e, id: string, edits: unknown) => {
     const social = jobs.social(id);

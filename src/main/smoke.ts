@@ -195,6 +195,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       await js(`window.api.updateSettings({
         show: { name: "This Is A Test Show", hosts: ["Nigel T."] },
         output: { folder: ${JSON.stringify(exportRoot)} },
+        // Spanish captions on the clip videos (made when video clips are turned on, further down). Set before
+        // the episode opens, which reads the settings once, as it does after a visit to Settings.
+        video: { languages: { es: true, zh: true } },
       })`);
 
       // Pipeline: queue a file (plus one that must be rejected) and wait for the transcript.
@@ -262,6 +265,14 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const claude = await startFakeAnthropic({
         draft: SMOKE_DRAFT,
         social: SMOKE_CLIPS,
+        // Subtitle translation: each asked-for segment back, marked, so the files can be told apart;
+        // Mandarin in Chinese characters, so its videos need the Chinese font.
+        subtitles: (prompt, system) => ({
+          segments: [...(prompt.split("Translate these segments:\n")[1] ?? "").split("\n\nContext after")[0]!.matchAll(/^(\d+): (.*)$/gm)].map((m) => ({
+            id: Number(m[1]),
+            text: system.includes("Simplified Chinese") ? `欢迎来到节目，谢谢你。${m[1]}` : `«${m[2]}»`,
+          })),
+        }),
         research: {
           searched: ["https://pete.example/"],
           input: {
@@ -429,7 +440,8 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         savedClip.captions.x?.problems.some((p) => p.includes("2031")) === true;
 
       // Export the kept clip: its WAV, cut by the hidden mediabunny page, the Social Clips document,
-      // and with video clips on, an MP4 per chosen shape (vertical and square here).
+      // and with video clips on, an MP4 per chosen shape (vertical and square here), each again with
+      // Spanish captions (translated by the fake Claude on the way).
       await js(`window.api.updateSettings({ video: { enabled: true, shapes: { vertical: true, square: true, wide: false } } })`);
       await click("button", "Export 1 kept clip");
       let clipsExport: { folder: string; files: string[] } | null = null;
@@ -459,13 +471,48 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       // The videos: an MP4 per shape, 7.5 s long, with H.264 video and AAC audio (resampled from 16 kHz).
       const videoPaths = clipsExport?.files.filter((f) => f.endsWith(".mp4")) ?? [];
       const videos = videoPaths.map((f) => ({ name: f.split(/[\\/]/).pop(), ...mp4Info(f) }));
+      // With Spanish captions on, the preview can show them too: pick Spanish and the frame changes.
+      await click("[aria-label='Clip preview language'] .segment", "Spanish");
+      await pause(800);
+      const previewSpanish = await js<{ hash: string; hint: boolean }>(`(() => {
+        const c = document.querySelector("canvas[aria-label='Clip video preview']");
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let h = 0;
+        for (let i = 0; i < d.length; i += 4 * 53) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
+        return { hash: c.width + "x" + c.height + ":" + h, hint: document.body.innerText.includes("isn't translated yet") };
+      })()`);
+      writeFileSync(
+        join(dir, "clip-preview-spanish.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
+      // Mandarin: Chinese characters, drawn with the bundled Chinese font (loaded for just these characters).
+      await click("[aria-label='Clip preview language'] .segment", "Mandarin");
+      await pause(1500);
+      const previewMandarin = await js<{ font: boolean; hint: boolean }>(`({
+        font: document.fonts.check('700 40px "T2 Noto SC"', "欢迎来到节目"),
+        hint: document.body.innerText.includes("isn't translated yet"),
+      })`);
+      writeFileSync(
+        join(dir, "clip-preview-mandarin.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
+      await click("[aria-label='Clip preview language'] .segment", "Original");
+      await pause(500);
+      const previewOriginal = await previewHash();
       const clipVideos =
-        videos.length === 2 &&
+        videos.length === 6 &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical, Mandarin).mp4") &&
+        previewMandarin.font &&
+        !previewMandarin.hint &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical).mp4") &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square).mp4") &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical, Spanish).mp4") &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square, Spanish).mp4") &&
         // The 7.5 s clip plus the 2.5 s outro card (the show has a name).
         videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 10) < 0.1) &&
-        videoProgress?.total === 2 * Math.ceil(10 * 30);
+        videoProgress?.total === 6 * Math.ceil(10 * 30) &&
+        !previewSpanish.hint &&
+        previewSpanish.hash !== previewOriginal;
 
       // Cancelling an export stops it, says so, and leaves the earlier files alone.
       await click("button", "Export 1 kept clip");
@@ -513,6 +560,49 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         pdfExport.files.filter((f) => f.endsWith(".wav")).length === 1 &&
         pdfFiles.every((f) => readFileSync(f).subarray(0, 5).toString() === "%PDF-") &&
         !readdirSync(pdfExport.folder).some((f) => f.startsWith(".t2-print"));
+      // Subtitles: with SRT and WebVTT on, the episode's export adds both, named for the transcript's language
+      // ("en"), and their words are the reviewed transcript's, in order.
+      // Spanish and Mandarin too: translated by the Social model (the fake Claude), with the English cues' times.
+      // A second export uses the saved translations without asking again.
+      await js(`window.api.updateSettings({ output: { subtitles: { srt: true, vtt: true, translate: { es: true, zh: true } } } })`);
+      const translationRequests = () => claude.requests.filter((r) => JSON.stringify(r.body.output_config ?? {}).includes('"segments"')).length;
+      const askedBefore = translationRequests();
+      const subExport = await js<{ files: string[]; notes?: string[] }>(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
+      const askedOnce = translationRequests() - askedBefore;
+      await js(`window.api.listJobs().then((j) => window.api.exportEpisode(j[0].id, ["txt"]))`);
+      const askedAgain = translationRequests() - askedBefore - askedOnce;
+      await js(`window.api.updateSettings({ output: { subtitles: { srt: false, vtt: false, translate: { es: false, zh: false } } } })`);
+      const srtOf = (lang: string) => {
+        const f = subExport.files.find((x) => x.endsWith(` - Subtitles (${lang}).srt`));
+        return f ? readFileSync(f, "utf8") : "";
+      };
+      const timesOf = (text: string) => text.split("\r\n").filter((l) => l.includes(" --> "));
+      const spanish = srtOf("Spanish"), mandarin = srtOf("Mandarin");
+      // Spanish and Mandarin were translated for the videos already, so nothing is asked for.
+      const translationsOk =
+        askedOnce === 0 &&
+        askedAgain === 0 &&
+        !subExport.notes?.length &&
+        spanish.includes("«") &&
+        mandarin.includes("欢迎来到节目") &&
+        subExport.files.some((f) => f.endsWith(" - Subtitles (Spanish).vtt")) &&
+        JSON.stringify(timesOf(spanish)) === JSON.stringify(timesOf(srtOf("English"))) &&
+        JSON.stringify(timesOf(mandarin)) === JSON.stringify(timesOf(srtOf("English")));
+      const srtPath = subExport.files.find((f) => f.endsWith(" - Subtitles (English).srt"));
+      const vttPath = subExport.files.find((f) => f.endsWith(" - Subtitles (English).vtt"));
+      const srt = srtPath ? readFileSync(srtPath, "utf8") : "";
+      const vtt = vttPath ? readFileSync(vttPath, "utf8") : "";
+      const srtWords = srt
+        .split("\r\n")
+        .filter((l) => l && !/^\d+$/.test(l) && !l.includes(" --> "))
+        .join(" ");
+      const subtitlesOk =
+        translationsOk &&
+        srt.startsWith("1\r\n00:00:") &&
+        vtt.startsWith("WEBVTT\n\n00:00:") &&
+        srtWords.startsWith("Hey, I'm Nigel. Welcome to the show, Pete. Thanks, glad to be here.") &&
+        // The clips' own export doesn't write subtitles.
+        !subExport.files.some((f) => f.includes("Subtitles") && f.includes("Clips"));
       // Branding: the app icon as the logo, then a Word and PDF export with a cover, header and footer.
       const logo = importLogo(app.getPath("userData"), join(__dirname, "..", "icon.png"));
       await js(`window.api.updateSettings({ output: { branding: {
@@ -544,6 +634,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         notesText.includes("https://pete.example/") &&
         exportOk &&
         pdfOk &&
+        subtitlesOk &&
         brandingOk &&
         checksText.includes("1 quote left out") &&
         referenceText.includes("Thanks, glad to be here.") &&
@@ -632,7 +723,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         const video = [...document.querySelectorAll(".section")].find((s) => s.querySelector("h2")?.textContent === "Video clips");
         const checks = document.querySelector(".checks.two-col");
         return {
-          shapes: video.querySelectorAll(".checks input[type=checkbox]").length,
+          shapes: [...video.querySelectorAll(".row")].find((r) => r.querySelector(".row-label span")?.textContent === "Shapes").querySelectorAll("input[type=checkbox]").length,
           fonts: [...video.querySelectorAll("select[aria-label=Font] option")].map((o) => o.textContent),
           styles: [...video.querySelectorAll("[aria-label='Caption style'] .segment")].map((b) => b.textContent),
           waveStyles: [...video.querySelectorAll("[aria-label='Waveform style'] .segment")].map((b) => b.textContent),
@@ -920,7 +1011,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
           // The template comes before the provider and model on the Show notes tab.
           sections.indexOf("Show notes template") < sections.indexOf("Show notes") &&
           windowIcon,
-        checks: { pipeline, review, playback, notes, pdfOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, clipVideos, exportCancel, folderWatchOk, search, themes, saveFlow, customVoice },
+        checks: { pipeline, review, playback, notes, pdfOk, subtitlesOk, brandingOk, modelPicker, socialOk, videoSettings, socialColumns, socialStep, clipsReview, clipsExported, clipVideos, exportCancel, folderWatchOk, search, themes, saveFlow, customVoice },
         folderWatch,
         modelOptions,
         effortOptions,
@@ -931,6 +1022,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         clipsView,
         clipPlayback,
         clipsCollapsed,
+        subtitles: { files: subExport.files.filter((f) => f.includes("Subtitles")).map((f) => f.split(/[\\/]/).pop()), notes: subExport.notes ?? [], askedOnce, askedAgain },
         clipPreview: { still: clipPreviewStill, early: clipPreviewEarly, later: clipPreviewLater, stopped: clipPreviewStopped, outro: clipPreviewOutro, afterOutro: clipPreviewAfterOutro, levels: clipLevels.length },
         savedClip,
         clipsExport,

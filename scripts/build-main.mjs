@@ -44,6 +44,8 @@ const fonts = [
   ["@fontsource/inter", "Inter", "https://github.com/rsms/inter"],
   ["@fontsource/atkinson-hyperlegible-next", "Atkinson Hyperlegible Next", "https://github.com/googlefonts/atkinson-hyperlegible-next"],
   ["@fontsource/lexend", "Lexend", "https://github.com/googlefonts/lexend"],
+  // Chinese characters, for Mandarin captions; only the bold weight is bundled.
+  ["@fontsource/noto-sans-sc", "Noto Sans SC", "https://github.com/notofonts/noto-cjk"],
 ];
 writeFileSync(
   join(root, "out/THIRD_PARTY_NOTICES.txt"),

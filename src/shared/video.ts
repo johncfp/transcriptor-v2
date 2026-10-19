@@ -81,7 +81,7 @@ export interface CaptionPage {
  * a piece of text). A new speaker always starts a new line; a word too wide
  * for any line gets a line of its own.
  */
-export function breakLines(words: CaptionWord[], measure: (text: string) => number, maxWidth: number): CaptionLine[] {
+export function breakLines(words: CaptionWord[], measure: (text: string) => number, maxWidth: number, sep = " "): CaptionLine[] {
   const lines: CaptionLine[] = [];
   let current: CaptionWord[] = [];
   const close = () => {
@@ -89,12 +89,38 @@ export function breakLines(words: CaptionWord[], measure: (text: string) => numb
     current = [];
   };
   for (const w of words) {
-    const text = [...current, w].map((x) => x.text).join(" ");
+    const text = [...current, w].map((x) => x.text).join(sep);
     if (current.length && (w.speaker !== current[0]!.speaker || measure(text) > maxWidth)) close();
     current.push(w);
   }
   close();
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Chinese captions (subtitles S4): text without spaces between words.
+
+/** Punctuation that belongs at the end of a line, never the start. */
+const CJK_CLOSING = /^[，。！？、；：）」』”’…—,.!?;:)\]]/u;
+
+/** Whether text is written without spaces between words (Chinese here). */
+export const isCjkText = (text: string) => /[\u3400-\u9fff\uf900-\ufaff]/u.test(text);
+
+/**
+ * Text written without spaces, as tokens a line can break between: each
+ * Chinese character on its own, a run of Latin letters or digits (a name,
+ * a number) kept whole with any space after it, and punctuation joined to
+ * the token before it so it never starts a line. Joined with "", the tokens
+ * give back the text.
+ */
+export function cjkTokens(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.trim().matchAll(/[A-Za-z0-9][A-Za-z0-9'’.\-]*\s*|\S\s*/gu)) {
+    const tok = m[0];
+    if (out.length && CJK_CLOSING.test(tok)) out[out.length - 1] += tok;
+    else out.push(tok);
+  }
+  return out;
 }
 
 /** Group lines into pages of up to `perPage` lines; a new speaker starts a new page. */
@@ -277,10 +303,14 @@ export function cardIn(card: NameCard, t: number): number {
   return easeOut((t - card.start) / CARD_SLIDE) * (1 - easeOut((t - card.end + CARD_SLIDE) / CARD_SLIDE));
 }
 
-/** The outro's lines: a small one above, the show (or website) big, the website small below. */
-export function outroLines(showName: string, website: string): { above: string; big: string; below: string } {
+/** The outro's lines: a small one above, the show (or website) big, the website small below; `words` for a translated video. */
+export function outroLines(
+  showName: string,
+  website: string,
+  words: { fullEpisodeOn: string; fullEpisodeAt: string } = { fullEpisodeOn: "Full episode on", fullEpisodeAt: "Full episode at" },
+): { above: string; big: string; below: string } {
   const name = showName.trim(), site = website.trim();
-  return name ? { above: "Full episode on", big: name, below: site } : { above: "Full episode at", big: site, below: "" };
+  return name ? { above: words.fullEpisodeOn, big: name, below: site } : { above: words.fullEpisodeAt, big: site, below: "" };
 }
 
 /** Ease out: fast start, gentle stop. Clamped to 0–1. */

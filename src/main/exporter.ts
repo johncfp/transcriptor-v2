@@ -12,6 +12,8 @@ export type PdfRenderer = (html: string, folder: string) => Promise<Uint8Array>;
 export interface ExportResult {
   folder: string;
   files: string[];
+  /** Things to know that didn't stop the export (a subtitle translation that failed, say). */
+  notes?: string[];
 }
 
 /**
@@ -32,6 +34,8 @@ export interface ExportOptions {
    * videos, only the audio, so videos made from the Clips tab stay.
    */
   replaceClips?: ("wav" | "mp4")[];
+  /** Other files for the episode's folder, such as subtitles: written as given. */
+  files?: { name: string; data: string | Uint8Array }[];
 }
 
 export async function writeExport(
@@ -39,9 +43,9 @@ export async function writeExport(
   label: string,
   documents: ExportDocument[],
   formats: ExportFormat[],
-  { renderPdf, branding, clips, replaceClips = ["wav", "mp4"] }: ExportOptions = {},
+  { renderPdf, branding, clips, replaceClips = ["wav", "mp4"], files: extra = [] }: ExportOptions = {},
 ): Promise<ExportResult> {
-  if (!formats.length && !clips?.length) throw new Error("Choose at least one format to export.");
+  if (!formats.length && !clips?.length && !extra.length) throw new Error("Choose at least one format to export.");
   if (formats.includes("pdf") && !renderPdf) throw new Error("PDF export isn't available here.");
   const base = safeFileName(label);
   const folder = join(root, base);
@@ -62,6 +66,11 @@ export async function writeExport(
         writeFileSync(path, data);
         files.push(path);
       }
+    }
+    for (const f of extra) {
+      const path = join(folder, f.name);
+      writeFileSync(path, f.data);
+      files.push(path);
     }
     if (clips) {
       const clipsFolder = join(folder, CLIPS_FOLDER);

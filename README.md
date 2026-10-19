@@ -34,7 +34,15 @@ see [INSTALL.md](INSTALL.md).
 5. **Export**: the transcript, show notes and reference file as Word (.docx)
    and/or plain text, in a folder per episode under the output folder
    (Documents/Transcriptor 2 unless you pick another), with a choice of five
-   speaker formats. Runs automatically when the notes are written, or from the
+   speaker formats. Optionally, subtitles of the reviewed transcript too, as
+   SRT and/or WebVTT, timed to the episode's audio (two lines of at most 42
+   characters, a dash per speaker when a quick reply shares a cue), and
+   translated into any of Spanish, Portuguese, French, German and
+   Mandarin by the Social clips model, keeping the original's timing; each
+   language is translated once per episode and checked cue by cue. Clip
+   videos can be made in those languages too, with the translated captions
+   shown a line at a time (Mandarin with a bundled Chinese font, Noto Sans
+   SC, and lines broken between characters). Runs automatically when the notes are written, or from the
    episode's Export card. The Word files use real heading and list styles, so
    they convert cleanly to Google Docs. PDF is also available, and Word and
    PDF can have a cover page, a logo, and header and footer text.

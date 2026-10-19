@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import type { ClipContext, SocialClip } from "../../../shared/clips";
+import { quoteText, type ClipContext, type SocialClip } from "../../../shared/clips";
+import { buildCues } from "../../../shared/subtitles";
+import {
+  segmentsOf,
+  sourceKey,
+  translatedCues,
+  translationLanguage,
+  TRANSLATION_LANGUAGES,
+  type SubtitleTranslations,
+  type TranslationLanguage,
+} from "../../../shared/subtitleTranslation";
+import { clipCues, translationText, type ClipTranslation } from "../../../shared/videoLanguages";
 import type { Settings } from "../../../shared/settings";
 import { clipCaptionWords, isPlaceholderName, MOTION, SHAPES, type ShapeId } from "../../../shared/video";
 import { audioSeconds, drawFrame, makeScene, stillTime, type FrameScene } from "../video/drawFrame";
-import { loadVideoFont } from "../video/fonts";
+import { loadCjkText, loadVideoFont } from "../video/fonts";
 import { Section } from "./Section";
 
 const loadImage = (src: string) =>
@@ -36,6 +47,17 @@ export function ClipVideoPreview(props: {
   const [background, setBackground] = useState<HTMLImageElement | null>(null);
   const [fontReady, setFontReady] = useState(false);
   const [levels, setLevels] = useState<number[]>([]);
+  // Caption language: the original, or one of the translations chosen in Settings.
+  const languages = TRANSLATION_LANGUAGES.filter((l) => video.languages[l.id]);
+  const [language, setLanguage] = useState<TranslationLanguage | null>(null);
+  const [saved, setSaved] = useState<SubtitleTranslations | null>(null);
+  useEffect(() => {
+    let live = true;
+    void window.api.getSubtitleTranslations(props.jobId).then((t) => live && setSaved(t));
+    return () => {
+      live = false;
+    };
+  }, [props.jobId, language]);
 
   useEffect(() => {
     setFontReady(false);
@@ -74,9 +96,35 @@ export function ClipVideoPreview(props: {
 
   const words = useMemo(() => clipCaptionWords(props.ctx.turns, clip), [props.ctx, clip]);
   const unnamed = useMemo(() => [...new Set(words.map((w) => w.speaker).filter(isPlaceholderName))], [words]);
+  // The clip's captions in the chosen translation, from the episode's saved one if it's of these subtitles.
+  const episodeCues = useMemo(() => (language ? buildCues(props.ctx.turns) : []), [language, props.ctx]);
+  const translation = useMemo<ClipTranslation | null>(() => {
+    if (!language || !saved) return null;
+    const segments = segmentsOf(episodeCues);
+    const done = saved.source === sourceKey(segments) ? saved.languages[language] : undefined;
+    if (!done) return null;
+    const q = clip.quote ? quoteText(props.ctx.turns, clip.quote) : null;
+    return {
+      language,
+      cues: clipCues(translatedCues(episodeCues, segments, done.texts, language), clip),
+      quote: (q && saved.quotes?.[language]?.[q]) || null,
+    };
+  }, [language, saved, episodeCues, clip, props.ctx]);
+  // Chinese captions: their characters from the Chinese font, loaded before the scene is laid out.
+  const [cjkReady, setCjkReady] = useState("");
+  useEffect(() => {
+    if (translation?.language !== "zh") return;
+    let live = true;
+    const text = translationText(translation);
+    void loadCjkText(text).then(() => live && setCjkReady(text));
+    return () => {
+      live = false;
+    };
+  }, [translation]);
+  const waitingForCjk = translation?.language === "zh" && cjkReady !== translationText(translation);
   const scene = useMemo<FrameScene | null>(() => {
     const ctx = canvas.current?.getContext("2d");
-    if (!fontReady || !ctx) return null;
+    if (!fontReady || !ctx || waitingForCjk) return null;
     return makeScene(ctx, {
       width: spec.width / 2,
       height: spec.height / 2,
@@ -86,13 +134,14 @@ export function ClipVideoPreview(props: {
       hosts: settings.show.hosts,
       quote: clip.quote ?? null,
       keywords: clip.keywords ?? [],
+      translation,
       logo,
       background,
       levels,
       words,
     });
     // `shape` re-creates the canvas, so the scene follows it.
-  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, clip.quote, clip.keywords, logo, background, levels, words, shape]);
+  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, clip.quote, clip.keywords, translation, waitingForCjk, logo, background, levels, words, shape]);
 
   // A still partway in when not playing; frames following the audio while it plays.
   // When a clip plays to its end, the outro card follows (on the clock, as the audio
@@ -145,6 +194,18 @@ export function ClipVideoPreview(props: {
           </button>
         ))}
       </div>
+      {languages.length > 0 && (
+        <div className="segmented" role="radiogroup" aria-label="Clip preview language">
+          <button role="radio" aria-checked={language === null} className="segment" onClick={() => setLanguage(null)}>
+            Original
+          </button>
+          {languages.map((l) => (
+            <button key={l.id} role="radio" aria-checked={language === l.id} className="segment" onClick={() => setLanguage(l.id)}>
+              {l.name}
+            </button>
+          ))}
+        </div>
+      )}
       <canvas
         ref={canvas}
         key={shape}
@@ -155,6 +216,11 @@ export function ClipVideoPreview(props: {
       />
       {!video.enabled && <p className="hint">Video clips are off, so exports are audio only. Turn them on in Settings › Social.</p>}
       {video.enabled && !video.shapes[shape] && <p className="hint">This shape isn't chosen in Settings, so it won't be exported.</p>}
+      {language && !translation && (
+        <p className="hint">
+          {translationLanguage(language).name} isn't translated yet, so this shows the original. Exporting the kept clips translates it.
+        </p>
+      )}
       {video.motion.nameCards && unnamed.length > 0 && (
         <p className="hint">
           {unnamed.join(" and ")} {unnamed.length > 1 ? "aren't" : "isn't"} named in review, so the video shows no name card for them.

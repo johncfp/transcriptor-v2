@@ -2,6 +2,7 @@
 // Every call crosses IPC into the main process; the renderer never sees
 // Node, the file system, or a stored API key.
 
+import type { SubtitleTranslations } from "./subtitleTranslation";
 import type { ModelOption } from "./providers";
 import type { AddFilesResult, Job } from "./jobs";
 import type { Settings, SettingsPatch } from "./settings";
@@ -82,6 +83,8 @@ export interface Api {
   getWriting(id: string): Promise<WritingResult | null>;
   /** The episode's social clips, or null if none have been suggested. */
   getSocial(id: string): Promise<SocialResult | null>;
+  /** The episode's saved subtitle translations (made when it, or its clips, were exported), for the clip video preview. */
+  getSubtitleTranslations(id: string): Promise<SubtitleTranslations | null>;
   /** Save review changes to clips (by clip id); resolves to the clips checked again. */
   saveClips(id: string, edits: Record<string, ClipEdit>): Promise<SocialResult | null>;
   /** Queue social clips for an episode with show notes (again, replacing the old ones). */
@@ -157,6 +160,7 @@ export const IPC = {
   writeNotes: "jobs:write-notes",
   getWriting: "jobs:writing",
   getSocial: "jobs:social",
+  getSubtitleTranslations: "jobs:subtitle-translations",
   saveClips: "jobs:save-clips",
   suggestClips: "jobs:suggest-clips",
   cancelClips: "jobs:cancel-clips",

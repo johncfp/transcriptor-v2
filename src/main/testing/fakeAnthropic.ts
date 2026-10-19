@@ -13,6 +13,8 @@ export interface FakeAnthropicOptions {
   draft: unknown;
   /** The reply to a social clips request (its schema has `clips`). */
   social?: unknown;
+  /** Replies to a subtitle translation request (its schema has `segments`), given its prompt and system text; called per request. */
+  subtitles?: (prompt: string, system: string) => unknown;
   research?: {
     searched: string[];
     input: { identified: boolean; facts: { fact: string; source_urls: string[] }[]; links: { label: string; url: string }[] };
@@ -100,6 +102,13 @@ export function startFakeAnthropic(opts: FakeAnthropicOptions): Promise<FakeAnth
       if (body.stream) {
         const schema = (body.output_config as { format?: { schema?: { properties?: Record<string, unknown> } } } | undefined)?.format?.schema;
         const wantsClips = Boolean(schema?.properties?.clips);
+        if (schema?.properties?.segments) {
+          const messages = (body.messages as { content: string | { type: string; text?: string }[] }[] | undefined) ?? [];
+          const prompt = messages.map((m) => (typeof m.content === "string" ? m.content : m.content.map((c) => c.text ?? "").join(""))).join("\n");
+          const sys = body.system as string | { text?: string }[] | undefined;
+          const system = typeof sys === "string" ? sys : (sys ?? []).map((b) => b.text ?? "").join("\n");
+          return sse(res, JSON.stringify(opts.subtitles ? opts.subtitles(prompt, system) : { segments: [] }));
+        }
         return sse(res, JSON.stringify(wantsClips ? (opts.social ?? { clips: [] }) : opts.draft));
       }
 
