@@ -7,6 +7,7 @@ import type { VideoSettings } from "../../../shared/settings";
 import {
   breakLines,
   CAPTION_SIZES,
+  cjkTokens,
   cardIn,
   darken,
   easeInOut,
@@ -38,6 +39,7 @@ import {
   type NameCard,
 } from "../../../shared/video";
 import { videoStrings, type ClipTranslation } from "../../../shared/videoLanguages";
+import { CJK_FAMILY } from "./fonts";
 
 export interface FrameScene {
   width: number;
@@ -71,7 +73,14 @@ export interface FrameScene {
   cards: NameCard[];
   /** The pull-quote moment laid out over the captions; null = none. */
   pull: PullLayout | null;
+  /** Text written without spaces (Chinese captions): words sit side by side with no space between them. */
+  cjk: boolean;
 }
+
+/** The space between words: none in text written without spaces. */
+const gap = (ctx: Ctx, cjk: boolean) => (cjk ? 0 : ctx.measureText(" ").width);
+/** A translation's text as the words a line can break between. */
+const tokens = (text: string, cjk: boolean) => (cjk ? cjkTokens(text) : text.split(/\s+/).filter(Boolean));
 
 interface PullLayout {
   lines: { word: CaptionWord; width: number }[][];
@@ -103,12 +112,14 @@ const pageSize = (s: { width: number; height: number }) => (wide(s) ? 2 : 3);
 /** Rows when scrolling: the line before (faded), the line being read, and the ones coming. */
 const scrollRows = (s: { width: number; height: number }) => (wide(s) ? 3 : 4);
 
-const font = (style: VideoSettings, weight: 600 | 700, px: number) => `${weight} ${Math.round(px)}px "${videoFont(style.font).family}", sans-serif`;
+// The caption font first; Chinese characters, which it lacks, come from the bundled Chinese font (see fonts.ts).
+const font = (style: VideoSettings, weight: 600 | 700, px: number) =>
+  `${weight} ${Math.round(px)}px "${videoFont(style.font).family}", "${CJK_FAMILY}", sans-serif`;
 
 /** Lay the captions out for this frame size and style. Call once per clip and shape. */
 export function makeScene(
   ctx: Ctx,
-  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro" | "cards" | "pull"> & { words: CaptionWord[] },
+  input: Omit<FrameScene, "lines" | "pages" | "unit" | "captionPx" | "hook" | "outro" | "cards" | "pull" | "cjk"> & { words: CaptionWord[] },
 ): FrameScene {
   const unit = Math.min(input.width, input.height) / 1080;
   const scale = CAPTION_SIZES.find((c) => c.id === input.style.captionSize)?.scale ?? 1;
@@ -117,6 +128,8 @@ export function makeScene(
   const measure = (t: string) => ctx.measureText(t).width;
   const maxW = input.width - 2 * margin(input, unit);
   const tr = input.translation;
+  const cjk = tr?.language === "zh";
+  const sep = cjk ? "" : " ";
   // Captions: the original's words, or a translation's cues, each cue a page of its own.
   let lines: CaptionLine[];
   let pages: CaptionPage[];
@@ -125,8 +138,8 @@ export function makeScene(
       const speaker = speakerAt(input.words, cue.start);
       const dashed = cue.lines.length > 1 && cue.lines.every((l) => l.startsWith("- "));
       // A shared cue keeps a line per speaker; otherwise the cue's text is laid out again for the frame's width.
-      const parts = dashed ? cue.lines : [cue.lines.join(" ")];
-      const cueLines = parts.flatMap((p) => breakLines(cueWords(p, cue, speaker), measure, maxW));
+      const parts = dashed ? cue.lines : [cue.lines.join(sep)];
+      const cueLines = parts.flatMap((p) => breakLines(cueWords(p, cue, speaker, cjk), measure, maxW, sep));
       return { lines: cueLines, speaker, start: cue.start, end: cue.end };
     });
     lines = pages.flatMap((p) => p.lines);
@@ -136,23 +149,20 @@ export function makeScene(
   }
   // The opening quote: the pull quote (translated, for a translation), else the clip's shortest whole sentence.
   const picked = quoteWords(input.words, input.quote);
-  const hookTexts = tr ? (tr.quote ? tr.quote.split(/\s+/) : null) : (picked.length ? picked : hookQuote(input.words))?.map((w) => w.text) ?? null;
-  const hook = input.style.motion.hook && hookTexts?.length ? layoutHook(ctx, input, unit, captionPx, hookTexts) : null;
+  const hookTexts = tr ? (tr.quote ? tokens(tr.quote, cjk) : null) : (picked.length ? picked : hookQuote(input.words))?.map((w) => w.text) ?? null;
+  const hook = input.style.motion.hook && hookTexts?.length ? layoutHook(ctx, input, unit, captionPx, hookTexts, cjk) : null;
   const outro = hasOutro(input.style, input.showName, input.website);
   const cards = input.style.motion.nameCards ? nameCards(input.words, input.hosts) : [];
   // The pull-quote moment, at the time the original says it; a translation's words land evenly across that time.
-  const quote = tr ? (tr.quote && picked.length ? spreadWords(tr.quote, picked) : []) : picked;
+  const quote = tr ? (tr.quote && picked.length ? spreadWords(tokens(tr.quote, cjk), picked) : []) : picked;
   // Not when the quote is said while the opening quote is still up: it was just shown.
-  const pull = input.style.motion.pullQuote && quote.length && !(hook && quote[0]!.start < HOOK_END + 0.5) ? layoutPull(ctx, input, unit, captionPx, quote) : null;
-  return { ...input, keywords: tr ? [] : input.keywords, lines, pages, unit, captionPx, hook, outro, cards, pull };
+  const pull = input.style.motion.pullQuote && quote.length && !(hook && quote[0]!.start < HOOK_END + 0.5) ? layoutPull(ctx, input, unit, captionPx, quote, cjk) : null;
+  return { ...input, keywords: tr ? [] : input.keywords, lines, pages, unit, captionPx, hook, outro, cards, pull, cjk };
 }
 
 /** A translated cue's words, all with the cue's times (a translation has no word times). */
-function cueWords(text: string, cue: { start: number; end: number }, speaker: string): CaptionWord[] {
-  return text
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => ({ text: w, start: cue.start, end: cue.end, speaker }));
+function cueWords(text: string, cue: { start: number; end: number }, speaker: string, cjk: boolean): CaptionWord[] {
+  return tokens(text, cjk).map((w) => ({ text: w, start: cue.start, end: cue.end, speaker }));
 }
 
 /** Who's talking at `t`, from the original words: the last to start by then (or the first). */
@@ -166,18 +176,17 @@ function speakerAt(words: CaptionWord[], t: number): string {
 }
 
 /** A translated quote's words, spread evenly over the time the original quote is said. */
-function spreadWords(text: string, original: CaptionWord[]): CaptionWord[] {
-  const parts = text.split(/\s+/).filter(Boolean);
+function spreadWords(parts: string[], original: CaptionWord[]): CaptionWord[] {
   const from = original[0]!.start, to = original.at(-1)!.end;
   const step = (to - from) / Math.max(1, parts.length);
   return parts.map((w, i) => ({ text: w, start: from + i * step, end: from + (i + 1) * step, speaker: original[0]!.speaker }));
 }
 
 /** Break `widths` into at most `maxLines` lines no wider than `maxW`, as big as fits in `maxH`, from `px` down to `minPx`. */
-function fit(ctx: Ctx, style: VideoSettings, texts: string[], maxW: number, maxH: number, px: number, minPx: number, maxLines: number) {
+function fit(ctx: Ctx, style: VideoSettings, texts: string[], maxW: number, maxH: number, px: number, minPx: number, maxLines: number, cjk = false) {
   for (;;) {
     ctx.font = font(style, 700, px);
-    const space = ctx.measureText(" ").width;
+    const space = gap(ctx, cjk);
     const lines: { i: number; width: number }[][] = [];
     let width = 0;
     texts.forEach((text, i) => {
@@ -209,13 +218,14 @@ function layoutPull(
   unit: number,
   captionPx: number,
   quote: CaptionWord[],
+  cjk: boolean,
 ): PullLayout {
   const L = layout({ ...input, unit });
   const areaTop = speakerTop(L, captionPx, unit) - captionPx * 0.5;
   const areaBottom = L.waveY - L.waveH / 2 - 40 * unit;
   const maxW = input.width - 2 * margin(input, unit);
   const startPx = (wide(input) ? 100 : square(input) ? 96 : 120) * unit;
-  const f = fit(ctx, input.style, quote.map((w) => w.text), maxW, (areaBottom - areaTop) * 0.8, startPx, 44 * unit, 3);
+  const f = fit(ctx, input.style, quote.map((w) => w.text), maxW, (areaBottom - areaTop) * 0.8, startPx, 44 * unit, 3, cjk);
   const block = f.px * 0.8 + f.lines.length * f.lineH;
   const top = areaTop + (areaBottom - areaTop - block) / 2 + f.px * 0.8 + f.px * 0.9;
   return { lines: f.lines.map((l) => l.map(({ i, width }) => ({ word: quote[i]!, width }))), words: quote, px: f.px, lineH: f.lineH, top };
@@ -230,7 +240,7 @@ function drawPull(ctx: Ctx, s: FrameScene, pull: PullLayout, t: number, k: numbe
   ctx.fillStyle = withAlpha(s.style.colors.highlight, k);
   ctx.fillText("\u201C", x0 - pull.px * 0.08, pull.top - pull.px * 0.55);
   ctx.font = font(s.style, 700, pull.px);
-  const space = ctx.measureText(" ").width;
+  const space = gap(ctx, s.cjk);
   pull.lines.forEach((line, row) => {
     let x = x0;
     const y = pull.top + row * pull.lineH;
@@ -263,6 +273,7 @@ function layoutHook(
   unit: number,
   captionPx: number,
   words: string[],
+  cjk: boolean,
 ): HookLayout | null {
   const texts = words.map((w, i) => (i === 0 ? "“" : "") + w + (i === words.length - 1 ? "”" : ""));
   const L = layout({ ...input, unit });
@@ -272,7 +283,7 @@ function layoutHook(
   let px = (wide(input) ? 80 : square(input) ? 72 : 84) * unit;
   for (;;) {
     ctx.font = font(input.style, 700, px);
-    const space = ctx.measureText(" ").width;
+    const space = gap(ctx, cjk);
     const lines: { text: string; width: number }[][] = [];
     let width = 0;
     for (const text of texts) {
@@ -359,7 +370,7 @@ function drawHook(ctx: Ctx, s: FrameScene, hook: HookLayout, t: number): void {
   const lift = hookOut(t) * 60 * s.unit;
   ctx.font = font(s.style, 700, hook.px);
   ctx.textAlign = "left";
-  const space = ctx.measureText(" ").width;
+  const space = gap(ctx, s.cjk);
   let i = 0;
   hook.lines.forEach((line, row) => {
     const width = line.reduce((n, w) => n + w.width, 0) + space * (line.length - 1);
@@ -489,7 +500,7 @@ function drawWaveform(ctx: Ctx, s: FrameScene, t: number, y: number, maxH: numbe
 }
 
 function drawWords(ctx: Ctx, s: FrameScene, line: CaptionLine, x: number, y: number, t: number, boxed: boolean, alpha = 1): void {
-  const space = ctx.measureText(" ").width;
+  const space = gap(ctx, s.cjk);
   for (const w of line.words) {
     const width = ctx.measureText(w.text).width;
     // A translation's words share their cue's times: shown as said, without a highlight.

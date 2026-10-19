@@ -10,11 +10,11 @@ import {
   type SubtitleTranslations,
   type TranslationLanguage,
 } from "../../../shared/subtitleTranslation";
-import { clipCues, type ClipTranslation } from "../../../shared/videoLanguages";
+import { clipCues, translationText, type ClipTranslation } from "../../../shared/videoLanguages";
 import type { Settings } from "../../../shared/settings";
 import { clipCaptionWords, isPlaceholderName, MOTION, SHAPES, type ShapeId } from "../../../shared/video";
 import { audioSeconds, drawFrame, makeScene, stillTime, type FrameScene } from "../video/drawFrame";
-import { loadVideoFont } from "../video/fonts";
+import { loadCjkText, loadVideoFont } from "../video/fonts";
 import { Section } from "./Section";
 
 const loadImage = (src: string) =>
@@ -47,8 +47,8 @@ export function ClipVideoPreview(props: {
   const [background, setBackground] = useState<HTMLImageElement | null>(null);
   const [fontReady, setFontReady] = useState(false);
   const [levels, setLevels] = useState<number[]>([]);
-  // Caption language: the original, or one of the translations chosen in Settings (Mandarin waits for its font).
-  const languages = TRANSLATION_LANGUAGES.filter((l) => video.languages[l.id] && l.id !== "zh");
+  // Caption language: the original, or one of the translations chosen in Settings.
+  const languages = TRANSLATION_LANGUAGES.filter((l) => video.languages[l.id]);
   const [language, setLanguage] = useState<TranslationLanguage | null>(null);
   const [saved, setSaved] = useState<SubtitleTranslations | null>(null);
   useEffect(() => {
@@ -110,9 +110,21 @@ export function ClipVideoPreview(props: {
       quote: (q && saved.quotes?.[language]?.[q]) || null,
     };
   }, [language, saved, episodeCues, clip, props.ctx]);
+  // Chinese captions: their characters from the Chinese font, loaded before the scene is laid out.
+  const [cjkReady, setCjkReady] = useState("");
+  useEffect(() => {
+    if (translation?.language !== "zh") return;
+    let live = true;
+    const text = translationText(translation);
+    void loadCjkText(text).then(() => live && setCjkReady(text));
+    return () => {
+      live = false;
+    };
+  }, [translation]);
+  const waitingForCjk = translation?.language === "zh" && cjkReady !== translationText(translation);
   const scene = useMemo<FrameScene | null>(() => {
     const ctx = canvas.current?.getContext("2d");
-    if (!fontReady || !ctx) return null;
+    if (!fontReady || !ctx || waitingForCjk) return null;
     return makeScene(ctx, {
       width: spec.width / 2,
       height: spec.height / 2,
@@ -129,7 +141,7 @@ export function ClipVideoPreview(props: {
       words,
     });
     // `shape` re-creates the canvas, so the scene follows it.
-  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, clip.quote, clip.keywords, translation, logo, background, levels, words, shape]);
+  }, [fontReady, spec, video, settings.show.name, settings.show.website, settings.show.hosts, clip.quote, clip.keywords, translation, waitingForCjk, logo, background, levels, words, shape]);
 
   // A still partway in when not playing; frames following the audio while it plays.
   // When a clip plays to its end, the outro card follows (on the clock, as the audio

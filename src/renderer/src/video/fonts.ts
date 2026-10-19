@@ -49,3 +49,38 @@ export function loadVideoFont(id: VideoFontId): Promise<void> {
   }
   return ready;
 }
+
+// ---------------------------------------------------------------------------
+// Chinese (Mandarin captions, subtitles S4): Noto Sans SC, bold, in the
+// pieces Google Fonts cuts it into by character range (about 2.6 MB in all).
+// Each piece is registered with its range and loaded only when text needs
+// it; canvas text falls back to it for characters the caption font lacks.
+
+const CJK_FILES = import.meta.glob<string>("../../../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-[0-9]*-700-normal.woff2", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+const CJK_RANGES = Object.values(
+  import.meta.glob<Record<string, string>>("../../../../node_modules/@fontsource/noto-sans-sc/unicode.json", { eager: true, import: "default" }),
+)[0]!;
+
+/** The Chinese font's family name, after each caption font in the font list. */
+export const CJK_FAMILY = "T2 Noto SC";
+
+let cjkRegistered = false;
+function registerCjk(): void {
+  if (cjkRegistered) return;
+  cjkRegistered = true;
+  for (const [path, url] of Object.entries(CJK_FILES)) {
+    const piece = /noto-sans-sc-(\d+)-700-normal/.exec(path)?.[1];
+    const range = piece && CJK_RANGES[`[${piece}]`];
+    if (range) document.fonts.add(new FontFace(CJK_FAMILY, `url(${url})`, { weight: "700", unicodeRange: range }));
+  }
+}
+
+/** Load the pieces of the Chinese font that `text` needs, so canvas can draw it; resolves when they're ready. */
+export async function loadCjkText(text: string): Promise<void> {
+  registerCjk();
+  await document.fonts.load(`700 40px "${CJK_FAMILY}"`, text);
+}

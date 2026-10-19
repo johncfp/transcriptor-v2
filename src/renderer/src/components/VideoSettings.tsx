@@ -58,15 +58,14 @@ export function VideoSettings({ settings, update }: { settings: Settings; update
 
       <Row
         label="Caption languages"
-        hint="Each clip is also made with its captions in these languages, from the subtitle translations (translated when the clips are exported, by the Social model). Shown a line at a time, without the word highlight. Mandarin needs its own font, coming next."
+        hint="Each clip is also made with its captions in these languages, from the subtitle translations (translated when the clips are exported, by the Social model). Shown a line at a time, without the word highlight."
       >
         <div className="checks">
           {TRANSLATION_LANGUAGES.map((l) => (
-            <label key={l.id} className={`check${l.id === "zh" ? " disabled" : ""}`}>
+            <label key={l.id} className="check">
               <input
                 type="checkbox"
-                disabled={l.id === "zh"}
-                checked={l.id !== "zh" && video.languages[l.id]}
+                checked={video.languages[l.id]}
                 onChange={(e) => set({ languages: { ...video.languages, [l.id]: e.target.checked } })}
               />
               {l.prompt}

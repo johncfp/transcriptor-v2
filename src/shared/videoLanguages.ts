@@ -51,5 +51,9 @@ export function clipCues(cues: Cue[], clip: { start: number; end: number }): Cue
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
+/** Everything a translated video writes on screen in its language, for loading the font's characters first. */
+export const translationText = (t: ClipTranslation) =>
+  [...t.cues.flatMap((c) => c.lines), t.quote ?? "", ...Object.values(videoStrings(t.language))].join(" ");
+
 /** "Episode 386 - Clip 2 - Tools versus reasons (vertical).mp4", with the language when it's a translation: "(vertical, Spanish)". */
 export const videoLanguageTag = (languageName: string | null) => (languageName ? `, ${languageName}` : "");

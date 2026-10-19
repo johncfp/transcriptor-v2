@@ -41,7 +41,8 @@ see [INSTALL.md](INSTALL.md).
    Mandarin by the Social clips model, keeping the original's timing; each
    language is translated once per episode and checked cue by cue. Clip
    videos can be made in those languages too, with the translated captions
-   shown a line at a time. Runs automatically when the notes are written, or from the
+   shown a line at a time (Mandarin with a bundled Chinese font, Noto Sans
+   SC, and lines broken between characters). Runs automatically when the notes are written, or from the
    episode's Export card. The Word files use real heading and list styles, so
    they convert cleanly to Google Docs. PDF is also available, and Word and
    PDF can have a cover page, a logo, and header and footer text.

@@ -24,7 +24,8 @@ import type { CutJob, CutProgress, CutResult, VideoJob } from "../../shared/cutt
 import { audioLevels, hasOutro, SHAPES, VIDEO_FPS, videoSeconds } from "../../shared/video";
 import { ClipAssembler, fadeEdges, wavFile } from "../../shared/wav";
 import { drawFrame, makeScene } from "./video/drawFrame";
-import { loadVideoFont } from "./video/fonts";
+import { loadCjkText, loadVideoFont } from "./video/fonts";
+import { translationText } from "../../shared/videoLanguages";
 
 declare global {
   interface Window {
@@ -104,6 +105,9 @@ async function makeVideos(jobId: string, video: VideoJob, pcms: Pcm[]): Promise<
     }
   }
   await loadVideoFont(video.style.font);
+  // Chinese captions: load the Chinese font's characters they use before anything is measured or drawn.
+  const chinese = video.clips.flatMap((c) => (c.translations.zh ? [translationText(c.translations.zh)] : []));
+  if (chinese.length) await loadCjkText(`${chinese.join(" ")} ${video.showName}`);
   const [logo, background] = await Promise.all([loadImage(video.logo), loadImage(video.background)]);
   const outro = hasOutro(video.style, video.showName, video.website);
   const frames = (p: Pcm) => Math.ceil(videoSeconds(p.pcm.length / p.channels / p.sampleRate, outro) * VIDEO_FPS);

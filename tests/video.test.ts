@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, mergeSettings } from "../src/shared/settings";
 import {
   audioLevels,
   breakLines,
+  cjkTokens,
   CARD_HOLD,
   cardIn,
   clipCaptionWords,
@@ -16,6 +17,7 @@ import {
   hookQuote,
   hasOutro,
   hookWordAlpha,
+  isCjkText,
   isKeyword,
   isPlaceholderName,
   MOTION,
@@ -305,4 +307,18 @@ test("translated captions in a clip: its cues from the clip's start, cut to fit;
   assert.equal(clipVideoName("Episode 386", 2, "Tools", "vertical", "Spanish"), "Episode 386 - Clip 2 - Tools (vertical, Spanish).mp4");
   assert.equal(clipVideoName("Episode 386", 2, "Tools", "square"), "Episode 386 - Clip 2 - Tools (square).mp4");
   assert.deepEqual(DEFAULT_SETTINGS.video.languages, { es: false, pt: false, fr: false, de: false, zh: false });
+});
+
+test("Chinese captions: a token per character, Latin words whole, punctuation never starting a line", () => {
+  assert.equal(isCjkText("我们不排斥技术。"), true);
+  assert.equal(isCjkText("We're not tech-averse."), false);
+  const toks = cjkTokens("我和 Delaney 聊了 2019 年，很开心。");
+  assert.deepEqual(toks, ["我", "和 ", "Delaney ", "聊", "了 ", "2019 ", "年，", "很", "开", "心。"]);
+  assert.equal(toks.join(""), "我和 Delaney 聊了 2019 年，很开心。");
+  // Lines break between tokens, joined with no space; "年，" stays together so "，" doesn't start a line.
+  const ws = toks.map((text, i) => ({ text, start: i, end: i + 0.5, speaker: "Delaney" }));
+  const lines = breakLines(ws, (t) => [...t].length * 10, 60, "");
+  assert.ok(lines.every((l) => !/^[，。]/.test(l.words[0]!.text)));
+  assert.equal(lines.map((l) => l.words.map((w) => w.text).join("")).join(""), toks.join(""));
+  assert.ok(lines.length > 1);
 });

@@ -197,7 +197,7 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         output: { folder: ${JSON.stringify(exportRoot)} },
         // Spanish captions on the clip videos (made when video clips are turned on, further down). Set before
         // the episode opens, which reads the settings once, as it does after a visit to Settings.
-        video: { languages: { es: true } },
+        video: { languages: { es: true, zh: true } },
       })`);
 
       // Pipeline: queue a file (plus one that must be rejected) and wait for the transcript.
@@ -265,11 +265,12 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       const claude = await startFakeAnthropic({
         draft: SMOKE_DRAFT,
         social: SMOKE_CLIPS,
-        // Subtitle translation: each asked-for segment back, marked, so the files can be told apart.
-        subtitles: (prompt) => ({
+        // Subtitle translation: each asked-for segment back, marked, so the files can be told apart;
+        // Mandarin in Chinese characters, so its videos need the Chinese font.
+        subtitles: (prompt, system) => ({
           segments: [...(prompt.split("Translate these segments:\n")[1] ?? "").split("\n\nContext after")[0]!.matchAll(/^(\d+): (.*)$/gm)].map((m) => ({
             id: Number(m[1]),
-            text: `«${m[2]}»`,
+            text: system.includes("Simplified Chinese") ? `欢迎来到节目，谢谢你。${m[1]}` : `«${m[2]}»`,
           })),
         }),
         research: {
@@ -484,18 +485,32 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
         join(dir, "clip-preview-spanish.png"),
         Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
       );
+      // Mandarin: Chinese characters, drawn with the bundled Chinese font (loaded for just these characters).
+      await click("[aria-label='Clip preview language'] .segment", "Mandarin");
+      await pause(1500);
+      const previewMandarin = await js<{ font: boolean; hint: boolean }>(`({
+        font: document.fonts.check('700 40px "T2 Noto SC"', "欢迎来到节目"),
+        hint: document.body.innerText.includes("isn't translated yet"),
+      })`);
+      writeFileSync(
+        join(dir, "clip-preview-mandarin.png"),
+        Buffer.from((await js<string>(`document.querySelector("canvas[aria-label='Clip video preview']").toDataURL("image/png")`)).split(",")[1]!, "base64"),
+      );
       await click("[aria-label='Clip preview language'] .segment", "Original");
       await pause(500);
       const previewOriginal = await previewHash();
       const clipVideos =
-        videos.length === 4 &&
+        videos.length === 6 &&
+        videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical, Mandarin).mp4") &&
+        previewMandarin.font &&
+        !previewMandarin.hint &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical).mp4") &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square).mp4") &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (vertical, Spanish).mp4") &&
         videos.some((v) => v.name === "Episode 386 - Showing Up with Pete - Clip 1 - A warm welcome (square, Spanish).mp4") &&
         // The 7.5 s clip plus the 2.5 s outro card (the show has a name).
         videos.every((v) => v.ftyp && v.video && v.audio && v.tracks === 2 && Math.abs(v.seconds - 10) < 0.1) &&
-        videoProgress?.total === 4 * Math.ceil(10 * 30) &&
+        videoProgress?.total === 6 * Math.ceil(10 * 30) &&
         !previewSpanish.hint &&
         previewSpanish.hash !== previewOriginal;
 
@@ -563,13 +578,13 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
       };
       const timesOf = (text: string) => text.split("\r\n").filter((l) => l.includes(" --> "));
       const spanish = srtOf("Spanish"), mandarin = srtOf("Mandarin");
-      // Spanish was translated for the videos already, so only Mandarin is asked for.
+      // Spanish and Mandarin were translated for the videos already, so nothing is asked for.
       const translationsOk =
-        askedOnce === 1 &&
+        askedOnce === 0 &&
         askedAgain === 0 &&
         !subExport.notes?.length &&
         spanish.includes("«") &&
-        mandarin.includes("«") &&
+        mandarin.includes("欢迎来到节目") &&
         subExport.files.some((f) => f.endsWith(" - Subtitles (Spanish).vtt")) &&
         JSON.stringify(timesOf(spanish)) === JSON.stringify(timesOf(srtOf("English"))) &&
         JSON.stringify(timesOf(mandarin)) === JSON.stringify(timesOf(srtOf("English")));

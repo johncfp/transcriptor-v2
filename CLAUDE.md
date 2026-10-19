@@ -42,9 +42,14 @@ highlight or pop; the opening and pull quotes use the clip's quote
 translated (saved in `subtitles.json` `quotes`); keywords are off; the
 outro and name-card words come from `VIDEO_STRINGS` (written by hand, not
 by the model). Translation happens when the kept clips are exported; the
-Clips tab preview can show a language once it's saved. Mandarin is greyed
-out until S4. **S4:** a bundled CJK
-font and Chinese line breaking for Mandarin captions. The owner picked
+Clips tab preview can show a language once it's saved. **S4 (done,
+unreleased):** Mandarin captions in videos: Noto Sans SC (bold only, the
+97 numbered Google Fonts pieces, 2.6 MB) registered by character range
+(`fonts.ts` `loadCjkText`, via `import.meta.glob` on a relative
+node_modules path) and loaded for just the characters a video uses before
+it's laid out; it's the fallback after each caption font. Chinese lines
+break between characters (`cjkTokens`: Latin words whole, punctuation kept
+off a line's start; `breakLines(..., sep)`), with no space between words. The owner picked
 these six languages (English plus five) on 2026-10-18.
 
 Untested: macOS for beta.7's crosstalk handling and beta.8's motion in the
@@ -128,8 +133,9 @@ its screenshots. Set `SMOKE_OUT=<dir>` to keep them.
   `checkKeywords`): their text always comes from the transcript. Subtitle
   translations keep the source cues' times and are checked cue by cue
   (`checkTranslation`).
-- **Third-party notices.** mediabunny (MPL-2.0) and the three video fonts
-  (Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
+- **Third-party notices.** mediabunny (MPL-2.0) and the video fonts
+  (Inter, Atkinson Hyperlegible Next, Lexend and, for Chinese, Noto Sans
+  SC; Fontsource, SIL OFL) are bundled unmodified; the build writes `out/THIRD_PARTY_NOTICES.txt` (shipped in the app's resources).
   Add an entry there for any new bundled code whose license asks for one.
 - Settings are edited as a draft and saved with the Save button; new fields
   need a default in `DEFAULT_SETTINGS` and pass through `mergeSettings`.
