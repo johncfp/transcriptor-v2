@@ -134,7 +134,9 @@ export function runSmokeTest(win: BrowserWindow, hooks: { checkForUpdate: () => 
     writeFileSync(join(dir, "report.json"), JSON.stringify(report, null, 2));
     app.exit(report.ok ? 0 : 1);
   };
-  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 90_000);
+  // Generous: it renders six clip videos (two shapes, each also in Spanish and Mandarin), which takes
+  // a CI runner without a GPU well over a minute; the whole run went past 90 s there after subtitles S3/S4.
+  const timeout = setTimeout(() => finish({ ok: false, error: "timed out" }), 240_000);
   // Renderer errors go in the report, so a failed run says why.
   const consoleErrors: string[] = [];
   win.webContents.on("console-message", (e) => {
