@@ -1,5 +1,10 @@
 # Transcriptor 2
 
+> **Status: no longer in active development.** As of November 2026 no further
+> work is planned on this project. The repository is archived (read-only) and
+> kept public for reference. The last release is 2.0.0-beta.8; subtitles
+> (S1–S4) are on `main` but were never released.
+
 Desktop app for podcast production: add an episode's audio, get back a clean
 transcript, show notes, and a reference file for reusing the episode's content
 later. It runs in the background from the system tray on Windows and macOS.
